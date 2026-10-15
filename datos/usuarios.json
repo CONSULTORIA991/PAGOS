@@ -1,0 +1,10 @@
+{
+ "v": 1,
+ "usuarios": {
+  "a23c64603f942cdce3d6274c942327964737b32cd74bd92a07f8a701093fc77e": {
+   "salt": "5BWesjZtbrxCZMqx2B/IEg==",
+   "iter": 600000,
+   "llave": "MdQLTLKFsGRiNxvP1m49zFmvYsFynBVX1CBJDLLnz4Hxoi3ahkoFDNmbtWKU1qdyMZgImP63SW9enTwS"
+  }
+ }
+}
