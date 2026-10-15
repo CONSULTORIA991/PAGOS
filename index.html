@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#0d5c4b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Pagos">
+<title>Pagos por Aprobar</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icono.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icono.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="css/estilos.css">
+</head>
+<body>
+
+<!-- Pantalla de carga -->
+<div class="gate" id="pantalla-carga">
+  <div class="gate-card"><span class="lock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>Acceso protegido</span><h1>Pagos por aprobar</h1><p id="carga-msg">Cargando…</p></div>
+</div>
+
+<!-- Inicio de sesión -->
+<div class="gate" id="pantalla-login" hidden>
+  <div class="gate-card">
+    <span class="lock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>Acceso protegido</span>
+    <div style="display:grid;gap:6px"><h1>Pagos por aprobar</h1><p>Ingresa con el usuario y la contraseña que te dieron.</p></div>
+    <form id="login-form" novalidate>
+      <div class="field"><label for="l-usuario">Usuario</label><input id="l-usuario" autocomplete="username" autocapitalize="none" required></div>
+      <div class="field"><label for="l-clave">Contraseña</label><input id="l-clave" type="password" autocomplete="current-password" required></div>
+      <label class="check"><input type="checkbox" id="l-recordar"> Mantener la sesión en este dispositivo</label>
+      <details class="repo" id="l-repo-box">
+        <summary>Repositorio</summary>
+        <div class="field"><label for="l-owner">Usuario u organización de GitHub</label><input id="l-owner" autocapitalize="none"></div>
+        <div class="field"><label for="l-repo">Nombre del repositorio</label><input id="l-repo" autocapitalize="none"></div>
+      </details>
+      <div class="err" id="login-err" hidden></div>
+      <button class="btn primary block" type="submit" id="login-btn">Entrar</button>
+    </form>
+  </div>
+</div>
+
+<!-- Configuración inicial (solo la primera vez) -->
+<div class="gate" id="pantalla-setup" hidden>
+  <div class="gate-card wide">
+    <span class="lock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>Configuración inicial</span>
+    <div style="display:grid;gap:6px"><h1>Activar la aplicación</h1><p>Esto se hace una sola vez. Se crea la llave de cifrado y la cuenta de administradora. Todos los datos se guardan cifrados en el repositorio.</p></div>
+    <ol class="steps">
+      <li>En GitHub crea un <b>token de acceso fino</b> (Settings → Developer settings → Fine-grained tokens) con acceso <b>solo a este repositorio</b> y permiso <b>Contents: Read and write</b>.</li>
+      <li>Pégalo abajo. Quedará guardado cifrado; nadie lo ve sin contraseña.</li>
+    </ol>
+    <form id="setup-form" class="grid" novalidate>
+      <div class="field"><label for="s-owner">Usuario u organización de GitHub</label><input id="s-owner" autocapitalize="none" required></div>
+      <div class="field"><label for="s-repo">Nombre del repositorio</label><input id="s-repo" autocapitalize="none" required></div>
+      <div class="field"><label for="s-rama">Rama</label><input id="s-rama" value="main" autocapitalize="none"></div>
+      <div class="field"><label for="s-token">Token de GitHub</label><input id="s-token" type="password" autocomplete="off" required></div>
+      <div class="field full"><label for="s-nombre">Tu nombre</label><input id="s-nombre" autocomplete="name" required></div>
+      <div class="field"><label for="s-usuario">Usuario para entrar</label><input id="s-usuario" autocomplete="username" autocapitalize="none" required></div>
+      <div class="field"><label for="s-clave">Contraseña (mín. 10 caracteres)</label><input id="s-clave" type="password" autocomplete="new-password" required></div>
+      <div class="field full"><label for="s-clave2">Repite la contraseña</label><input id="s-clave2" type="password" autocomplete="new-password" required></div>
+      <div class="err full" id="setup-err" hidden></div>
+      <div class="form-actions full"><button class="btn primary" type="submit" id="setup-btn">Activar y entrar</button></div>
+    </form>
+  </div>
+</div>
+
+<!-- Aplicación -->
+<div class="wrap" id="app" hidden>
+  <header class="top">
+    <div>
+      <h1>Pagos por aprobar</h1>
+      <div class="sub"><span id="hoy"></span><span class="role" id="role"></span><span class="user-chip" id="who"></span><span class="sync" id="sync"></span></div>
+    </div>
+    <div class="top-actions">
+      <span id="admin-actions" class="top-actions" hidden>
+        <button class="btn" id="btn-users" type="button">Usuarios</button>
+        <button class="btn" id="btn-import" type="button">Importar desde Excel</button>
+        <button class="btn primary" id="btn-add" type="button">+ Agregar pago</button>
+      </span>
+      <button class="btn ghost" id="btn-clave" type="button">Cambiar contraseña</button>
+      <button class="btn ghost" id="btn-salir" type="button">Salir</button>
+    </div>
+  </header>
+
+  <nav class="views" aria-label="Secciones">
+    <button class="vbtn" type="button" data-view="aprob" aria-pressed="true">Aprobación de pagos</button>
+    <button class="vbtn" type="button" data-view="rep" aria-pressed="false">Reporte de pagos realizados</button>
+  </nav>
+
+  <div class="notice" id="notice" hidden></div>
+
+  <div class="view" id="view-aprob">
+    <section class="ledger" aria-label="Saldo en banco">
+      <div class="eq">
+        <div class="term">
+          <span class="lbl">Saldo en banco hoy</span>
+          <span class="val" id="v-saldo">—</span>
+          <span class="meta" id="m-saldo">Aún no se ha registrado</span>
+          <button class="link" id="btn-saldo" type="button" hidden>Actualizar saldo</button>
+        </div>
+        <span class="op" aria-hidden="true">−</span>
+        <div class="term">
+          <span class="lbl">Pagos que se proceden</span>
+          <span class="val" id="v-aprob">$ 0</span>
+          <span class="meta" id="m-aprob">0 pagos aprobados</span>
+        </div>
+        <span class="op" aria-hidden="true">=</span>
+        <div class="term result" id="t-result">
+          <span class="lbl">Quedaría en banco</span>
+          <span class="val" id="v-queda">—</span>
+          <span class="meta" id="m-queda">Después de hacer los pagos aprobados</span>
+        </div>
+      </div>
+      <div class="bar">
+        <div class="track" id="track"><span class="seg a" id="seg-a" style="width:0"></span><span class="seg r" id="seg-r" style="width:0"></span><span class="seg f" id="seg-f" style="width:0"></span><span class="limit" id="limit" hidden></span></div>
+        <div class="legend">
+          <span><i style="background:var(--info)"></i>Se proceden</span>
+          <span><i style="background:var(--warn)"></i>Por revisar</span>
+          <span><i style="background:var(--ok);opacity:.55"></i>Libre en banco</span>
+        </div>
+        <div class="whatif" id="whatif"></div>
+      </div>
+    </section>
+
+    <div class="controls">
+      <div class="tabs" role="tablist" id="tabs"></div>
+      <div class="filters">
+        <input id="q" type="search" placeholder="Buscar proveedor, concepto o factura" aria-label="Buscar">
+        <select id="sort" aria-label="Ordenar">
+          <option value="vence">Vencimiento más cercano</option>
+          <option value="valor">Mayor valor</option>
+          <option value="prov">Proveedor A–Z</option>
+        </select>
+      </div>
+    </div>
+
+    <section class="list" id="list" aria-live="polite">
+      <div class="empty"><h3>Cargando pagos…</h3><p>En un momento aparece la lista de pagos pendientes de aprobación.</p></div>
+    </section>
+    <div class="list-foot" id="list-foot"></div>
+  </div>
+
+  <div class="view" id="view-rep" hidden>
+    <section class="ledger rep-filters" aria-label="Periodo del reporte">
+      <div class="rep-dates">
+        <div class="field"><label for="r-desde">Desde</label><input type="date" id="r-desde"></div>
+        <div class="field"><label for="r-hasta">Hasta</label><input type="date" id="r-hasta"></div>
+        <button class="btn" type="button" id="r-dl" hidden>Descargar Excel</button>
+      </div>
+      <div class="quick" id="r-quick">
+        <button class="qbtn" type="button" data-range="hoy">Hoy</button>
+        <button class="qbtn" type="button" data-range="ayer">Ayer</button>
+        <button class="qbtn" type="button" data-range="7d">Últimos 7 días</button>
+        <button class="qbtn" type="button" data-range="mes">Este mes</button>
+        <button class="qbtn" type="button" data-range="mesant">Mes anterior</button>
+      </div>
+    </section>
+    <section class="rep-sum" id="r-sum"></section>
+    <section class="rep-days" id="r-list"></section>
+  </div>
+</div>
+
+<!-- Detalle de un pago -->
+<dialog class="sheet" id="dlg-detail"><div class="dlg" id="detail"></div></dialog>
+
+<!-- Agregar / editar pago -->
+<dialog id="dlg-form">
+  <div class="dlg">
+    <div class="dlg-head"><h2 id="form-title">Agregar pago</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
+    <form class="grid" id="pago-form" novalidate>
+      <div class="field full drop"><label for="f-archivo">Factura (PDF o imagen)</label><input id="f-archivo" type="file" accept="application/pdf,image/png,image/jpeg,image/webp"><span class="hint" id="f-archivo-hint">Se guarda cifrada. Tus jefes la podrán abrir desde el pago.</span></div>
+      <div class="field full"><label for="f-prov">Proveedor o beneficiario</label><input id="f-prov" required autocomplete="off"></div>
+      <div class="field full"><label for="f-concepto">Concepto</label><input id="f-concepto" autocomplete="off" placeholder="Ej. Arriendo bodega octubre"></div>
+      <div class="field"><label for="f-factura">N.º de factura</label><input id="f-factura" autocomplete="off"></div>
+      <div class="field"><label for="f-valor">Valor a pagar (COP)</label><input id="f-valor" inputmode="decimal" autocomplete="off" placeholder="1.250.000" required></div>
+      <div class="field"><label for="f-vence">Fecha de vencimiento</label><input id="f-vence" type="date"></div>
+      <div class="field"><label for="f-estado">Estado</label>
+        <select id="f-estado"><option value="revisar">Por revisar</option><option value="aprobado">Se procede</option><option value="pendiente">Pendiente</option><option value="pagado">Pagado</option></select>
+      </div>
+      <div class="field" id="f-fpago-wrap" hidden><label for="f-fpago">Fecha de pago</label><input id="f-fpago" type="date"><span class="hint">Día en que salió el pago del banco.</span></div>
+      <div class="field full"><label for="f-nota">Nota para los jefes</label><textarea id="f-nota" placeholder="Opcional"></textarea></div>
+      <div class="err full" id="form-err" hidden></div>
+      <div class="form-actions full"><button class="btn" type="button" data-close>Cancelar</button><button class="btn primary" type="submit" id="form-save">Guardar pago</button></div>
+    </form>
+  </div>
+</dialog>
+
+<!-- Saldo en banco -->
+<dialog id="dlg-saldo">
+  <div class="dlg">
+    <div class="dlg-head"><h2>Saldo en banco</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
+    <form class="grid" id="saldo-form" novalidate>
+      <div class="field full"><label for="sb-valor">Saldo disponible ahora (COP)</label><input id="sb-valor" inputmode="decimal" autocomplete="off" placeholder="85.000.000" required></div>
+      <div class="field full"><label for="sb-cuenta">Banco o cuenta</label><input id="sb-cuenta" autocomplete="off" placeholder="Ej. Bancolombia corriente"><span class="hint">Opcional. Se muestra debajo del saldo.</span></div>
+      <div class="err full" id="saldo-err" hidden></div>
+      <div class="form-actions full"><button class="btn" type="button" data-close>Cancelar</button><button class="btn primary" type="submit">Guardar saldo</button></div>
+    </form>
+  </div>
+</dialog>
+
+<!-- Importar Excel -->
+<dialog class="sheet" id="dlg-import">
+  <div class="dlg">
+    <div class="dlg-head"><h2>Importar pagos desde Excel</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
+    <p style="margin:0;color:var(--muted)">Sube tu archivo .xlsx, .xls o .csv. La primera hoja debe tener una fila de encabezados con columnas como <b>Proveedor</b>, <b>Concepto</b>, <b>Factura</b>, <b>Valor</b> y <b>Vencimiento</b>. Si hay una columna <b>Estado</b> se respeta; si no, todos entran como “Por revisar”.</p>
+    <div class="field"><label for="i-file">Archivo</label><input id="i-file" type="file" accept=".xlsx,.xls,.csv"></div>
+    <div id="i-result"></div>
+    <div class="form-actions"><button class="btn" type="button" data-close>Cancelar</button><button class="btn primary" type="button" id="i-go" disabled>Importar</button></div>
+  </div>
+</dialog>
+
+<!-- Usuarios -->
+<dialog class="sheet" id="dlg-users">
+  <div class="dlg">
+    <div class="dlg-head"><h2>Usuarios con acceso</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
+    <ul class="users" id="users-list"></ul>
+    <span class="section-lbl">Agregar usuario</span>
+    <form class="grid" id="user-form" novalidate>
+      <div class="field"><label for="u-nombre">Nombre</label><input id="u-nombre" autocomplete="off" required></div>
+      <div class="field"><label for="u-usuario">Usuario para entrar</label><input id="u-usuario" autocomplete="off" autocapitalize="none" required></div>
+      <div class="field"><label for="u-rol">Rol</label><select id="u-rol"><option value="aprobador">Aprobador (ve y aprueba)</option><option value="admin">Administrador (todo)</option></select></div>
+      <div class="field"><label for="u-clave">Contraseña inicial (mín. 10)</label><input id="u-clave" type="text" autocomplete="off" required></div>
+      <div class="err full" id="user-err" hidden></div>
+      <div class="form-actions full"><button class="btn primary" type="submit" id="user-save">Agregar usuario</button></div>
+    </form>
+    <div class="admin-box">
+      <span class="section-lbl">Token de GitHub</span>
+      <p style="margin:0;color:var(--muted);font-size:.9rem">Si el token vence o lo cambias en GitHub, pega aquí el nuevo.</p>
+      <form id="token-form" class="pay-date" novalidate><input id="t-token" type="password" autocomplete="off" placeholder="github_pat_…" style="flex:1 1 220px"><button class="btn sm" type="submit">Guardar token</button></form>
+      <div class="err" id="token-err" hidden></div>
+    </div>
+  </div>
+</dialog>
+
+<!-- Cambiar contraseña -->
+<dialog id="dlg-clave">
+  <div class="dlg">
+    <div class="dlg-head"><h2>Cambiar contraseña</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
+    <form class="grid" id="clave-form" novalidate>
+      <div class="field full"><label for="c-nueva">Nueva contraseña (mín. 10 caracteres)</label><input id="c-nueva" type="password" autocomplete="new-password" required></div>
+      <div class="field full"><label for="c-nueva2">Repite la nueva contraseña</label><input id="c-nueva2" type="password" autocomplete="new-password" required></div>
+      <div class="err full" id="clave-err" hidden></div>
+      <div class="form-actions full"><button class="btn" type="button" data-close>Cancelar</button><button class="btn primary" type="submit">Guardar contraseña</button></div>
+    </form>
+  </div>
+</dialog>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="js/cripto.js"></script>
+<script src="js/github.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

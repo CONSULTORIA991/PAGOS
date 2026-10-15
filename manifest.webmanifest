@@ -1,0 +1,13 @@
+{
+  "name": "Pagos por Aprobar",
+  "short_name": "Pagos",
+  "lang": "es-CO",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#eef2f1",
+  "theme_color": "#0d5c4b",
+  "icons": [
+    { "src": "icono.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
