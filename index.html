@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="estilos.css?v=4">
+<link rel="stylesheet" href="estilos.css?v=5">
 </head>
 <body>
 
@@ -151,6 +151,7 @@
         <div class="field"><label for="r-desde">Desde</label><input type="date" id="r-desde"></div>
         <div class="field"><label for="r-hasta">Hasta</label><input type="date" id="r-hasta"></div>
         <button class="btn" type="button" id="r-dl" hidden>Descargar Excel</button>
+        <button class="btn primary" type="button" id="r-siigo" hidden>Exportar a Siigo</button>
       </div>
       <div class="quick" id="r-quick">
         <button class="qbtn" type="button" data-range="hoy">Hoy</button>
@@ -176,7 +177,7 @@
       <div class="field full drop"><label for="f-archivo">Factura (PDF o imagen)</label><input id="f-archivo" type="file" accept="application/pdf,image/png,image/jpeg,image/webp"><span class="hint" id="f-archivo-hint">Adjúntala primero: la app lee la factura y llena los datos. Se guarda cifrada.</span><div class="ai-status" id="f-ai" hidden></div></div>
       <div class="field full"><label for="f-prov">Proveedor o beneficiario</label><input id="f-prov" required autocomplete="off"></div>
       <div class="field full"><label for="f-concepto">Concepto</label><input id="f-concepto" autocomplete="off" placeholder="Ej. Arriendo bodega octubre"></div>
-      <div class="field"><label for="f-factura">N.º de factura</label><input id="f-factura" autocomplete="off"></div>
+      <div class="field"><label for="f-factura">N.º de factura</label><input id="f-factura" autocomplete="off" placeholder="BMB-503"><span class="hint" id="f-factura-hint"></span></div>
       <div class="field"><label for="f-valor">Valor a pagar (COP)</label><input id="f-valor" inputmode="decimal" autocomplete="off" placeholder="1.250.000" required></div>
       <div class="field"><label for="f-vence">Fecha de vencimiento</label><input id="f-vence" type="date"></div>
       <div class="field"><label for="f-estado">Estado</label>
@@ -184,6 +185,12 @@
       </div>
       <div class="field" id="f-fpago-wrap" hidden><label for="f-fpago">Fecha de pago</label><input id="f-fpago" type="date"><span class="hint">Día en que salió el pago del banco.</span></div>
       <div class="field full"><label for="f-nota">Nota para los jefes</label><textarea id="f-nota" placeholder="Opcional"></textarea></div>
+      <div class="field full admin-only-siigo"><span class="section-lbl">Para Siigo</span></div>
+      <div class="field admin-only-siigo"><label for="f-nit">NIT del proveedor (sin DV)</label><input id="f-nit" inputmode="numeric" autocomplete="off" placeholder="900222212"></div>
+      <div class="field admin-only-siigo"><label for="f-cuenta">Cuenta débito</label>
+        <select id="f-cuenta"><option value="22050501">22050501 · Proveedores nacionales</option><option value="25050501">25050501 · Salarios por pagar (nómina)</option><option value="23352501">23352501 · Honorarios</option><option value="23359501">23359501 · Otros costos y gastos por pagar</option></select>
+      </div>
+      <div class="field full admin-only-siigo"><label for="f-cc">Centro de costo</label><input id="f-cc" list="cc-lista" autocomplete="off" placeholder="Escribe el nombre de la obra o el código"><datalist id="cc-lista"></datalist><span class="hint" id="f-cc-hint"></span></div>
       <div class="err full" id="form-err" hidden></div>
       <div class="form-actions full"><button class="btn" type="button" data-close>Cancelar</button><button class="btn primary" type="submit" id="form-save">Guardar pago</button></div>
     </form>
@@ -230,6 +237,24 @@
   </div>
 </dialog>
 
+<!-- Exportar a Siigo -->
+<dialog class="sheet" id="dlg-siigo">
+  <div class="dlg">
+    <div class="dlg-head"><h2>Exportar pagos a Siigo</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
+    <p style="margin:0;color:var(--muted)">Genera el <b>modelo de importación de comprobantes contables</b> con los pagos marcados como pagados en el periodo: un comprobante por factura, débito a la cuenta del proveedor y crédito al banco.</p>
+    <div class="rep-dates">
+      <div class="field"><label for="sg-desde">Pagados desde</label><input type="date" id="sg-desde"></div>
+      <div class="field"><label for="sg-hasta">Hasta</label><input type="date" id="sg-hasta"></div>
+      <div class="field"><label for="sg-consec">Primer consecutivo</label><input id="sg-consec" inputmode="numeric" autocomplete="off" placeholder="Ej. 1250"></div>
+    </div>
+    <label class="check"><input type="checkbox" id="sg-incluir"> Incluir pagos ya exportados a Siigo</label>
+    <div class="sync" id="sg-conf"></div>
+    <div class="preview" id="sg-tabla"></div>
+    <div class="err" id="sg-err" hidden></div>
+    <div class="form-actions"><button class="btn" type="button" id="sg-completar">Completar NIT y centro de costo desde las facturas</button><button class="btn primary" type="button" id="sg-go" disabled>Descargar archivo para Siigo</button></div>
+  </div>
+</dialog>
+
 <!-- Usuarios -->
 <dialog class="sheet" id="dlg-users">
   <div class="dlg">
@@ -249,6 +274,17 @@
       <p style="margin:0;color:var(--muted);font-size:.9rem">Si el token vence o lo cambias en GitHub, pega aquí el nuevo.</p>
       <form id="token-form" class="pay-date" novalidate><input id="t-token" type="password" autocomplete="off" placeholder="github_pat_…" style="flex:1 1 220px"><button class="btn sm" type="submit">Guardar token</button></form>
       <div class="err" id="token-err" hidden></div>
+    </div>
+    <div class="admin-box">
+      <span class="section-lbl">Siigo</span>
+      <p style="margin:0;color:var(--muted);font-size:.9rem">Datos para el modelo de importación de comprobantes. Los centros de costo se cargan desde el Excel que descargas de Siigo y quedan guardados cifrados.</p>
+      <form id="siigo-form" class="grid" novalidate>
+        <div class="field"><label for="sc-tipo">Tipo de comprobante</label><input id="sc-tipo" inputmode="numeric" value="11"></div>
+        <div class="field"><label for="sc-banco">Cuenta banco (crédito)</label><input id="sc-banco" inputmode="numeric" value="11100501"></div>
+        <div class="field full"><label for="sc-centros">Centros de costo (Excel de Siigo)</label><input id="sc-centros" type="file" accept=".xlsx,.xls,.csv"><span class="hint" id="sc-centros-hint"></span></div>
+        <div class="err full" id="siigo-err" hidden></div>
+        <div class="form-actions full"><button class="btn sm primary" type="submit">Guardar datos de Siigo</button></div>
+      </form>
     </div>
     <div class="admin-box">
       <span class="section-lbl">Lectura de facturas con Claude (opcional)</span>
@@ -276,9 +312,9 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="cripto.js?v=4"></script>
-<script src="github.js?v=4"></script>
-<script src="lector.js?v=4"></script>
-<script src="app.js?v=4"></script>
+<script src="cripto.js?v=5"></script>
+<script src="github.js?v=5"></script>
+<script src="lector.js?v=5"></script>
+<script src="app.js?v=5"></script>
 </body>
 </html>

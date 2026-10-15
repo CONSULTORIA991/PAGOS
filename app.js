@@ -77,6 +77,50 @@
     const u = conf && conf.usuarios && conf.usuarios[id];
     return (u && (u.nombre || u.usuario)) || 'Usuario retirado';
   }
+  // ---------- datos contables para Siigo ----------
+  const SIIGO_DEF = { tipo: 11, cuentaBanco: '11100501', cuentaProv: '22050501', centros: [] };
+  const CUENTAS_CON_VENCIMIENTO = new Set(['22050501', '23359501']);
+  function siigoConf() { return Object.assign({}, SIIGO_DEF, (conf && conf.siigo) || {}); }
+  // "BMB-503" → { prefijo: "BMB", numero: "503" }; "FE 9020" → FE / 9020; "C2329102" → C / 2329102
+  function partirFactura(f) {
+    const s = String(f || '').trim().toUpperCase();
+    const m = s.match(/^(.*?)[\s\-_.]*(\d+)$/);
+    if (!m) return { prefijo: '', numero: '' };
+    return { prefijo: m[1].replace(/[\s\-_.]+$/, '').replace(/\s+/g, ''), numero: String(Number(m[2])) };
+  }
+  const normTxt = (s) => String(s || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+  const GENERICAS = new Set('CONTRATO PISCINA PISCINAS SUMINISTRO INSTALACION DOTACION COMUNAL REPARACION LIMPIEZA DESINFECCION CONSTRUCCION SISTEMA RECIRCULACION ADICIONALES TERMINACION MANTENIMIENTO EQUIPOS SERVICIOS ESCALERA PEGANTE ENCHAPE FILTRACION COMERCIAL PROYECTOS NUEVOS ADMINISTRACION FAMILIA PRUEBAS HIDROSTATICAS SEGURIDAD PERILLA REJILLA COTIZACION ODESA CARIBE BARRANQUILLA COLOMBIA BOGOTA CALLE CARRERA PLAYA VILLA CASA CENTRO NORTE'.split(' '));
+  // Reconoce en el texto de la factura (o la nota) el nombre o número de contrato de un centro de costo.
+  function matchCentro(texto) {
+    const centros = siigoConf().centros;
+    if (!centros.length || !texto) return '';
+    const T = ' ' + normTxt(texto) + ' ';
+    let mejor = null, puntos = 0, empate = false;
+    for (const c of centros) {
+      const n = normTxt(c.nombre);
+      let s = 0;
+      for (const num of n.match(/\d{7,}/g) || []) if (T.includes(num)) s += 10;
+      // Palabras propias del nombre: si hay varias, deben aparecer al menos dos (evita "PLAZA", "RESERVA" sueltas)
+      const propias = [...new Set(n.split(' ').filter((w) => w.length >= 5 && !/\d/.test(w) && !GENERICAS.has(w)))];
+      const halladas = propias.filter((w) => T.includes(' ' + w + ' ')).length;
+      if (halladas >= Math.min(2, propias.length)) s += 3 * halladas;
+      if (s > puntos) { mejor = c; puntos = s; empate = false; } else if (s && s === puntos) empate = true;
+    }
+    return mejor && !empate ? mejor.codigo : '';
+  }
+  function centroNombre(codigo) { const c = siigoConf().centros.find((x) => x.codigo === codigo); return c ? c.nombre : ''; }
+  function ccDeInput(v) {
+    v = String(v || '').trim();
+    if (!v) return '';
+    const centros = siigoConf().centros;
+    const code = v.split('·')[0].trim().replace(/\s+/g, '');
+    if (centros.some((x) => x.codigo === code)) return code;
+    const porNombre = centros.filter((x) => normTxt(x.nombre).includes(normTxt(v)));
+    if (porNombre.length === 1) return porNombre[0].codigo;
+    return code;
+  }
+  const ccTexto = (codigo) => (codigo ? codigo + (centroNombre(codigo) ? ' · ' + centroNombre(codigo) : '') : '');
+
   // Quién aprobó (última vez que el pago pasó a "Se procede") y quién tomó la última decisión.
   function aprobacion(p) {
     const h = (p.historial || []).slice().reverse().find((x) => x.estado === 'aprobado');
@@ -282,6 +326,8 @@
         <div><dt>Factura</dt><dd>${esc(p.factura || '—')}</dd></div>
         <div><dt>Vencimiento</dt><dd>${p.vence ? esc(fmtDate(p.vence)) + ' ' + dueChip(p) : '—'}</dd></div>
         ${st === 'pagado' ? `<div><dt>Fecha de pago</dt><dd>${fechaPagoDe(p) ? esc(fmtDate(fechaPagoDe(p))) : 'Sin registrar'}</dd></div>` : ''}
+        ${isAdmin && (p.nit || p.cc) ? `<div><dt>NIT · Centro de costo</dt><dd>${esc(p.nit || 'Sin NIT')} · ${esc(p.cc ? ccTexto(p.cc) : 'Sin centro de costo')}</dd></div>` : ''}
+        ${isAdmin && p.siigo ? `<div><dt>Siigo</dt><dd>Exportado en comprobante ${esc(p.siigo.tipo)}-${esc(p.siigo.comprobante)}</dd></div>` : ''}
         ${aprobacion(p) && (st === 'aprobado' || st === 'pagado') ? `<div><dt>Aprobado por</dt><dd>${esc(personName(aprobacion(p).por))}, ${esc(dtFmt.format(new Date(aprobacion(p).en)))}</dd></div>` : ''}
         ${p.decididoPor && p.decididoEn ? `<div><dt>Última decisión</dt><dd>${esc(personName(p.decididoPor))}, ${esc(dtFmt.format(new Date(p.decididoEn)))}</dd></div>` : ''}
       </dl>
@@ -320,7 +366,7 @@
     if (r && r.sinCambios) return false;
     const d = r ? await Cripto.descifrarJSON(maestra, r.bytes) : { pagos: [], banco: null };
     etagPagos = r ? r.etag : null;
-    S.pagos = d.pagos || []; S.banco = d.banco || null; S.loaded = true;
+    S.pagos = d.pagos || []; S.banco = d.banco || null; S.siigo = d.siigo || {}; S.loaded = true;
     return true;
   }
 
@@ -347,7 +393,7 @@
         if (resultado === false) return false;
         try {
           await GH.escribir(R_PAGOS, await Cripto.cifrarJSON(maestra, d), r && r.sha);
-          S.pagos = d.pagos; S.banco = d.banco || null; etagPagos = null;
+          S.pagos = d.pagos; S.banco = d.banco || null; S.siigo = d.siigo || {}; etagPagos = null;
           return true;
         } catch (e) {
           if (e && e.conflicto) { await new Promise((ok) => setTimeout(ok, 400 + Math.random() * 600)); continue; }
@@ -434,6 +480,12 @@
     $('#f-fpago').max = todayISO();
     $('#f-fpago-wrap').hidden = $('#f-estado').value !== 'pagado';
     $('#f-nota').value = p ? p.nota || '' : '';
+    $('#f-nit').value = p ? p.nit || '' : '';
+    $('#f-cuenta').value = (p && p.cuenta) || siigoConf().cuentaProv;
+    $('#cc-lista').innerHTML = siigoConf().centros.map((c) => `<option value="${esc(c.codigo + ' · ' + c.nombre)}"></option>`).join('');
+    $('#f-cc').value = p ? ccTexto(p.cc) : '';
+    $('#f-cc-hint').textContent = siigoConf().centros.length ? '' : 'Carga los centros de costo en Usuarios → Siigo para elegirlos de la lista.';
+    pistaFactura();
     $('#f-archivo').value = '';
     $('#f-archivo-hint').textContent = p && p.archivo ? 'Ya tiene factura adjunta. Elige otro archivo solo si quieres reemplazarla.' : 'Adjúntala primero: la app lee la factura y llena los datos. Se guarda cifrada.';
     lecturaId++;
@@ -449,9 +501,16 @@
   // ---------- lectura automática al adjuntar una factura ----------
   const autoLlenados = new Set();
   let lecturaId = 0;
-  ['#f-prov', '#f-concepto', '#f-factura', '#f-valor', '#f-vence'].forEach((sel) => {
+  ['#f-prov', '#f-concepto', '#f-factura', '#f-valor', '#f-vence', '#f-nit', '#f-cc'].forEach((sel) => {
     $(sel).addEventListener('input', () => { autoLlenados.delete(sel); $(sel).classList.remove('ai-filled'); });
   });
+  function pistaFactura() {
+    const { prefijo, numero } = partirFactura($('#f-factura').value);
+    $('#f-factura-hint').textContent = $('#f-factura').value.trim()
+      ? (prefijo ? `Siigo: prefijo ${prefijo} · consecutivo ${numero}${prefijo.length > 6 ? ' (el prefijo debe tener máximo 6 caracteres)' : ''}` : 'Siigo exige prefijo: escríbelo como BMB-503.')
+      : '';
+  }
+  $('#f-factura').addEventListener('input', pistaFactura);
   function estadoLectura(clase, msg) {
     const el = $('#f-ai');
     el.className = 'ai-status ' + clase;
@@ -479,6 +538,10 @@
       if (llenar('#f-factura', d.factura)) llenos.push('factura');
       if (d.valor && llenar('#f-valor', new Intl.NumberFormat('es-CO').format(d.valor))) llenos.push('valor');
       if (llenar('#f-vence', d.vence)) llenos.push('vencimiento');
+      if (llenar('#f-nit', d.nit)) llenos.push('NIT');
+      const cc = matchCentro((r.texto || '') + ' ' + $('#f-nota').value + ' ' + file.name);
+      if (cc && llenar('#f-cc', ccTexto(cc))) llenos.push('centro de costo');
+      pistaFactura();
       const falta = r.faltan.length ? ` Revisa o completa: ${r.faltan.join(', ')}.` : '';
       if (llenos.length) estadoLectura(r.faltan.length ? 'fail' : 'done', `${r.fuente === 'claude' ? 'Leída con Claude' : 'Leída'}: llené ${llenos.join(', ')}. Los campos en verde vienen de la factura.${falta}${r.error ? ' ' + r.error : ''}`);
       else estadoLectura('fail', (r.error || 'No reconocí los datos de esta factura.') + ' Llena los datos a mano.');
@@ -530,6 +593,7 @@
         nuevos.push({
           id: nuevoId(), proveedor: d.proveedor || f.name.replace(/\.[^.]+$/, ''), concepto: d.concepto, factura: d.factura,
           valor: d.valor || 0, vence: d.vence, estado: 'revisar', nota: '', fechaPago: '', ...adj,
+          nit: d.nit || '', cuenta: siigoConf().cuentaProv, cc: matchCentro((r.texto || '') + ' ' + f.name),
           creado: now, creadoPor: uid,
           historial: [{ estado: 'revisar', por: uid, en: now, nota: 'Cargada en lote' + (r.faltan.length ? ' · faltó: ' + r.faltan.join(', ') : '') }],
         });
@@ -573,6 +637,7 @@
         proveedor: prov, concepto: $('#f-concepto').value.trim(), factura: $('#f-factura').value.trim(),
         valor: Math.round(valor), vence: $('#f-vence').value || '', estado, nota: $('#f-nota').value.trim(),
         fechaPago: estado === 'pagado' ? ($('#f-fpago').value || todayISO()) : '',
+        nit: $('#f-nit').value.replace(/\D/g, ''), cuenta: $('#f-cuenta').value, cc: ccDeInput($('#f-cc').value),
       };
       if (file) { btn.textContent = 'Cifrando y subiendo factura…'; Object.assign(data, await subirFactura(file)); btn.textContent = 'Guardando…'; }
       const now = new Date().toISOString();
@@ -779,6 +844,7 @@
       <div class="tile"><span class="lbl">Pagos realizados</span><span class="val">${arr.length}</span></div>
       <div class="tile"><span class="lbl">Proveedores</span><span class="val">${provs}</span></div>`;
     $('#r-dl').hidden = !window.XLSX || !arr.length;
+    $('#r-siigo').hidden = !isAdmin || !window.XLSX;
     const sinFecha = S.pagos.filter((p) => p.estado === 'pagado' && !fechaPagoDe(p)).length;
     const nota = sinFecha ? `<p class="rep-note">${sinFecha} ${sinFecha === 1 ? 'pago marcado como pagado no tiene' : 'pagos marcados como pagados no tienen'} fecha de pago y no aparece${sinFecha === 1 ? '' : 'n'} en el reporte.${isAdmin ? ' Ábrelos en la pestaña Pagados y usa Editar para ponerles la fecha.' : ''}</p>` : '';
     if (!arr.length) {
@@ -819,6 +885,195 @@
     XLSX.writeFile(wb, name, { cellDates: true });
   }
 
+  // ---------- exportación a Siigo (modelo de importación de comprobantes contables) ----------
+  const ENCABEZADO_SIIGO = ['Tipo de comprobante', 'Consecutivo comprobante', 'Fecha de elaboración ', 'Sigla moneda', 'Tasa de cambio', 'Código cuenta contable', 'Identificación tercero', 'Sucursal', 'Código producto', 'Código de bodega', 'Acción', 'Cantidad producto', 'Prefijo', 'Consecutivo', 'No. cuota', 'Fecha vencimiento', 'Código impuesto', 'Código grupo activo fijo', 'Código activo fijo', 'Descripción', 'Código centro/subcentro de costos', 'Débito', 'Crédito', 'Observaciones', 'Base gravable libro compras/ventas  ', 'Base exenta libro compras/ventas', 'Mes de cierre'];
+  const ddmmaaaa = (iso) => { const [y, m, d] = String(iso).split('-'); return `${d}/${m}/${y}`; };
+
+  function filasSiigo() {
+    let a = $('#sg-desde').value, b = $('#sg-hasta').value;
+    if (a && b && a > b) [a, b] = [b, a];
+    const incluir = $('#sg-incluir').checked;
+    return S.pagos
+      .filter((p) => p.estado === 'pagado' && fechaPagoDe(p) && (!a || fechaPagoDe(p) >= a) && (!b || fechaPagoDe(p) <= b) && (incluir || !p.siigo))
+      .sort((x, y) => fechaPagoDe(x).localeCompare(fechaPagoDe(y)) || String(x.proveedor || '').localeCompare(String(y.proveedor || ''), 'es'))
+      .map((p) => {
+        const { prefijo, numero } = partirFactura(p.factura);
+        const cuenta = p.cuenta || siigoConf().cuentaProv;
+        const errores = [], avisos = [];
+        if (!p.nit) errores.push('NIT');
+        if (!prefijo) errores.push('prefijo');
+        else if (prefijo.length > 6) errores.push('prefijo de más de 6 caracteres');
+        if (!numero) errores.push('n.º de factura');
+        if (CUENTAS_CON_VENCIMIENTO.has(cuenta) && !p.vence) errores.push('vencimiento');
+        if (!(Number(p.valor) > 0)) errores.push('valor');
+        if (!p.cc) avisos.push('centro de costo');
+        if (p.siigo) avisos.push(`ya exportado (comp. ${p.siigo.comprobante})`);
+        return { p, prefijo, numero, cuenta, errores, avisos };
+      });
+  }
+
+  function renderSiigo() {
+    const filas = filasSiigo();
+    const sc = siigoConf();
+    $('#sg-conf').textContent = `Comprobante tipo ${sc.tipo} · crédito a ${sc.cuentaBanco}${sc.cuentaBanco === '11100501' ? ' (Bancolombia cte 2278)' : ''} · ${sc.centros.length ? sc.centros.length + ' centros de costo cargados' : 'sin centros de costo cargados (Usuarios → Siigo)'}`;
+    if (!filas.length) {
+      $('#sg-tabla').innerHTML = '<p style="margin:12px;color:var(--muted)">No hay pagos marcados como pagados en este periodo' + ($('#sg-incluir').checked ? '' : ' sin exportar') + '.</p>';
+      $('#sg-go').disabled = true;
+      return;
+    }
+    const consec = Number($('#sg-consec').value);
+    $('#sg-tabla').innerHTML = `<table><thead><tr><th>Comp.</th><th>Fecha pago</th><th>Proveedor</th><th>NIT</th><th>Factura</th><th>Vence</th><th>Centro de costo</th><th style="text-align:right">Valor</th><th>Estado</th></tr></thead><tbody>
+      ${filas.map((f, i) => `<tr><td>${consec > 0 ? consec + i : '—'}</td><td>${esc(fmtDate(fechaPagoDe(f.p)))}</td><td>${esc(f.p.proveedor)}</td><td>${esc(f.p.nit || '—')}</td><td>${esc(f.prefijo ? f.prefijo + ' / ' + f.numero : f.p.factura || '—')}</td><td>${esc(f.p.vence ? fmtDate(f.p.vence) : '—')}</td><td>${esc(f.p.cc || '—')}</td><td class="n">${fmt(f.p.valor)}</td>
+        <td>${f.errores.length ? `<span class="bulk"><span class="bad">Falta: ${esc(f.errores.join(', '))}</span></span>` : f.avisos.length ? `<span class="bulk"><span class="warn">Sin ${esc(f.avisos.join(', '))}</span></span>` : '<span class="bulk"><span class="ok">Listo</span></span>'} <button class="btn sm ghost" type="button" data-sg-editar="${f.p.id}">Editar</button></td></tr>`).join('')}
+      </tbody></table>`;
+    const conErrores = filas.filter((f) => f.errores.length).length;
+    if (!(consec > 0)) mostrarError('#sg-err', 'Escribe el primer consecutivo del comprobante.');
+    else if (conErrores) mostrarError('#sg-err', `${conErrores} ${conErrores === 1 ? 'pago tiene' : 'pagos tienen'} datos obligatorios incompletos. Usa “Completar desde las facturas” o “Editar”.`);
+    else mostrarError('#sg-err', '');
+    $('#sg-go').disabled = !(consec > 0) || conErrores > 0;
+    $('#sg-go').textContent = `Descargar archivo para Siigo (${filas.length} ${filas.length === 1 ? 'comprobante' : 'comprobantes'})`;
+  }
+
+  function openSiigo() {
+    $('#sg-desde').value = S.rDesde || ''; $('#sg-hasta').value = S.rHasta || '';
+    const ult = S.siigo && Number(S.siigo.ultimo);
+    if (!$('#sg-consec').value && ult > 0) $('#sg-consec').value = ult + 1;
+    renderSiigo();
+    $('#dlg-siigo').showModal();
+  }
+  ['#sg-desde', '#sg-hasta', '#sg-incluir'].forEach((s) => $(s).addEventListener('change', renderSiigo));
+  $('#sg-consec').addEventListener('input', renderSiigo);
+
+  async function leerFacturaGuardada(p) {
+    const f = await GH.leer(rFactura(p.archivo));
+    if (!f) return null;
+    const bytes = await Cripto.descifrar(maestra, f.bytes);
+    return new File([bytes], p.archivoNombre || 'factura.pdf', { type: p.archivoTipo || 'application/pdf' });
+  }
+
+  $('#sg-completar').addEventListener('click', async () => {
+    const btn = $('#sg-completar');
+    const faltan = filasSiigo().map((f) => f.p).filter((p) => !p.nit || !p.cc || !p.vence);
+    if (!faltan.length) { toast('Todos los pagos del periodo ya tienen NIT, vencimiento y centro de costo.'); return; }
+    btn.disabled = true;
+    const cambios = {};
+    let n = 0;
+    for (const p of faltan) {
+      btn.textContent = `Leyendo ${++n} de ${faltan.length}…`;
+      const c = {};
+      try {
+        let texto = (p.nota || '') + ' ' + (p.concepto || '') + ' ' + (p.archivoNombre || '');
+        if (p.archivo && (!p.nit || !p.vence || !p.cc)) {
+          const file = await leerFacturaGuardada(p);
+          if (file) {
+            const r = await Lector.leer(file, conf && conf.claudeKey);
+            texto += ' ' + (r.texto || '');
+            if (!p.nit && r.datos.nit) c.nit = r.datos.nit.replace(/\D/g, '');
+            if (!p.vence && r.datos.vence) c.vence = r.datos.vence;
+            if (!p.factura && r.datos.factura) c.factura = r.datos.factura;
+          }
+        }
+        if (!p.cc) { const cc = matchCentro(texto); if (cc) c.cc = cc; }
+      } catch (e) { /* se deja para completar a mano */ }
+      if (Object.keys(c).length) cambios[p.id] = c;
+    }
+    const total = Object.keys(cambios).length;
+    if (total) {
+      try {
+        await mutar((d) => { for (const x of d.pagos) if (cambios[x.id]) for (const [k, v] of Object.entries(cambios[x.id])) if (!x[k]) x[k] = v; });
+        render();
+      } catch (e) { mostrarError('#sg-err', msgGitHub(e)); }
+    }
+    btn.disabled = false; btn.textContent = 'Completar NIT y centro de costo desde las facturas';
+    renderSiigo();
+    toast(total ? `Se completaron datos en ${total} ${total === 1 ? 'pago' : 'pagos'}. Revisa los que sigan incompletos.` : 'No encontré más datos en las facturas; complétalos con Editar.');
+  });
+
+  $('#sg-go').addEventListener('click', async () => {
+    const filas = filasSiigo();
+    const sc = siigoConf();
+    let consec = Number($('#sg-consec').value);
+    if (!(consec > 0) || !filas.length || filas.some((f) => f.errores.length)) return;
+    const tipo = Number(sc.tipo) || 11;
+    const filasXls = [ENCABEZADO_SIIGO];
+    const asignados = {};
+    const vacio = () => new Array(ENCABEZADO_SIIGO.length).fill('');
+    for (const f of filas) {
+      const p = f.p;
+      const fecha = ddmmaaaa(fechaPagoDe(p));
+      const desc = (p.concepto || `Pago factura ${f.prefijo}-${f.numero}`).slice(0, 100);
+      const obs = `Pago ${p.proveedor} factura ${f.prefijo}-${f.numero}`.slice(0, 300);
+      const valor = Math.round(Number(p.valor) || 0);
+      // Línea 1: débito a la cuenta del proveedor (cruza la factura)
+      const deb = vacio();
+      deb[0] = tipo; deb[1] = consec; deb[2] = fecha; deb[5] = Number(f.cuenta); deb[6] = String(p.nit);
+      if (CUENTAS_CON_VENCIMIENTO.has(f.cuenta)) { deb[12] = f.prefijo; deb[13] = Number(f.numero); deb[14] = 1; deb[15] = ddmmaaaa(p.vence); }
+      deb[19] = desc; deb[20] = p.cc || ''; deb[21] = valor; deb[23] = obs;
+      // Línea 2: crédito al banco, mismo tercero
+      const cre = vacio();
+      cre[0] = tipo; cre[1] = consec; cre[2] = fecha; cre[5] = Number(sc.cuentaBanco); cre[6] = String(p.nit);
+      cre[19] = desc; cre[22] = valor; cre[23] = obs;
+      filasXls.push(deb, cre);
+      asignados[p.id] = consec;
+      consec++;
+    }
+    const ws = XLSX.utils.aoa_to_sheet(filasXls);
+    ws['!cols'] = ENCABEZADO_SIIGO.map((h) => ({ wch: Math.max(12, Math.min(28, h.length + 2)) }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Datos');
+    const a = $('#sg-desde').value, b = $('#sg-hasta').value;
+    XLSX.writeFile(wb, `Siigo comprobantes ${tipo} ${a === b ? a : a + ' a ' + b}.xlsx`);
+    const ultimo = consec - 1;
+    const ahora = new Date().toISOString();
+    try {
+      await mutar((d) => {
+        for (const x of d.pagos) if (asignados[x.id]) x.siigo = { tipo, comprobante: asignados[x.id], en: ahora };
+        d.siigo = { ...(d.siigo || {}), ultimo: Math.max(ultimo, Number((d.siigo || {}).ultimo) || 0) };
+      });
+      toast(`Archivo generado: comprobantes ${tipo}-${ultimo - filas.length + 1} a ${tipo}-${ultimo}. Súbelo en Siigo.`);
+      render(); renderSiigo();
+    } catch (e) { mostrarError('#sg-err', 'El archivo se descargó, pero no se pudo marcar como exportado: ' + msgGitHub(e)); }
+  });
+
+  // Configuración de Siigo (en Usuarios)
+  let centrosPendientes = null;
+  function renderSiigoConf() {
+    const sc = siigoConf();
+    $('#sc-tipo').value = sc.tipo; $('#sc-banco').value = sc.cuentaBanco; $('#sc-centros').value = ''; centrosPendientes = null;
+    $('#sc-centros-hint').textContent = sc.centros.length ? `${sc.centros.length} centros de costo cargados. Sube el Excel de nuevo solo si cambian.` : 'Aún no hay centros de costo cargados.';
+    mostrarError('#siigo-err', '');
+  }
+  $('#sc-centros').addEventListener('change', async () => {
+    const f = $('#sc-centros').files[0];
+    centrosPendientes = null;
+    if (!f || !window.XLSX) return;
+    try {
+      const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: false, defval: '' });
+      const lista = [];
+      for (const r of rows) {
+        const i = r.findIndex((c) => /^\s*[A-Z0-9]+\s*-\s*\d+\s*$/i.test(String(c)));
+        if (i < 0) continue;
+        const nombre = r.slice(i + 1).map(String).find((c) => /[A-Za-zÁÉÍÓÚÑ]/.test(c));
+        if (nombre) lista.push({ codigo: String(r[i]).replace(/\s+/g, '').toUpperCase(), nombre: nombre.trim() });
+      }
+      if (!lista.length) { mostrarError('#siigo-err', 'No encontré códigos de centro de costo (formato 100067-1) en el archivo.'); return; }
+      centrosPendientes = lista;
+      $('#sc-centros-hint').textContent = `Se cargarán ${lista.length} centros de costo al guardar.`;
+      mostrarError('#siigo-err', '');
+    } catch (e) { mostrarError('#siigo-err', 'No pude leer el archivo de centros de costo.'); }
+  });
+  $('#siigo-form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const tipo = Number($('#sc-tipo').value), banco = $('#sc-banco').value.replace(/\D/g, '');
+    if (!(tipo > 0)) return mostrarError('#siigo-err', 'Escribe el tipo de comprobante (por ejemplo 11).');
+    if (banco.length < 6) return mostrarError('#siigo-err', 'Escribe la cuenta del banco a nivel transaccional (por ejemplo 11100501).');
+    const anterior = conf.siigo;
+    conf.siigo = { ...siigoConf(), tipo, cuentaBanco: banco, ...(centrosPendientes ? { centros: centrosPendientes } : {}) };
+    try { await guardarConfig(); renderSiigoConf(); toast('Datos de Siigo guardados.'); }
+    catch (e) { conf.siigo = anterior; mostrarError('#siigo-err', msgGitHub(e)); }
+  });
+
   // ---------- usuarios y contraseñas ----------
   async function leerUsuarios() {
     const f = await GH.leer(R_USUARIOS);
@@ -842,7 +1097,7 @@
     $('#c-estado').textContent = conf.claudeKey ? '✓ Lectura con Claude activada.' : 'Lectura con Claude desactivada (se usa el lector propio).';
     $('#c-quitar').hidden = !conf.claudeKey;
   }
-  function openUsuarios() { renderUsuarios(); renderClaude(); mostrarError('#user-err', ''); mostrarError('#token-err', ''); mostrarError('#claude-err', ''); $('#user-form').reset(); $('#t-token').value = ''; $('#c-clave').value = ''; $('#dlg-users').showModal(); }
+  function openUsuarios() { renderUsuarios(); renderClaude(); renderSiigoConf(); mostrarError('#user-err', ''); mostrarError('#token-err', ''); mostrarError('#claude-err', ''); $('#user-form').reset(); $('#t-token').value = ''; $('#c-clave').value = ''; $('#dlg-users').showModal(); }
 
   $('#claude-form').addEventListener('submit', async (ev) => {
     ev.preventDefault();
@@ -1040,6 +1295,7 @@
     if (t.dataset.confirm === 'pay-only') { marcarPagado(S.openId, false); return; }
     if (t.dataset.retry) { const p = S.pagos.find((x) => x.id === t.dataset.retry); if (p) { delete facturaError[p.archivo]; renderDetail(); } return; }
     if (t.dataset.quitar) { if (t.dataset.sure) quitarUsuario(t.dataset.quitar); else { t.dataset.sure = '1'; t.textContent = '¿Seguro? Toca de nuevo'; } return; }
+    if (t.dataset.sgEditar) { $('#dlg-siigo').close(); openForm(t.dataset.sgEditar); return; }
     if (t.dataset.view) { setView(t.dataset.view); return; }
     if (t.dataset.range) { setRange(t.dataset.range); return; }
     if (t.dataset.row) { S.openId = t.dataset.row; S.confirm = null; renderDetail(); }
@@ -1058,6 +1314,7 @@
   $('#btn-clave').addEventListener('click', () => { mostrarError('#clave-err', ''); $('#clave-form').reset(); $('#dlg-clave').showModal(); });
   $('#btn-salir').addEventListener('click', salir);
   $('#r-dl').addEventListener('click', descargarReporte);
+  $('#r-siigo').addEventListener('click', openSiigo);
   $('#q').addEventListener('input', (e) => { S.q = e.target.value; renderList(); });
   $('#sort').addEventListener('change', (e) => { S.sort = e.target.value; renderList(); });
   $('#f-aprobador').addEventListener('change', (e) => {

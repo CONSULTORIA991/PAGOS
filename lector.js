@@ -288,7 +288,7 @@ Reglas:
     if (!datos.valor) faltan.push('valor');
     if (!datos.factura) faltan.push('n.º de factura');
     if (!datos.vence) faltan.push('vencimiento');
-    return { datos, fuente, faltan, error };
+    return { datos, fuente, faltan, error, texto };
   }
 
   return { leer, interpretar };
