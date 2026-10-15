@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="estilos.css">
+<link rel="stylesheet" href="estilos.css?v=3">
 </head>
 <body>
 
@@ -78,6 +78,7 @@
       <span id="admin-actions" class="top-actions" hidden>
         <button class="btn" id="btn-users" type="button">Usuarios</button>
         <button class="btn" id="btn-import" type="button">Importar desde Excel</button>
+        <button class="btn" id="btn-masiva" type="button">Subir varias facturas</button>
         <button class="btn primary" id="btn-add" type="button">+ Agregar pago</button>
       </span>
       <button class="btn ghost" id="btn-clave" type="button">Cambiar contraseña</button>
@@ -171,7 +172,7 @@
   <div class="dlg">
     <div class="dlg-head"><h2 id="form-title">Agregar pago</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
     <form class="grid" id="pago-form" novalidate>
-      <div class="field full drop"><label for="f-archivo">Factura (PDF o imagen)</label><input id="f-archivo" type="file" accept="application/pdf,image/png,image/jpeg,image/webp"><span class="hint" id="f-archivo-hint">Se guarda cifrada. Tus jefes la podrán abrir desde el pago.</span></div>
+      <div class="field full drop"><label for="f-archivo">Factura (PDF o imagen)</label><input id="f-archivo" type="file" accept="application/pdf,image/png,image/jpeg,image/webp"><span class="hint" id="f-archivo-hint">Adjúntala primero: la app lee la factura y llena los datos. Se guarda cifrada.</span><div class="ai-status" id="f-ai" hidden></div></div>
       <div class="field full"><label for="f-prov">Proveedor o beneficiario</label><input id="f-prov" required autocomplete="off"></div>
       <div class="field full"><label for="f-concepto">Concepto</label><input id="f-concepto" autocomplete="off" placeholder="Ej. Arriendo bodega octubre"></div>
       <div class="field"><label for="f-factura">N.º de factura</label><input id="f-factura" autocomplete="off"></div>
@@ -212,6 +213,22 @@
   </div>
 </dialog>
 
+<!-- Carga masiva de facturas -->
+<dialog class="sheet" id="dlg-masiva">
+  <div class="dlg">
+    <div class="dlg-head"><h2>Subir varias facturas</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
+    <p style="margin:0;color:var(--muted)">Selecciona o arrastra las facturas (PDF o imagen). Cada una se lee, se guarda cifrada y queda como pago <b>Por revisar</b>. Las que ya están cargadas (mismo archivo o mismo número de factura y proveedor) se omiten.</p>
+    <label class="drop-zone" id="m-zona" for="m-files">
+      <input id="m-files" type="file" multiple accept="application/pdf,image/png,image/jpeg,image/webp">
+      <b>Arrastra aquí las facturas</b><span>o toca para elegirlas</span>
+    </label>
+    <div class="sync" id="m-modo"></div>
+    <ul class="bulk" id="m-lista"></ul>
+    <div class="err" id="m-err" hidden></div>
+    <div class="form-actions"><button class="btn" type="button" data-close id="m-cerrar">Cerrar</button></div>
+  </div>
+</dialog>
+
 <!-- Usuarios -->
 <dialog class="sheet" id="dlg-users">
   <div class="dlg">
@@ -232,6 +249,13 @@
       <form id="token-form" class="pay-date" novalidate><input id="t-token" type="password" autocomplete="off" placeholder="github_pat_…" style="flex:1 1 220px"><button class="btn sm" type="submit">Guardar token</button></form>
       <div class="err" id="token-err" hidden></div>
     </div>
+    <div class="admin-box">
+      <span class="section-lbl">Lectura de facturas con Claude (opcional)</span>
+      <p style="margin:0;color:var(--muted);font-size:.9rem">Sin clave, la app lee las facturas electrónicas con su lector propio (gratis). Con una clave de la API de Claude (console.anthropic.com) la lectura es más precisa y también funciona con facturas escaneadas y fotos. Cada factura cuesta unos pocos centavos de dólar en tu cuenta de Anthropic. La clave queda guardada cifrada.</p>
+      <p style="margin:0;font-size:.9rem" id="c-estado"></p>
+      <form id="claude-form" class="pay-date" novalidate><input id="c-clave" type="password" autocomplete="off" placeholder="sk-ant-…" style="flex:1 1 220px"><button class="btn sm" type="submit">Guardar clave</button><button class="btn sm danger" type="button" id="c-quitar">Quitar clave</button></form>
+      <div class="err" id="claude-err" hidden></div>
+    </div>
   </div>
 </dialog>
 
@@ -251,8 +275,9 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="cripto.js"></script>
-<script src="github.js"></script>
-<script src="app.js"></script>
+<script src="cripto.js?v=3"></script>
+<script src="github.js?v=3"></script>
+<script src="lector.js?v=3"></script>
+<script src="app.js?v=3"></script>
 </body>
 </html>

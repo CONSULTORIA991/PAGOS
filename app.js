@@ -406,12 +406,128 @@
     $('#f-fpago-wrap').hidden = $('#f-estado').value !== 'pagado';
     $('#f-nota').value = p ? p.nota || '' : '';
     $('#f-archivo').value = '';
-    $('#f-archivo-hint').textContent = p && p.archivo ? 'Ya tiene factura adjunta. Elige otro archivo solo si quieres reemplazarla.' : 'Se guarda cifrada. Tus jefes la podrán abrir desde el pago.';
+    $('#f-archivo-hint').textContent = p && p.archivo ? 'Ya tiene factura adjunta. Elige otro archivo solo si quieres reemplazarla.' : 'Adjúntala primero: la app lee la factura y llena los datos. Se guarda cifrada.';
+    lecturaId++;
+    autoLlenados.clear();
+    document.querySelectorAll('#pago-form .ai-filled').forEach((el) => el.classList.remove('ai-filled'));
+    $('#f-ai').hidden = true;
     mostrarError('#form-err', '');
     if ($('#dlg-detail').open) $('#dlg-detail').close();
     $('#dlg-form').showModal();
     (p ? $('#f-prov') : $('#f-archivo')).focus();
   }
+
+  // ---------- lectura automática al adjuntar una factura ----------
+  const autoLlenados = new Set();
+  let lecturaId = 0;
+  ['#f-prov', '#f-concepto', '#f-factura', '#f-valor', '#f-vence'].forEach((sel) => {
+    $(sel).addEventListener('input', () => { autoLlenados.delete(sel); $(sel).classList.remove('ai-filled'); });
+  });
+  function estadoLectura(clase, msg) {
+    const el = $('#f-ai');
+    el.className = 'ai-status ' + clase;
+    el.innerHTML = (clase === 'working' ? '<span class="spin" aria-hidden="true"></span>' : '') + `<span>${esc(msg)}</span>`;
+    el.hidden = false;
+  }
+  function llenar(sel, val) {
+    if (val == null || val === '' || val === 0) return false;
+    const el = $(sel);
+    if (el.value.trim() && !autoLlenados.has(sel)) return false; // no pisar lo que la persona escribió
+    el.value = val; autoLlenados.add(sel); el.classList.add('ai-filled');
+    return true;
+  }
+  $('#f-archivo').addEventListener('change', async () => {
+    const file = $('#f-archivo').files[0];
+    if (!file) return;
+    const id = ++lecturaId;
+    estadoLectura('working', conf && conf.claudeKey ? 'Leyendo la factura con Claude…' : 'Leyendo la factura…');
+    try {
+      const r = await Lector.leer(file, conf && conf.claudeKey);
+      if (id !== lecturaId) return;
+      const d = r.datos, llenos = [];
+      if (llenar('#f-prov', d.proveedor)) llenos.push('proveedor');
+      if (llenar('#f-concepto', d.concepto)) llenos.push('concepto');
+      if (llenar('#f-factura', d.factura)) llenos.push('factura');
+      if (d.valor && llenar('#f-valor', new Intl.NumberFormat('es-CO').format(d.valor))) llenos.push('valor');
+      if (llenar('#f-vence', d.vence)) llenos.push('vencimiento');
+      const falta = r.faltan.length ? ` Revisa o completa: ${r.faltan.join(', ')}.` : '';
+      if (llenos.length) estadoLectura(r.faltan.length ? 'fail' : 'done', `${r.fuente === 'claude' ? 'Leída con Claude' : 'Leída'}: llené ${llenos.join(', ')}. Los campos en verde vienen de la factura.${falta}${r.error ? ' ' + r.error : ''}`);
+      else estadoLectura('fail', (r.error || 'No reconocí los datos de esta factura.') + ' Llena los datos a mano.');
+    } catch (e) {
+      if (id === lecturaId) estadoLectura('fail', 'No pude leer la factura. Llena los datos a mano.');
+    }
+  });
+
+  // ---------- carga masiva de facturas ----------
+  let masivaActiva = false;
+  function openMasiva() {
+    if (masivaActiva) { $('#dlg-masiva').showModal(); return; }
+    $('#m-lista').innerHTML = ''; $('#m-files').value = ''; mostrarError('#m-err', '');
+    $('#m-modo').textContent = conf && conf.claudeKey ? 'Lectura con Claude activada.' : 'Lectura con el lector propio de la app (facturas electrónicas en PDF). Para escaneadas o fotos, configura Claude en Usuarios.';
+    $('#dlg-masiva').showModal();
+  }
+  const normaliza = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  function filaMasiva(nombre) {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="nombre"></span><span class="estado wait">En espera</span><span class="det"></span>`;
+    li.querySelector('.nombre').textContent = nombre;
+    $('#m-lista').appendChild(li);
+    return {
+      set(clase, estado, det) { const e = li.querySelector('.estado'); e.className = 'estado ' + clase; e.textContent = estado; li.querySelector('.det').textContent = det || ''; },
+    };
+  }
+  async function procesarMasiva(files) {
+    const lista = [...files].filter((f) => /\.(pdf|png|jpe?g|webp)$/i.test(f.name) || /^(application\/pdf|image\/)/.test(f.type));
+    if (!lista.length) { mostrarError('#m-err', 'Elige archivos PDF o imágenes.'); return; }
+    masivaActiva = true; mostrarError('#m-err', '');
+    const nombresExistentes = new Set(S.pagos.map((p) => p.archivoNombre).filter(Boolean));
+    const clavesExistentes = new Set(S.pagos.filter((p) => p.factura).map((p) => normaliza(p.proveedor).slice(0, 12) + '|' + normaliza(p.factura)));
+    const filas = lista.map((f) => filaMasiva(f.name));
+    const nuevos = [];
+    for (let i = 0; i < lista.length; i++) {
+      const f = lista[i], fila = filas[i];
+      if (nombresExistentes.has(f.name)) { fila.set('wait', 'Ya estaba', 'Este archivo ya está cargado.'); continue; }
+      if (f.size > 25 * 1024 * 1024) { fila.set('bad', 'Muy pesada', 'Pesa más de 25 MB.'); continue; }
+      fila.set('wait', 'Leyendo…');
+      try {
+        const r = await Lector.leer(f, conf && conf.claudeKey);
+        const d = r.datos;
+        const clave = normaliza(d.proveedor).slice(0, 12) + '|' + normaliza(d.factura);
+        if (d.factura && clavesExistentes.has(clave)) { fila.set('wait', 'Ya estaba', `La factura ${d.factura} de ${d.proveedor} ya está cargada.`); continue; }
+        fila.set('wait', 'Cifrando y subiendo…');
+        const adj = await subirFactura(f);
+        const now = new Date().toISOString();
+        const leido = d.proveedor || d.valor;
+        nuevos.push({
+          id: nuevoId(), proveedor: d.proveedor || f.name.replace(/\.[^.]+$/, ''), concepto: d.concepto, factura: d.factura,
+          valor: d.valor || 0, vence: d.vence, estado: 'revisar', nota: '', fechaPago: '', ...adj,
+          creado: now, creadoPor: uid,
+          historial: [{ estado: 'revisar', por: uid, en: now, nota: 'Cargada en lote' + (r.faltan.length ? ' · faltó: ' + r.faltan.join(', ') : '') }],
+        });
+        nombresExistentes.add(f.name); if (d.factura) clavesExistentes.add(clave);
+        const det = [d.proveedor, d.factura && 'Fact. ' + d.factura, d.valor ? fmt(d.valor) : '', d.vence && 'vence ' + fmtDate(d.vence)].filter(Boolean).join(' · ');
+        if (!leido) fila.set('bad', 'Sin leer', (r.error || 'No reconocí los datos.') + ' Quedó cargada con el nombre del archivo; complétala con Editar.');
+        else if (r.faltan.length) fila.set('warn', 'Revisar', det + ' — falta: ' + r.faltan.join(', '));
+        else fila.set('ok', 'Lista', det);
+      } catch (e) {
+        fila.set('bad', 'Error', msgGitHub(e));
+      }
+    }
+    if (nuevos.length) {
+      try {
+        await mutar((d) => { d.pagos.push(...nuevos); });
+        render();
+        toast(`Se cargaron ${nuevos.length} ${nuevos.length === 1 ? 'factura' : 'facturas'} en “Por revisar”.`);
+      } catch (e) { mostrarError('#m-err', 'Las facturas se subieron, pero no se pudieron registrar los pagos: ' + msgGitHub(e)); }
+    }
+    masivaActiva = false;
+    $('#m-files').value = '';
+  }
+  $('#m-files').addEventListener('change', () => { if (!masivaActiva) procesarMasiva($('#m-files').files); });
+  const zona = $('#m-zona');
+  zona.addEventListener('dragover', (ev) => { ev.preventDefault(); zona.classList.add('over'); });
+  zona.addEventListener('dragleave', () => zona.classList.remove('over'));
+  zona.addEventListener('drop', (ev) => { ev.preventDefault(); zona.classList.remove('over'); if (!masivaActiva) procesarMasiva(ev.dataTransfer.files); });
 
   $('#pago-form').addEventListener('submit', async (ev) => {
     ev.preventDefault();
@@ -690,7 +806,29 @@
       return `<li><span class="who"><b>${esc(u.nombre || u.usuario)}</b><small>Usuario: ${esc(u.usuario)} · ${u.rol === 'admin' ? 'Administrador' : 'Aprobador'}</small></span>${id === uid ? '<span class="role">Tú</span>' : `<button class="btn sm danger" type="button" data-quitar="${id}">Quitar acceso</button>`}</li>`;
     }).join('');
   }
-  function openUsuarios() { renderUsuarios(); mostrarError('#user-err', ''); mostrarError('#token-err', ''); $('#user-form').reset(); $('#t-token').value = ''; $('#dlg-users').showModal(); }
+  function renderClaude() {
+    $('#c-estado').textContent = conf.claudeKey ? '✓ Lectura con Claude activada.' : 'Lectura con Claude desactivada (se usa el lector propio).';
+    $('#c-quitar').hidden = !conf.claudeKey;
+  }
+  function openUsuarios() { renderUsuarios(); renderClaude(); mostrarError('#user-err', ''); mostrarError('#token-err', ''); mostrarError('#claude-err', ''); $('#user-form').reset(); $('#t-token').value = ''; $('#c-clave').value = ''; $('#dlg-users').showModal(); }
+
+  $('#claude-form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const clave = $('#c-clave').value.trim();
+    if (!/^sk-ant-/.test(clave)) return mostrarError('#claude-err', 'La clave de la API de Claude empieza por “sk-ant-”.');
+    try {
+      conf.claudeKey = clave;
+      await guardarConfig();
+      $('#c-clave').value = '';
+      mostrarError('#claude-err', '');
+      renderClaude();
+      toast('Clave de Claude guardada.');
+    } catch (e) { delete conf.claudeKey; mostrarError('#claude-err', msgGitHub(e)); }
+  });
+  $('#c-quitar').addEventListener('click', async () => {
+    try { delete conf.claudeKey; await guardarConfig(); renderClaude(); toast('Clave de Claude quitada.'); }
+    catch (e) { mostrarError('#claude-err', msgGitHub(e)); }
+  });
 
   $('#user-form').addEventListener('submit', async (ev) => {
     ev.preventDefault();
@@ -882,6 +1020,7 @@
   $('#dlg-detail').addEventListener('close', () => { S.openId = null; S.confirm = null; });
   $('#btn-add').addEventListener('click', () => openForm());
   $('#btn-import').addEventListener('click', openImport);
+  $('#btn-masiva').addEventListener('click', openMasiva);
   $('#btn-saldo').addEventListener('click', openSaldo);
   $('#btn-users').addEventListener('click', openUsuarios);
   $('#btn-clave').addEventListener('click', () => { mostrarError('#clave-err', ''); $('#clave-form').reset(); $('#dlg-clave').showModal(); });

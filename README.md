@@ -18,6 +18,7 @@ Aplicación web para revisar y aprobar pagos a proveedores: saldo en banco, lo q
 | `app.js` | Lógica de la aplicación |
 | `cripto.js` | Cifrado |
 | `github.js` | Lectura y escritura en el repositorio |
+| `lector.js` | Lectura automática de facturas (lector propio y, opcional, Claude) |
 | `manifest.webmanifest`, `icono.svg` | Para instalarla como app en el celular |
 | `datos/` | Se crea sola al activar la app. Todo cifrado. **No la edites a mano.** |
 
