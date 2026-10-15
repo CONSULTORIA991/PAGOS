@@ -14,17 +14,17 @@ Aplicación web para revisar y aprobar pagos a proveedores: saldo en banco, lo q
 | Archivo | Qué es |
 |---|---|
 | `index.html` | La aplicación |
-| `css/estilos.css` | Diseño |
-| `js/app.js` | Lógica de la aplicación |
-| `js/cripto.js` | Cifrado |
-| `js/github.js` | Lectura y escritura en el repositorio |
+| `estilos.css` | Diseño |
+| `app.js` | Lógica de la aplicación |
+| `cripto.js` | Cifrado |
+| `github.js` | Lectura y escritura en el repositorio |
 | `manifest.webmanifest`, `icono.svg` | Para instalarla como app en el celular |
 | `datos/` | Se crea sola al activar la app. Todo cifrado. **No la edites a mano.** |
 
 ## Publicar en GitHub (una sola vez)
 
 1. En github.com crea un repositorio nuevo, **público**, por ejemplo `pagos`.
-2. En el repositorio: **Add file → Upload files** y arrastra *todo el contenido* de esta carpeta (incluidas las carpetas `css` y `js`). Luego **Commit changes**.
+2. En el repositorio: **Add file → Upload files** y arrastra todos los archivos de esta carpeta (todos van sueltos, sin subcarpetas). Luego **Commit changes**.
 3. **Settings → Pages** → en *Branch* elige `main` y carpeta `/ (root)` → **Save**. En uno o dos minutos la app queda en `https://<tu-usuario>.github.io/pagos/`.
 
 ## Crear el token (una sola vez)
