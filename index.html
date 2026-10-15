@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="estilos.css?v=3">
+<link rel="stylesheet" href="estilos.css?v=4">
 </head>
 <body>
 
@@ -130,6 +130,7 @@
       <div class="tabs" role="tablist" id="tabs"></div>
       <div class="filters">
         <input id="q" type="search" placeholder="Buscar proveedor, concepto o factura" aria-label="Buscar">
+        <select id="f-aprobador" aria-label="Aprobado por"><option value="">Aprobado por: todos</option></select>
         <select id="sort" aria-label="Ordenar">
           <option value="vence">Vencimiento más cercano</option>
           <option value="valor">Mayor valor</option>
@@ -275,9 +276,9 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="cripto.js?v=3"></script>
-<script src="github.js?v=3"></script>
-<script src="lector.js?v=3"></script>
-<script src="app.js?v=3"></script>
+<script src="cripto.js?v=4"></script>
+<script src="github.js?v=4"></script>
+<script src="lector.js?v=4"></script>
+<script src="app.js?v=4"></script>
 </body>
 </html>

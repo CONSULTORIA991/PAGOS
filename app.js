@@ -77,6 +77,19 @@
     const u = conf && conf.usuarios && conf.usuarios[id];
     return (u && (u.nombre || u.usuario)) || 'Usuario retirado';
   }
+  // Quién aprobó (última vez que el pago pasó a "Se procede") y quién tomó la última decisión.
+  function aprobacion(p) {
+    const h = (p.historial || []).slice().reverse().find((x) => x.estado === 'aprobado');
+    return h ? { por: h.por, en: h.en } : null;
+  }
+  function etiquetaDecision(p) {
+    if (p.estado === 'aprobado' || p.estado === 'pagado') {
+      const a = aprobacion(p);
+      return a ? `Aprobó ${personName(a.por)}` : '';
+    }
+    if (p.estado === 'pendiente' && p.decididoPor) return `Dejó pendiente ${personName(p.decididoPor)}`;
+    return '';
+  }
   function nuevoId() { return [...Cripto.aleatorio(10)].map((b) => b.toString(36).padStart(2, '0')).join('').slice(0, 20); }
   let toastT;
   function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 3400); }
@@ -148,6 +161,7 @@
   function visible() {
     const q = S.q.trim().toLowerCase();
     let arr = S.pagos.filter((p) => (S.tab === 'todos' || p.estado === S.tab));
+    if (S.aprobador) arr = arr.filter((p) => { const a = aprobacion(p); return a && a.por === S.aprobador && (p.estado === 'aprobado' || p.estado === 'pagado'); });
     if (q) arr = arr.filter((p) => [p.proveedor, p.concepto, p.factura].some((x) => String(x || '').toLowerCase().includes(q)));
     const byVence = (a, b) => (a.vence || '9999') < (b.vence || '9999') ? -1 : (a.vence || '9999') > (b.vence || '9999') ? 1 : 0;
     if (S.sort === 'valor') arr.sort((a, b) => (b.valor || 0) - (a.valor || 0));
@@ -191,7 +205,7 @@
           ? `<span>${fechaPagoDe(p) ? 'Pagado el ' + esc(fmtDate(fechaPagoDe(p))) : 'Pagado (sin fecha)'}</span>`
           : `${dueChip(p)}<span>${p.vence ? 'Vence ' + esc(fmtDate(p.vence)) : 'Sin fecha'}</span>`}</div>
         <div class="r-amt">${fmt(p.valor)}</div>
-        <div class="r-act"><span class="r-state pill st-${st}">${ESTADOS[st].label}</span>${decisionButtons(p, true)}</div>
+        <div class="r-act"><span class="r-state-box"><span class="r-state pill st-${st}">${ESTADOS[st].label}</span>${etiquetaDecision(p) ? `<span class="quien">${esc(etiquetaDecision(p))}</span>` : ''}</span>${decisionButtons(p, true)}</div>
       </article>`;
     }).join('');
     const tot = arr.reduce((a, p) => a + (Number(p.valor) || 0), 0);
@@ -268,6 +282,7 @@
         <div><dt>Factura</dt><dd>${esc(p.factura || '—')}</dd></div>
         <div><dt>Vencimiento</dt><dd>${p.vence ? esc(fmtDate(p.vence)) + ' ' + dueChip(p) : '—'}</dd></div>
         ${st === 'pagado' ? `<div><dt>Fecha de pago</dt><dd>${fechaPagoDe(p) ? esc(fmtDate(fechaPagoDe(p))) : 'Sin registrar'}</dd></div>` : ''}
+        ${aprobacion(p) && (st === 'aprobado' || st === 'pagado') ? `<div><dt>Aprobado por</dt><dd>${esc(personName(aprobacion(p).por))}, ${esc(dtFmt.format(new Date(aprobacion(p).en)))}</dd></div>` : ''}
         ${p.decididoPor && p.decididoEn ? `<div><dt>Última decisión</dt><dd>${esc(personName(p.decididoPor))}, ${esc(dtFmt.format(new Date(p.decididoEn)))}</dd></div>` : ''}
       </dl>
       ${p.nota ? `<div class="impact"><span class="section-lbl">Nota</span><span>${esc(p.nota)}</span></div>` : ''}
@@ -279,8 +294,22 @@
     if (!dlg.open) dlg.showModal();
   }
 
+  function renderAprobadores() {
+    const sel = $('#f-aprobador');
+    const ids = new Set();
+    for (const p of S.pagos) { const a = aprobacion(p); if (a && a.por) ids.add(a.por); }
+    const actual = S.aprobador || '';
+    const opciones = ['<option value="">Aprobado por: todos</option>'].concat([...ids].map((id) => `<option value="${esc(id)}">Aprobado por: ${esc(id === uid ? ((conf.usuarios[uid] || {}).nombre || 'Tú') + ' (tú)' : personName(id))}</option>`));
+    const html = opciones.join('');
+    if (sel.dataset.html !== html) { sel.innerHTML = html; sel.dataset.html = html; }
+    sel.value = ids.has(actual) ? actual : '';
+    if (!ids.has(actual)) S.aprobador = '';
+    sel.hidden = ids.size === 0;
+  }
+
   function render() {
     $('#hoy').textContent = dayFmt.format(new Date());
+    renderAprobadores();
     renderLedger(); renderTabs(); renderList(); renderReport();
     if (S.openId) renderDetail();
   }
@@ -764,22 +793,25 @@
       return `<div class="day"><div class="day-head"><h3>${esc(dayFmt.format(new Date(y, m - 1, d)))}</h3><span>${ps.length} ${ps.length === 1 ? 'pago' : 'pagos'} · <strong class="num">${fmt(sub)}</strong></span></div>
         <div class="list">${ps.map((p) => {
           const subl = [p.concepto, p.factura ? 'Fact. ' + p.factura : ''].filter(Boolean).map(esc).join(' · ');
-          return `<article class="row rrow s-pagado" data-row="${p.id}" tabindex="0"><div class="r-main"><div class="r-prov">${esc(p.proveedor || 'Sin proveedor')}</div><div class="r-sub">${subl || '&nbsp;'}${p.archivo ? ' · <span class="clip">Factura adjunta</span>' : ''}</div></div><div class="r-amt">${fmt(p.valor)}</div></article>`;
+          const ap = aprobacion(p);
+          return `<article class="row rrow s-pagado" data-row="${p.id}" tabindex="0"><div class="r-main"><div class="r-prov">${esc(p.proveedor || 'Sin proveedor')}</div><div class="r-sub">${subl || '&nbsp;'}${p.archivo ? ' · <span class="clip">Factura adjunta</span>' : ''}</div>${ap ? `<div class="quien">Aprobó ${esc(personName(ap.por))}</div>` : ''}</div><div class="r-amt">${fmt(p.valor)}</div></article>`;
         }).join('')}</div></div>`;
     }).join('') + nota;
   }
   function descargarReporte() {
     if (!window.XLSX) return;
     const arr = pagosEnRango();
-    const rows = [['Fecha de pago', 'Proveedor', 'Concepto', 'N.º factura', 'Vencimiento', 'Valor pagado', 'Nota']];
+    const rows = [['Fecha de pago', 'Proveedor', 'Concepto', 'N.º factura', 'Vencimiento', 'Valor pagado', 'Aprobado por', 'Fecha aprobación', 'Nota']];
     for (const p of arr) {
       const [y, m, d] = fechaPagoDe(p).split('-').map(Number);
       const v = p.vence ? p.vence.split('-').map(Number) : null;
-      rows.push([new Date(y, m - 1, d), p.proveedor || '', p.concepto || '', p.factura || '', v ? new Date(v[0], v[1] - 1, v[2]) : '', Number(p.valor) || 0, p.nota || '']);
+      const ap = aprobacion(p);
+      const nombreAp = ap ? (ap.por === uid ? ((conf.usuarios[uid] || {}).nombre || 'Administradora') : personName(ap.por)) : '';
+      rows.push([new Date(y, m - 1, d), p.proveedor || '', p.concepto || '', p.factura || '', v ? new Date(v[0], v[1] - 1, v[2]) : '', Number(p.valor) || 0, nombreAp, ap ? new Date(ap.en) : '', p.nota || '']);
     }
-    rows.push([]); rows.push(['', '', '', '', 'Total', arr.reduce((t, p) => t + (Number(p.valor) || 0), 0), '']);
+    rows.push([]); rows.push(['', '', '', '', 'Total', arr.reduce((t, p) => t + (Number(p.valor) || 0), 0), '', '', '']);
     const ws = XLSX.utils.aoa_to_sheet(rows, { cellDates: true, dateNF: 'dd/mm/yyyy' });
-    ws['!cols'] = [{ wch: 14 }, { wch: 34 }, { wch: 40 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 40 }];
+    ws['!cols'] = [{ wch: 14 }, { wch: 34 }, { wch: 40 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 24 }, { wch: 16 }, { wch: 40 }];
     for (let r = 1; r < rows.length; r++) { const c = ws[XLSX.utils.encode_cell({ r, c: 5 })]; if (c && typeof c.v === 'number') c.z = '"$"#,##0'; }
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Pagos realizados');
@@ -1028,6 +1060,11 @@
   $('#r-dl').addEventListener('click', descargarReporte);
   $('#q').addEventListener('input', (e) => { S.q = e.target.value; renderList(); });
   $('#sort').addEventListener('change', (e) => { S.sort = e.target.value; renderList(); });
+  $('#f-aprobador').addEventListener('change', (e) => {
+    S.aprobador = e.target.value;
+    if (S.aprobador && S.tab !== 'aprobado' && S.tab !== 'pagado' && S.tab !== 'todos') { S.tab = 'todos'; renderTabs(); }
+    renderList();
+  });
 
   // ---------- arranque ----------
   async function iniciar() {
