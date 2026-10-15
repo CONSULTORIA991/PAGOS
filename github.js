@@ -40,12 +40,11 @@ const GH = (() => {
     if (r.status === 404) return null;
     if (!r.ok) throw await error(r);
     const j = await r.json();
-    let contenido = (j.content || '').replace(/\n/g, '');
-    if (!contenido && j.size > 0) {
-      const rb = await fetch(`${API}/repos/${cfg.owner}/${cfg.repo}/git/blobs/${j.sha}`, { headers: cabeceras(), cache: 'no-store' });
-      if (!rb.ok) throw await error(rb);
-      contenido = (await rb.json()).content.replace(/\n/g, '');
-    }
+    // El "content" de este endpoint puede venir transcodificado en archivos binarios;
+    // el blob de git devuelve siempre los bytes exactos.
+    const rb = await fetch(`${API}/repos/${cfg.owner}/${cfg.repo}/git/blobs/${j.sha}`, { headers: cabeceras(), cache: 'no-store' });
+    if (!rb.ok) throw await error(rb);
+    const contenido = ((await rb.json()).content || '').replace(/\s/g, '');
     return { sha: j.sha, bytes: Cripto.unb64(contenido), etag: r.headers.get('ETag') };
   }
 
