@@ -21,8 +21,9 @@
   const MIN_CLAVE = 10;
   const SESION_KEY = 'pagos.sesion';
 
-  const ESTADOS = { revisar: { label: 'Por revisar' }, aprobado: { label: 'Se procede' }, pendiente: { label: 'Pendiente' }, pagado: { label: 'Pagado' } };
-  const TABS = [['revisar', 'Por revisar'], ['aprobado', 'Se proceden'], ['pendiente', 'Pendientes'], ['pagado', 'Pagados'], ['todos', 'Todos']];
+  const ESTADOS = { revisar: { label: 'Por revisar' }, aprobado: { label: 'Se procede' }, pendiente: { label: 'Pendiente' }, pagado: { label: 'Pagado' }, rechazado: { label: 'Rechazado' } };
+  const TABS = [['revisar', 'Por revisar'], ['aprobado', 'Se proceden'], ['pendiente', 'Pendientes'], ['pagado', 'Pagados'], ['rechazado', 'Rechazados'], ['todos', 'Todos']];
+  const TIPO_DOC = { cobro: 'Cuenta de cobro', anticipo: 'Anticipo' };
 
   const S = { pagos: [], banco: null, loaded: false, tab: 'revisar', q: '', sort: 'vence', openId: null, confirm: null, view: 'aprob', rDesde: '', rHasta: '', rRange: 'mes', payDate: '' };
   // Sesión: llave maestra, identidad y configuración descifrada.
@@ -79,7 +80,7 @@
   }
   // ---------- datos contables para Siigo ----------
   const SIIGO_DEF = { tipo: 11, cuentaBanco: '11100501', cuentaProv: '22050501', centros: [] };
-  const CUENTAS_CON_VENCIMIENTO = new Set(['22050501', '23359501']);
+  const CUENTAS_CON_VENCIMIENTO = new Set(['22050501', '23359501', '13300501']);
   function siigoConf() { return Object.assign({}, SIIGO_DEF, (conf && conf.siigo) || {}); }
   // "BMB-503" → { prefijo: "BMB", numero: "503" }; "FE 9020" → FE / 9020; "C2329102" → C / 2329102
   function partirFactura(f) {
@@ -132,6 +133,7 @@
       return a ? `Aprobó ${personName(a.por)}` : '';
     }
     if (p.estado === 'pendiente' && p.decididoPor) return `Dejó pendiente ${personName(p.decididoPor)}`;
+    if (p.estado === 'rechazado' && p.decididoPor) return `Rechazó ${personName(p.decididoPor)}`;
     return '';
   }
   function nuevoId() { return [...Cripto.aleatorio(10)].map((b) => b.toString(36).padStart(2, '0')).join('').slice(0, 20); }
@@ -221,6 +223,7 @@
     const out = [];
     if (p.estado !== 'aprobado') out.push(`<button class="btn go${cls}" type="button" data-act="aprobado" data-id="${p.id}"${dis}>Se procede</button>`);
     if (p.estado !== 'pendiente') out.push(`<button class="btn hold${cls}" type="button" data-act="pendiente" data-id="${p.id}"${dis}>Dejar pendiente</button>`);
+    if (!small && p.estado !== 'rechazado') out.push(`<button class="btn no${cls}" type="button" data-act="rechazado" data-id="${p.id}"${dis}>Rechazar</button>`);
     return out.join('');
   }
 
@@ -244,7 +247,7 @@
       const st = ESTADOS[p.estado] ? p.estado : 'revisar';
       const sub = [p.concepto, p.factura ? 'Fact. ' + p.factura : ''].filter(Boolean).map(esc).join(' · ');
       return `<article class="row s-${st}" data-row="${p.id}" tabindex="0">
-        <div class="r-main"><div class="r-prov">${esc(p.proveedor || 'Sin proveedor')}</div><div class="r-sub">${sub || '&nbsp;'}${p.archivo ? ' · <span class="clip">Factura adjunta</span>' : ''}</div></div>
+        <div class="r-main"><div class="r-prov">${TIPO_DOC[p.tipoDoc] ? `<span class="chip doc">${TIPO_DOC[p.tipoDoc]}</span> ` : ''}${esc(p.proveedor || 'Sin proveedor')}</div><div class="r-sub">${sub || '&nbsp;'}${p.archivo ? ` · <span class="clip">${p.tipoDoc ? 'Documento adjunto' : 'Factura adjunta'}</span>` : ''}</div></div>
         <div class="r-due">${st === 'pagado'
           ? `<span>${fechaPagoDe(p) ? 'Pagado el ' + esc(fmtDate(fechaPagoDe(p))) : 'Pagado (sin fecha)'}</span>`
           : `${dueChip(p)}<span>${p.vence ? 'Vence ' + esc(fmtDate(p.vence)) : 'Sin fecha'}</span>`}</div>
@@ -326,6 +329,9 @@
         <div><dt>Factura</dt><dd>${esc(p.factura || '—')}</dd></div>
         <div><dt>Vencimiento</dt><dd>${p.vence ? esc(fmtDate(p.vence)) + ' ' + dueChip(p) : '—'}</dd></div>
         ${st === 'pagado' ? `<div><dt>Fecha de pago</dt><dd>${fechaPagoDe(p) ? esc(fmtDate(fechaPagoDe(p))) : 'Sin registrar'}</dd></div>` : ''}
+        ${TIPO_DOC[p.tipoDoc] ? `<div><dt>Tipo</dt><dd>${TIPO_DOC[p.tipoDoc]} · radicado ${esc(p.radicado || '')}</dd></div>` : ''}
+        ${p.contratista ? `<div><dt>Contratista</dt><dd>C.C. ${esc(p.nit)} · cel. ${esc(p.contratista.celular)}</dd></div>` : ''}
+        ${isAdmin && p.contratista ? `<div><dt>Consignar a</dt><dd>${esc(p.contratista.banco)} · ${esc(p.contratista.tipoCuenta)} · ${esc(p.contratista.numeroCuenta)}</dd></div>` : ''}
         ${isAdmin && (p.nit || p.cc) ? `<div><dt>NIT · Centro de costo</dt><dd>${esc(p.nit || 'Sin NIT')} · ${esc(p.cc ? ccTexto(p.cc) : 'Sin centro de costo')}</dd></div>` : ''}
         ${isAdmin && p.siigo ? `<div><dt>Siigo</dt><dd>Exportado en comprobante ${esc(p.siigo.tipo)}-${esc(p.siigo.comprobante)}</dd></div>` : ''}
         ${aprobacion(p) && (st === 'aprobado' || st === 'pagado') ? `<div><dt>Aprobado por</dt><dd>${esc(personName(aprobacion(p).por))}, ${esc(dtFmt.format(new Date(aprobacion(p).en)))}</dd></div>` : ''}
@@ -334,7 +340,7 @@
       ${p.nota ? `<div class="impact"><span class="section-lbl">Nota</span><span>${esc(p.nota)}</span></div>` : ''}
       ${impact}
       ${renderInvoice(p)}
-      ${canDecide ? `<div class="field"><label for="d-nota">Comentario de la decisión (opcional)</label><input id="d-nota" autocomplete="off" placeholder="Ej. Pagar la próxima semana" value="${esc(notaPrev)}"></div><div class="decide">${p.estado !== 'aprobado' ? `<button class="btn go" type="button" data-act="aprobado" data-id="${p.id}"${busy.has(p.id) ? ' disabled' : ''}>Se procede con este pago</button>` : ''}${p.estado !== 'pendiente' ? `<button class="btn hold" type="button" data-act="pendiente" data-id="${p.id}"${busy.has(p.id) ? ' disabled' : ''}>Dejar pendiente</button>` : ''}</div>` : ''}
+      ${canDecide ? `<div class="field"><label for="d-nota">Comentario de la decisión (opcional)</label><input id="d-nota" autocomplete="off" placeholder="Ej. Pagar la próxima semana" value="${esc(notaPrev)}"></div><div class="decide">${p.estado !== 'aprobado' ? `<button class="btn go" type="button" data-act="aprobado" data-id="${p.id}"${busy.has(p.id) ? ' disabled' : ''}>Se procede con este pago</button>` : ''}${p.estado !== 'pendiente' ? `<button class="btn hold" type="button" data-act="pendiente" data-id="${p.id}"${busy.has(p.id) ? ' disabled' : ''}>Dejar pendiente</button>` : ''}${p.estado !== 'rechazado' ? `<button class="btn no" type="button" data-act="rechazado" data-id="${p.id}"${busy.has(p.id) ? ' disabled' : ''}>Rechazar</button>` : ''}</div>` : ''}
       ${hist ? `<div style="display:grid;gap:8px"><span class="section-lbl">Historial</span><ul class="hist">${hist}</ul></div>` : ''}
       ${adminBox}`;
     if (!dlg.open) dlg.showModal();
@@ -419,7 +425,7 @@
         x.estado = estado; x.decididoPor = uid; x.decididoEn = now;
         x.historial = (x.historial || []).slice(-24).concat([{ estado, por: uid, en: now, nota }]);
       });
-      if (ok) toast(estado === 'aprobado' ? `Se procede: ${p.proveedor}` : estado === 'pendiente' ? `Quedó pendiente: ${p.proveedor}` : `Volvió a por revisar: ${p.proveedor}`);
+      if (ok) toast(estado === 'aprobado' ? `Se procede: ${p.proveedor}` : estado === 'pendiente' ? `Quedó pendiente: ${p.proveedor}` : estado === 'rechazado' ? `Rechazado: ${p.proveedor}` : `Volvió a por revisar: ${p.proveedor}`);
       else toast('Este pago ya no existe.');
       if (notaEl && S.openId === id) notaEl.value = '';
     } catch (e) { writeError(e); }
@@ -1074,6 +1080,245 @@
     catch (e) { conf.siigo = anterior; mostrarError('#siigo-err', msgGitHub(e)); }
   });
 
+  // ---------- cuentas de cobro y anticipos de contratistas (buzón) ----------
+  // El formulario público (cobro.html) cifra cada envío con la llave pública y lo deja como "issue" en un
+  // repositorio privado que sirve de buzón. La app (con la llave privada, guardada cifrada en config)
+  // los recoge, genera el PDF de la cuenta de cobro y los registra como pagos "Por revisar".
+  const R_COBRO_CONF = 'cobro-config.json';
+  const JSPDF = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+  function ofuscar(token) {
+    const clave = Cripto.enc.encode('odesa-buzon');
+    const b = Cripto.enc.encode(token).map((x, i) => x ^ clave[i % clave.length]);
+    return Cripto.b64(b).split('').reverse().join('');
+  }
+  async function apiBuzon(ruta, metodo, cuerpo) {
+    const c = conf.cobros;
+    const r = await fetch(`https://api.github.com/repos/${c.owner}/${c.repo}${ruta}`, {
+      method: metodo || 'GET', cache: 'no-store',
+      headers: { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', Authorization: 'Bearer ' + c.token, ...(cuerpo ? { 'Content-Type': 'application/json' } : {}) },
+      body: cuerpo ? JSON.stringify(cuerpo) : undefined,
+    });
+    if (!r.ok && r.status !== 204) throw { status: r.status };
+    return r.status === 204 ? null : r.json();
+  }
+  function enlacesCobro() {
+    const base = location.origin + location.pathname.replace(/[^/]*$/, '');
+    return { cobro: base + 'cobro.html?tipo=cobro', anticipo: base + 'cobro.html?tipo=anticipo' };
+  }
+  function renderCobrosConf() {
+    const c = conf.cobros;
+    $('#cb-activo').hidden = !c;
+    $('#cb-repo').value = (c && c.repo) || '';
+    $('#cb-token').value = '';
+    $('#cb-btn').textContent = c ? 'Actualizar buzón' : 'Activar enlaces';
+    mostrarError('#cb-err', '');
+    if (!c) return;
+    const l = enlacesCobro();
+    $('#cb-estado').textContent = `✓ Activo. Los envíos llegan al buzón ${c.owner}/${c.repo} y entran a la app como “Por revisar”.`;
+    $('#cb-link-cobro').value = l.cobro; $('#cb-link-anticipo').value = l.anticipo;
+    $('#cb-wa-cobro').href = 'https://wa.me/?text=' + encodeURIComponent('Hola. Para cobrar a ODESA llena tu cuenta de cobro aquí (desde el celular): ' + l.cobro);
+    $('#cb-wa-anticipo').href = 'https://wa.me/?text=' + encodeURIComponent('Hola. Para solicitar el anticipo a ODESA llena el formulario aquí (desde el celular): ' + l.anticipo);
+  }
+  $('#cb-form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const repo = $('#cb-repo').value.trim().replace(/^.*\//, '');
+    const token = $('#cb-token').value.trim() || (conf.cobros && conf.cobros.token) || '';
+    if (!repo) return mostrarError('#cb-err', 'Escribe el nombre del repositorio buzón.');
+    if (!token) return mostrarError('#cb-err', 'Pega el token del buzón.');
+    if (repo.toLowerCase() === String(conf.repo).toLowerCase()) return mostrarError('#cb-err', 'El buzón debe ser un repositorio distinto al de la app.');
+    if (token === conf.token) return mostrarError('#cb-err', 'Usa un token distinto al de la app: este queda en el formulario público.');
+    const btn = $('#cb-btn'); btn.disabled = true; btn.textContent = 'Verificando…';
+    const anterior = conf.cobros;
+    try {
+      const owner = conf.owner;
+      const r = await fetch(`https://api.github.com/repos/${owner}/${repo}`, { headers: { Accept: 'application/vnd.github+json', Authorization: 'Bearer ' + token }, cache: 'no-store' });
+      if (!r.ok) { mostrarError('#cb-err', r.status === 404 ? 'No encontré el repositorio buzón o el token no tiene acceso a él.' : 'El token del buzón no es válido (error ' + r.status + ').'); return; }
+      const info = await r.json();
+      if (!info.private) { mostrarError('#cb-err', 'El repositorio buzón debe ser privado.'); return; }
+      let pub = anterior && anterior.pub, priv = anterior && anterior.priv;
+      if (!pub || !priv) {
+        btn.textContent = 'Creando llaves…';
+        const par = await crypto.subtle.generateKey({ name: 'RSA-OAEP', modulusLength: 3072, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['encrypt', 'decrypt']);
+        pub = await crypto.subtle.exportKey('jwk', par.publicKey);
+        priv = await crypto.subtle.exportKey('jwk', par.privateKey);
+      }
+      conf.cobros = { owner, repo, token, pub, priv };
+      await guardarConfig();
+      const actual = await GH.leer(R_COBRO_CONF);
+      const publico = { v: 1, owner, repo, t: ofuscar(token), pub: { kty: pub.kty, n: pub.n, e: pub.e, alg: pub.alg, ext: true } };
+      await GH.escribir(R_COBRO_CONF, Cripto.enc.encode(JSON.stringify(publico, null, 1)), actual && actual.sha);
+      renderCobrosConf();
+      toast('Enlaces activos. En 1 o 2 minutos quedan publicados.');
+    } catch (e) { conf.cobros = anterior; mostrarError('#cb-err', msgGitHub(e)); }
+    finally { btn.disabled = false; if (!conf.cobros) btn.textContent = 'Activar enlaces'; }
+  });
+
+  // Número en letras para la cuenta de cobro
+  function numeroALetras(n) {
+    n = Math.round(Number(n) || 0);
+    if (!n) return 'CERO PESOS M/CTE';
+    const U = ['', 'UN', 'DOS', 'TRES', 'CUATRO', 'CINCO', 'SEIS', 'SIETE', 'OCHO', 'NUEVE', 'DIEZ', 'ONCE', 'DOCE', 'TRECE', 'CATORCE', 'QUINCE', 'DIECISÉIS', 'DIECISIETE', 'DIECIOCHO', 'DIECINUEVE', 'VEINTE', 'VEINTIÚN', 'VEINTIDÓS', 'VEINTITRÉS', 'VEINTICUATRO', 'VEINTICINCO', 'VEINTISÉIS', 'VEINTISIETE', 'VEINTIOCHO', 'VEINTINUEVE'];
+    const D = ['', '', '', 'TREINTA', 'CUARENTA', 'CINCUENTA', 'SESENTA', 'SETENTA', 'OCHENTA', 'NOVENTA'];
+    const C = ['', 'CIENTO', 'DOSCIENTOS', 'TRESCIENTOS', 'CUATROCIENTOS', 'QUINIENTOS', 'SEISCIENTOS', 'SETECIENTOS', 'OCHOCIENTOS', 'NOVECIENTOS'];
+    const cien = (x) => {
+      if (x === 100) return 'CIEN';
+      const c = Math.floor(x / 100), r = x % 100;
+      const dec = r < 30 ? U[r] : D[Math.floor(r / 10)] + (r % 10 ? ' Y ' + U[r % 10] : '');
+      return [C[c], dec].filter(Boolean).join(' ');
+    };
+    const millones = Math.floor(n / 1e6), miles = Math.floor((n % 1e6) / 1000), resto = n % 1000;
+    const p = [];
+    if (millones) p.push(millones === 1 ? 'UN MILLÓN' : cien(millones) + ' MILLONES');
+    if (miles) p.push(miles === 1 ? 'MIL' : cien(miles) + ' MIL');
+    if (resto) p.push(cien(resto));
+    return p.join(' ') + (millones && !miles && !resto ? ' DE' : '') + ' PESOS M/CTE';
+  }
+  const fmtCedula = (c) => new Intl.NumberFormat('es-CO').format(Number(c) || 0);
+  function cargarScriptApp(src) {
+    return new Promise((ok, mal) => {
+      if (document.querySelector(`script[src="${src}"]`) && window.jspdf) return ok();
+      const s = document.createElement('script'); s.src = src; s.onload = () => ok(); s.onerror = () => mal(new Error('jsPDF')); document.head.appendChild(s);
+    });
+  }
+  async function generarCuentaPDF(x, numero) {
+    await cargarScriptApp(JSPDF);
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit: 'mm', format: 'letter' });
+    const W = 215.9, izq = 22, ancho = W - 44;
+    let y = 24;
+    const anticipo = x.tipo === 'anticipo';
+    const fechaTxt = new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(x.fecha));
+    const titulo = (t) => { doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5); doc.text(t, izq, y); y += 5.5; doc.setFont('helvetica', 'normal'); doc.setFontSize(11); };
+    const parrafo = (t, extra) => { const l = doc.splitTextToSize(t, ancho); doc.text(l, izq, y); y += l.length * 5.4 + (extra || 0); };
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(17);
+    doc.text(anticipo ? 'SOLICITUD DE ANTICIPO' : 'CUENTA DE COBRO', W / 2, y, { align: 'center' }); y += 7;
+    doc.setFontSize(12); doc.text('N.º ' + numero, W / 2, y, { align: 'center' }); y += 13;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(11);
+    doc.text('Barranquilla, ' + fechaTxt, izq, y); y += 12;
+    doc.setFont('helvetica', 'bold'); doc.text('ODESA CARIBE S.A.S.', izq, y); y += 5.4;
+    doc.setFont('helvetica', 'normal'); doc.text('NIT 900.409.543-1', izq, y); y += 12;
+    titulo(anticipo ? 'SOLICITA ANTICIPO A FAVOR DE:' : 'DEBE A:');
+    parrafo(x.nombre.toUpperCase());
+    parrafo(`C.C. ${fmtCedula(x.cedula)}   ·   Celular ${x.celular}`, 7);
+    titulo('LA SUMA DE:');
+    doc.setFont('helvetica', 'bold'); parrafo(fmt(x.valor)); doc.setFont('helvetica', 'normal');
+    parrafo('(' + numeroALetras(x.valor) + ')', 7);
+    titulo('POR CONCEPTO DE:');
+    parrafo(x.descripcion, 1);
+    if (x.proyecto) parrafo('Proyecto: ' + x.proyecto, 7); else y += 6;
+    titulo('DATOS PARA EL PAGO:');
+    parrafo(`${x.banco} · ${x.tipoCuenta} · N.º ${x.numeroCuenta} · Titular: ${x.nombre}`, 9);
+    doc.setFontSize(9.5);
+    parrafo(anticipo
+      ? 'Declaro que la información suministrada es verídica y que el valor del anticipo será descontado del valor total del trabajo o compra.'
+      : 'Declaro bajo la gravedad de juramento que la información suministrada es verídica, que presté el servicio descrito y que no soy responsable del impuesto sobre las ventas (IVA).', 8);
+    doc.setFontSize(11);
+    if (x.firma) {
+      const pr = doc.getImageProperties(x.firma);
+      const fw = 70, fh = Math.min(30, fw * pr.height / pr.width);
+      doc.addImage(x.firma, 'PNG', izq, y, fw, fh, undefined, 'FAST'); y += fh + 1;
+    }
+    doc.line(izq, y, izq + 80, y); y += 5;
+    doc.text(x.nombre, izq, y); y += 5; doc.text('C.C. ' + fmtCedula(x.cedula), izq, y);
+    doc.setFontSize(8); doc.setTextColor(110);
+    doc.text(`Radicado ${x.radicado} · enviado el ${new Date(x.fecha).toLocaleString('es-CO')} desde el formulario de ODESA · firma digital del contratista`, izq, 268);
+    doc.setTextColor(0);
+    if (x.foto) {
+      doc.addPage();
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.text('Documento de identidad', izq, 22);
+      const pr = doc.getImageProperties(x.foto);
+      let fw = ancho, fh = fw * pr.height / pr.width;
+      if (fh > 220) { fh = 220; fw = fh * pr.width / pr.height; }
+      doc.addImage(x.foto, 'JPEG', izq, 28, fw, fh);
+    }
+    return doc.output('blob');
+  }
+
+  let revisandoBuzon = false;
+  async function revisarBuzon() {
+    if (!isAdmin || !conf || !conf.cobros || !conf.cobros.priv || revisandoBuzon) return;
+    revisandoBuzon = true;
+    try {
+      const issues = (await apiBuzon('/issues?state=open&per_page=30&sort=created&direction=asc'))
+        .filter((i) => !i.pull_request && /^buzon-v1/.test(i.body || ''));
+      if (!issues.length) return;
+      const llavePriv = await crypto.subtle.importKey('jwk', conf.cobros.priv, { name: 'RSA-OAEP', hash: 'SHA-256' }, false, ['decrypt']);
+      const recibidos = [];
+      for (const is of issues) {
+        try {
+          const partes = Number(((is.body.match(/partes=(\d+)/) || [])[1]) || 1);
+          let sobre = is.body.slice(is.body.indexOf('\n') + 1);
+          let comentarios = [];
+          if (partes > 1) {
+            comentarios = (await apiBuzon(`/issues/${is.number}/comments?per_page=100`)).sort((a, b) => a.id - b.id);
+            for (let k = 2; k <= partes; k++) {
+              const cm = comentarios.find((c) => (c.body || '').startsWith(`parte ${k}\n`));
+              if (!cm) throw new Error('incompleto');
+              sobre += cm.body.slice(cm.body.indexOf('\n') + 1);
+            }
+          }
+          const s = JSON.parse(sobre);
+          const llave = new Uint8Array(await crypto.subtle.decrypt({ name: 'RSA-OAEP' }, llavePriv, Cripto.unb64(s.ek)));
+          const datos = await Cripto.descifrarJSON(await Cripto.importarMaestra(llave), Cripto.unb64(s.ct));
+          recibidos.push({ is, datos, comentarios });
+        } catch (e) { /* envío incompleto o dañado: se deja en el buzón */ }
+      }
+      if (!recibidos.length) return;
+      const nuevos = recibidos.filter((r) => !S.pagos.some((p) => p.radicado === r.datos.radicado));
+      // Reservar los consecutivos (CC-n para cuentas de cobro, AN-n para anticipos)
+      let base = null;
+      if (nuevos.length) {
+        await mutar((d) => {
+          d.cobros = d.cobros || { cc: 0, an: 0 };
+          base = { ...d.cobros };
+          d.cobros.cc += nuevos.filter((r) => r.datos.tipo !== 'anticipo').length;
+          d.cobros.an += nuevos.filter((r) => r.datos.tipo === 'anticipo').length;
+        });
+      }
+      const pagosNuevos = [];
+      for (const r of nuevos) {
+        const x = r.datos;
+        const anticipo = x.tipo === 'anticipo';
+        const numero = anticipo ? 'AN-' + (++base.an) : 'CC-' + (++base.cc);
+        const pdf = await generarCuentaPDF(x, numero);
+        const archivo = new File([pdf], `${anticipo ? 'Anticipo' : 'Cuenta de cobro'} ${numero} ${x.nombre}.pdf`, { type: 'application/pdf' });
+        const adj = await subirFactura(archivo);
+        pagosNuevos.push({
+          id: nuevoId(), tipoDoc: anticipo ? 'anticipo' : 'cobro', radicado: x.radicado,
+          proveedor: x.nombre, nit: x.cedula, concepto: x.descripcion.slice(0, 120), factura: numero, valor: Math.round(x.valor),
+          vence: localISO(new Date(x.fecha)), estado: 'revisar', nota: x.proyecto ? 'Proyecto: ' + x.proyecto : '', fechaPago: '',
+          contratista: { celular: x.celular, banco: x.banco, tipoCuenta: x.tipoCuenta, numeroCuenta: x.numeroCuenta },
+          cuenta: anticipo ? '13300501' : '22050501', cc: matchCentro(x.proyecto + ' ' + x.descripcion), ...adj,
+          creado: x.fecha, creadoPor: null,
+          historial: [{ estado: 'revisar', por: null, en: x.fecha, nota: `Enviada por ${x.nombre} desde el enlace (radicado ${x.radicado})` }],
+        });
+      }
+      if (pagosNuevos.length) {
+        await mutar((d) => { for (const p of pagosNuevos) if (!d.pagos.some((y) => y.radicado === p.radicado)) d.pagos.push(p); });
+        render();
+        const nc = pagosNuevos.filter((p) => p.tipoDoc === 'cobro').length, na = pagosNuevos.length - nc;
+        toast(`Llegaron ${[nc && nc + (nc === 1 ? ' cuenta de cobro' : ' cuentas de cobro'), na && na + (na === 1 ? ' solicitud de anticipo' : ' solicitudes de anticipo')].filter(Boolean).join(' y ')} al buzón.`);
+      }
+      // Vaciar y cerrar los envíos ya registrados (los datos quedan solo en la app)
+      for (const r of recibidos) {
+        try {
+          for (const cm of r.comentarios) await apiBuzon(`/issues/comments/${cm.id}`, 'DELETE');
+          await apiBuzon(`/issues/${r.is.number}`, 'PATCH', { state: 'closed', body: 'procesado ' + r.datos.radicado });
+        } catch (e) { /* se reintenta en la próxima revisión; el radicado evita duplicados */ }
+      }
+    } catch (e) {
+      if (e && e.status === 401) notice('El token del buzón de contratistas venció o no es válido. Actualízalo en Usuarios → Enlaces para contratistas.');
+    } finally { revisandoBuzon = false; }
+  }
+
+  document.addEventListener('click', async (ev) => {
+    const b = ev.target.closest('[data-copiar]');
+    if (!b) return;
+    const input = document.getElementById(b.dataset.copiar);
+    try { await navigator.clipboard.writeText(input.value); toast('Enlace copiado.'); }
+    catch (e) { input.select(); toast('Selecciona el enlace y cópialo.'); }
+  });
+
   // ---------- usuarios y contraseñas ----------
   async function leerUsuarios() {
     const f = await GH.leer(R_USUARIOS);
@@ -1097,7 +1342,7 @@
     $('#c-estado').textContent = conf.claudeKey ? '✓ Lectura con Claude activada.' : 'Lectura con Claude desactivada (se usa el lector propio).';
     $('#c-quitar').hidden = !conf.claudeKey;
   }
-  function openUsuarios() { renderUsuarios(); renderClaude(); renderSiigoConf(); mostrarError('#user-err', ''); mostrarError('#token-err', ''); mostrarError('#claude-err', ''); $('#user-form').reset(); $('#t-token').value = ''; $('#c-clave').value = ''; $('#dlg-users').showModal(); }
+  function openUsuarios() { renderUsuarios(); renderClaude(); renderSiigoConf(); renderCobrosConf(); mostrarError('#user-err', ''); mostrarError('#token-err', ''); mostrarError('#claude-err', ''); $('#user-form').reset(); $('#t-token').value = ''; $('#c-clave').value = ''; $('#dlg-users').showModal(); }
 
   $('#claude-form').addEventListener('submit', async (ev) => {
     ev.preventDefault();
@@ -1208,6 +1453,7 @@
     render();
     $('#sync').textContent = 'Actualizado ' + new Intl.DateTimeFormat('es-CO', { hour: 'numeric', minute: '2-digit' }).format(new Date());
     setInterval(sincronizar, 30000);
+    if (isAdmin) { revisarBuzon(); setInterval(revisarBuzon, 120000); }
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') sincronizar(); });
   }
 

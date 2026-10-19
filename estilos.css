@@ -133,6 +133,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .st-aprobado { background: var(--ok-soft); color: var(--ok); }
 .st-pendiente { background: var(--warn-soft); color: var(--warn); }
 .st-pagado { background: var(--paid-soft); color: var(--paid); }
+.st-rechazado { background: var(--bad-soft); color: var(--bad); }
+.row.s-rechazado { border-left-color: var(--bad); opacity: .8; }
+.btn.no { background: var(--bad-soft); border-color: transparent; color: var(--bad); }
+.chip.doc { background: var(--accent-soft); color: var(--accent); }
 .chip { font-size: .76rem; font-weight: 600; padding: 1px 7px; border-radius: 5px; }
 .chip.late { background: var(--bad-soft); color: var(--bad); }
 .chip.soon { background: var(--warn-soft); color: var(--warn); }

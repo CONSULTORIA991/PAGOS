@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="estilos.css?v=5">
+<link rel="stylesheet" href="estilos.css?v=6">
 </head>
 <body>
 
@@ -188,7 +188,7 @@
       <div class="field full admin-only-siigo"><span class="section-lbl">Para Siigo</span></div>
       <div class="field admin-only-siigo"><label for="f-nit">NIT del proveedor (sin DV)</label><input id="f-nit" inputmode="numeric" autocomplete="off" placeholder="900222212"></div>
       <div class="field admin-only-siigo"><label for="f-cuenta">Cuenta débito</label>
-        <select id="f-cuenta"><option value="22050501">22050501 · Proveedores nacionales</option><option value="25050501">25050501 · Salarios por pagar (nómina)</option><option value="23352501">23352501 · Honorarios</option><option value="23359501">23359501 · Otros costos y gastos por pagar</option></select>
+        <select id="f-cuenta"><option value="22050501">22050501 · Proveedores nacionales</option><option value="25050501">25050501 · Salarios por pagar (nómina)</option><option value="23352501">23352501 · Honorarios</option><option value="23359501">23359501 · Otros costos y gastos por pagar</option><option value="13300501">13300501 · Anticipos a proveedores</option></select>
       </div>
       <div class="field full admin-only-siigo"><label for="f-cc">Centro de costo</label><input id="f-cc" list="cc-lista" autocomplete="off" placeholder="Escribe el nombre de la obra o el código"><datalist id="cc-lista"></datalist><span class="hint" id="f-cc-hint"></span></div>
       <div class="err full" id="form-err" hidden></div>
@@ -276,6 +276,22 @@
       <div class="err" id="token-err" hidden></div>
     </div>
     <div class="admin-box">
+      <span class="section-lbl">Enlaces para contratistas (cuentas de cobro y anticipos)</span>
+      <p style="margin:0;color:var(--muted);font-size:.9rem">Los contratistas llenan un formulario sin usuario; el envío llega cifrado a un <b>repositorio privado de GitHub que sirve de buzón</b> y la app lo convierte en un pago “Por revisar” con su cuenta de cobro en PDF.</p>
+      <div id="cb-activo" hidden>
+        <p style="margin:0;font-size:.9rem" id="cb-estado"></p>
+        <div class="field"><label for="cb-link-cobro">Enlace para cuentas de cobro</label><div class="pay-date"><input id="cb-link-cobro" readonly style="flex:1 1 220px"><button class="btn sm" type="button" data-copiar="cb-link-cobro">Copiar</button><a class="btn sm" id="cb-wa-cobro" target="_blank" rel="noopener">WhatsApp</a></div></div>
+        <div class="field"><label for="cb-link-anticipo">Enlace para anticipos</label><div class="pay-date"><input id="cb-link-anticipo" readonly style="flex:1 1 220px"><button class="btn sm" type="button" data-copiar="cb-link-anticipo">Copiar</button><a class="btn sm" id="cb-wa-anticipo" target="_blank" rel="noopener">WhatsApp</a></div></div>
+      </div>
+      <form id="cb-form" class="grid" novalidate>
+        <div class="field"><label for="cb-repo">Repositorio buzón (privado)</label><input id="cb-repo" autocapitalize="none" placeholder="PAGOS-BUZON"></div>
+        <div class="field"><label for="cb-token">Token del buzón</label><input id="cb-token" type="password" autocomplete="off" placeholder="github_pat_…"></div>
+        <span class="hint full">Token fino con acceso <b>solo al repositorio buzón</b> y permiso <b>Issues: Read and write</b> (ningún otro). Este token va en el formulario público; por eso no debe servir para nada más.</span>
+        <div class="err full" id="cb-err" hidden></div>
+        <div class="form-actions full"><button class="btn sm primary" type="submit" id="cb-btn">Activar enlaces</button></div>
+      </form>
+    </div>
+    <div class="admin-box">
       <span class="section-lbl">Siigo</span>
       <p style="margin:0;color:var(--muted);font-size:.9rem">Datos para el modelo de importación de comprobantes. Los centros de costo se cargan desde el Excel que descargas de Siigo y quedan guardados cifrados.</p>
       <form id="siigo-form" class="grid" novalidate>
@@ -312,9 +328,9 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="cripto.js?v=5"></script>
-<script src="github.js?v=5"></script>
-<script src="lector.js?v=5"></script>
-<script src="app.js?v=5"></script>
+<script src="cripto.js?v=6"></script>
+<script src="github.js?v=6"></script>
+<script src="lector.js?v=6"></script>
+<script src="app.js?v=6"></script>
 </body>
 </html>
