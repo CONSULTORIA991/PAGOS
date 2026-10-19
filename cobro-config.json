@@ -1,0 +1,13 @@
+{
+ "v": 1,
+ "owner": "consultoria991",
+ "repo": "PAGOS-BUZON",
+ "t": "TtgATYwPOYDIrgGI1QTK4oDXKZBOURFQScjP+MACasxZQUjVTUhJKszIXxHKGVlLsolCLEBJ6VQOWABMnoVDsoiZ4whIo0jHfNzJ60HJhYSVeFzGbUQPPRxGR0AC",
+ "pub": {
+  "kty": "RSA",
+  "n": "7AD4wtBlohyEMKqGuOJ5S3TAh1HtKsnnC7MtR3qkJ8PHcP9p9WP4A8U0ZrGMCQqhKL9yvnan-y4PYGL8EysVF4L-pVCHUVoGWJPGojbF_NYlqeVg3BlVvkgWNjpYy9osWYP_5RJHtAUEV6IGuaWcSXNNJ2wL4ztlZFtfDDmJLCEznvAFxIul1p7IpSaano9xyC74xa_iEyBQoPHUccXNzLaY97G_OyPcxqMb8hJcsOUsgTWWhaupDoH5-QGkXYVjTsSOm4gxpErknOzVFGdnF1ddGw9eg45XjFw6Kg0_NR29MdbLZvzwOEmt4bjlS-lDdzJZiq1lav6f1mnBljCaLdP83Wg9xQh8G2u8IukUJh-Blr0WH7ChdR_-XYUuvTqjCCHp-K85EuSmuk9NBeOezF8sy4JrQekhUhCFRFfr3prqBH_Kv84JfUq6VNLNoIdU0KI_fzzNwpYjaM-w5bv9gGvlMXt3c3SqZlVGWHcUvfTJp40O0N0PTjtVxZRlQzxH",
+  "e": "AQAB",
+  "alg": "RSA-OAEP-256",
+  "ext": true
+ }
+}
