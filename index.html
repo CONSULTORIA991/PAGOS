@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="estilos.css?v=6">
+<link rel="stylesheet" href="estilos.css?v=7">
 </head>
 <body>
 
@@ -89,6 +89,7 @@
   <nav class="views" aria-label="Secciones">
     <button class="vbtn" type="button" data-view="aprob" aria-pressed="true">Aprobación de pagos</button>
     <button class="vbtn" type="button" data-view="rep" aria-pressed="false">Reporte de pagos realizados</button>
+    <button class="vbtn" type="button" data-view="cart" aria-pressed="false">Cartera</button>
   </nav>
 
   <div class="notice" id="notice" hidden></div>
@@ -123,6 +124,7 @@
           <span><i style="background:var(--ok);opacity:.55"></i>Libre en banco</span>
         </div>
         <div class="whatif" id="whatif"></div>
+        <div class="whatif" id="cart-resumen" hidden></div>
       </div>
     </section>
 
@@ -164,7 +166,62 @@
     <section class="rep-sum" id="r-sum"></section>
     <section class="rep-days" id="r-list"></section>
   </div>
+
+  <div class="view" id="view-cart" hidden>
+    <section class="rep-sum" id="c-sum"></section>
+    <div class="controls">
+      <div class="tabs" role="tablist" id="c-tabs"></div>
+      <div class="filters">
+        <input id="c-q" type="search" placeholder="Buscar cliente, factura o descripción" aria-label="Buscar en cartera">
+        <select id="c-tipo" aria-label="Tipo"><option value="">Todos los tipos</option><option value="factura">Facturas</option><option value="retegarantia">Retegarantías</option><option value="anticipo">Anticipos</option></select>
+        <span class="top-actions" id="c-admin" hidden>
+          <button class="btn" id="c-btn-import" type="button">Importar Excel de cartera</button>
+          <button class="btn" id="c-btn-dl" type="button">Descargar Excel</button>
+          <button class="btn primary" id="c-btn-add" type="button">+ Agregar</button>
+        </span>
+      </div>
+    </div>
+    <section class="list" id="c-list"><div class="empty"><h3>Cargando cartera…</h3></div></section>
+    <div class="list-foot" id="c-foot"></div>
+  </div>
 </div>
+
+<!-- Detalle de cartera -->
+<dialog class="sheet" id="dlg-cart"><div class="dlg" id="cart-detail"></div></dialog>
+
+<!-- Agregar / editar cartera -->
+<dialog id="dlg-cart-form">
+  <div class="dlg">
+    <div class="dlg-head"><h2 id="cf-title">Agregar a cartera</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
+    <form class="grid" id="cart-form" novalidate>
+      <div class="field"><label for="cf-tipo">Tipo</label><select id="cf-tipo"><option value="factura">Factura de venta</option><option value="anticipo">Anticipo de cliente</option><option value="retegarantia">Retegarantía / devolución de retención</option></select></div>
+      <div class="field"><label for="cf-doc">Comprobante</label><input id="cf-doc" autocomplete="off" placeholder="FV-2-726 o CC-64"></div>
+      <div class="field full"><label for="cf-cliente">Cliente</label><input id="cf-cliente" autocomplete="off" required></div>
+      <div class="field"><label for="cf-nit">NIT</label><input id="cf-nit" inputmode="numeric" autocomplete="off"></div>
+      <div class="field"><label for="cf-fecha">Fecha de elaboración</label><input id="cf-fecha" type="date"></div>
+      <div class="field"><label for="cf-valor">Valor facturado (COP)</label><input id="cf-valor" inputmode="decimal" autocomplete="off" required></div>
+      <div class="field"><label for="cf-neto">Valor a recibir (COP)</label><input id="cf-neto" inputmode="decimal" autocomplete="off" placeholder="Si es distinto, por anticipo o retenciones"></div>
+      <div class="field"><label for="cf-vence">Vencimiento</label><input id="cf-vence" type="date"></div>
+      <div class="field"><label for="cf-proyecto">Proyecto</label><input id="cf-proyecto" autocomplete="off"></div>
+      <div class="field full"><label for="cf-desc">Descripción</label><textarea id="cf-desc"></textarea></div>
+      <div class="field full"><label for="cf-obs">Observación</label><textarea id="cf-obs"></textarea></div>
+      <div class="field full"><label for="cf-arch">Documentos (PDF o imagen)</label><input id="cf-arch" type="file" multiple accept="application/pdf,image/png,image/jpeg,image/webp"></div>
+      <div class="err full" id="cf-err" hidden></div>
+      <div class="form-actions full"><button class="btn" type="button" data-close>Cancelar</button><button class="btn primary" type="submit" id="cf-save">Guardar</button></div>
+    </form>
+  </div>
+</dialog>
+
+<!-- Importar Excel de cartera -->
+<dialog class="sheet" id="dlg-cart-import">
+  <div class="dlg">
+    <div class="dlg-head"><h2>Importar Excel de cartera</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
+    <p style="margin:0;color:var(--muted)">Sube <b>Cartera.xlsx</b>. Se leen las hojas <b>CARTERA</b> y <b>ANTICIPOS Y GARANTIAS</b> con sus estados, fechas y valores pagados. Lo que ya esté en la app (mismo comprobante) se actualiza en lugar de duplicarse. Los pagos históricos <b>no</b> mueven el saldo en banco.</p>
+    <div class="field"><label for="ci-file">Archivo</label><input id="ci-file" type="file" accept=".xlsx,.xls"></div>
+    <div id="ci-result"></div>
+    <div class="form-actions"><button class="btn" type="button" data-close>Cancelar</button><button class="btn primary" type="button" id="ci-go" disabled>Importar</button></div>
+  </div>
+</dialog>
 
 <!-- Detalle de un pago -->
 <dialog class="sheet" id="dlg-detail"><div class="dlg" id="detail"></div></dialog>
@@ -276,6 +333,13 @@
       <div class="err" id="token-err" hidden></div>
     </div>
     <div class="admin-box">
+      <span class="section-lbl">Tarea automática de cartera (carpeta FACTURAS DE VENTA)</span>
+      <p style="margin:0;color:var(--muted);font-size:.9rem">Crea un usuario técnico para que la tarea del computador pueda guardar en la app las facturas de venta nuevas. Se descarga un archivo <b>robot-cartera.json</b> con su acceso; guárdalo solo en tu PC y no lo compartas.</p>
+      <p style="margin:0;font-size:.9rem" id="rb-estado"></p>
+      <div class="form-actions" style="justify-content:flex-start"><button class="btn sm primary" type="button" id="rb-crear">Crear acceso y descargar archivo</button></div>
+      <div class="err" id="rb-err" hidden></div>
+    </div>
+    <div class="admin-box">
       <span class="section-lbl">Enlaces para contratistas (cuentas de cobro y anticipos)</span>
       <p style="margin:0;color:var(--muted);font-size:.9rem">Los contratistas llenan un formulario sin usuario; el envío llega cifrado a un <b>repositorio privado de GitHub que sirve de buzón</b> y la app lo convierte en un pago “Por revisar” con su cuenta de cobro en PDF.</p>
       <div id="cb-activo" hidden>
@@ -328,9 +392,9 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="cripto.js?v=6"></script>
-<script src="github.js?v=6"></script>
-<script src="lector.js?v=6"></script>
-<script src="app.js?v=6"></script>
+<script src="cripto.js?v=7"></script>
+<script src="github.js?v=7"></script>
+<script src="lector.js?v=7"></script>
+<script src="app.js?v=7"></script>
 </body>
 </html>

@@ -364,6 +364,7 @@
     renderAprobadores();
     renderLedger(); renderTabs(); renderList(); renderReport();
     if (S.openId) renderDetail();
+    renderCartResumen(); renderCartera();
   }
 
   // ---------- datos: lectura, sincronización y escritura ----------
@@ -379,7 +380,9 @@
   async function sincronizar() {
     if (!maestra || escribiendo || document.visibilityState !== 'visible') return;
     try {
-      if (await cargarDatos()) render();
+      const a = await cargarDatos();
+      const b = await cargarCartera();
+      if (a || b) render();
       $('#sync').textContent = 'Actualizado ' + new Intl.DateTimeFormat('es-CO', { hour: 'numeric', minute: '2-digit' }).format(new Date());
       notice('');
     } catch (e) {
@@ -820,12 +823,14 @@
   $('#r-desde').addEventListener('change', onDateInput);
   $('#r-hasta').addEventListener('change', onDateInput);
   function setView(v) {
-    S.view = v === 'rep' ? 'rep' : 'aprob';
+    S.view = ['rep', 'cart'].includes(v) ? v : 'aprob';
     try { localStorage.setItem('pagos.view', S.view); } catch (e) {}
     document.querySelectorAll('[data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === S.view)));
     $('#view-aprob').hidden = S.view !== 'aprob';
     $('#view-rep').hidden = S.view !== 'rep';
+    $('#view-cart').hidden = S.view !== 'cart';
     if (S.view === 'rep') renderReport();
+    if (S.view === 'cart' && typeof renderCartera === 'function') renderCartera();
   }
   function pagosEnRango() {
     let a = S.rDesde, b = S.rHasta;
@@ -1319,6 +1324,466 @@
     catch (e) { input.select(); toast('Selecciona el enlace y cópialo.'); }
   });
 
+  // ---------- cartera (facturas de venta, anticipos de clientes y retegarantías) ----------
+  // Se guarda cifrada en su propio archivo. Solo los cobros registrados (dinero recibido) suman al saldo en banco.
+  const R_CARTERA = 'datos/cartera.enc';
+  const CE = { pendiente: 'Pendiente', reclamacion: 'Reclamación', pagado: 'Pagada', anulada: 'Anulada', cruzada: 'Cruzada', castigada: 'Castigada', rechazada: 'Rechazada' };
+  const CE_CLASE = { pendiente: 'revisar', reclamacion: 'pendiente', pagado: 'aprobado', anulada: 'rechazado', castigada: 'rechazado', rechazada: 'rechazado', cruzada: 'pagado' };
+  const CT = { factura: 'Factura', anticipo: 'Anticipo', retegarantia: 'Retegarantía' };
+  const CTABS = [['cobrar', 'Por cobrar'], ['pagado', 'Pagadas'], ['otras', 'Anuladas y otras'], ['todas', 'Todas']];
+  const C = { items: [], loaded: false, tab: 'cobrar', q: '', tipo: '', openId: null };
+  let etagCartera = null;
+
+  async function cargarCartera() {
+    const r = await GH.leer(R_CARTERA, { etag: etagCartera });
+    if (r && r.sinCambios) return false;
+    const d = r ? await Cripto.descifrarJSON(maestra, r.bytes) : { items: [] };
+    etagCartera = r ? r.etag : null;
+    C.items = d.items || []; C.loaded = true;
+    return true;
+  }
+  async function mutarCartera(cambio) {
+    escribiendo++;
+    try {
+      for (let i = 0; i < 4; i++) {
+        const r = await GH.leer(R_CARTERA);
+        const d = r ? await Cripto.descifrarJSON(maestra, r.bytes) : { items: [] };
+        d.items = d.items || [];
+        if (cambio(d) === false) return false;
+        try {
+          await GH.escribir(R_CARTERA, await Cripto.cifrarJSON(maestra, d), r && r.sha);
+          C.items = d.items; etagCartera = null;
+          return true;
+        } catch (e) {
+          if (e && e.conflicto) { await new Promise((ok) => setTimeout(ok, 400 + Math.random() * 600)); continue; }
+          throw e;
+        }
+      }
+      throw { message: 'conflicto' };
+    } finally { escribiendo--; }
+  }
+
+  const cobrado = (it) => (it.cobros || []).reduce((t, c) => t + (Number(c.valor) || 0), 0);
+  const netoDe = (it) => Number(it.neto) || Number(it.valor) || 0;
+  const porCobrarDe = (it) => (it.estado === 'pendiente' || it.estado === 'reclamacion') ? Math.max(netoDe(it) - cobrado(it), 0) : 0;
+  const ultimaFechaCobro = (it) => (it.cobros || []).map((c) => c.fecha).filter(Boolean).sort().pop() || '';
+  const normDoc = (s) => String(s || '').toUpperCase().replace(/\s+/g, '');
+
+  function totalesCartera() {
+    const t = { factura: 0, reclamacion: 0, retegarantia: 0, anticipo: 0, total: 0, vencido: 0, n: 0 };
+    const hoy = todayISO();
+    for (const it of C.items) {
+      const p = porCobrarDe(it);
+      if (!p) continue;
+      t.n++; t.total += p;
+      if (it.estado === 'reclamacion') t.reclamacion += p;
+      else if (it.tipo === 'retegarantia') t.retegarantia += p;
+      else if (it.tipo === 'anticipo') t.anticipo += p;
+      else t.factura += p;
+      if (it.vence && it.vence < hoy) t.vencido += p;
+    }
+    return t;
+  }
+  function cobrosEnMes() {
+    const mes = todayISO().slice(0, 7);
+    let total = 0;
+    for (const it of C.items) for (const c of it.cobros || []) if (!c.historico && String(c.fecha || '').startsWith(mes)) total += Number(c.valor) || 0;
+    return total;
+  }
+
+  // Línea consolidada debajo del saldo (la ven todos)
+  function renderCartResumen() {
+    const el = $('#cart-resumen');
+    if (!C.loaded || !C.items.length) { el.hidden = true; return; }
+    const t = totalesCartera();
+    const saldo = S.banco && typeof S.banco.saldo === 'number' ? S.banco.saldo : null;
+    const aprob = totals().aprob;
+    const partes = [t.factura && `facturas <strong class="num">${fmt(t.factura)}</strong>`, t.reclamacion && `en reclamación <strong class="num">${fmt(t.reclamacion)}</strong>`, t.retegarantia && `retegarantías <strong class="num">${fmt(t.retegarantia)}</strong>`, t.anticipo && `anticipos por recibir <strong class="num">${fmt(t.anticipo)}</strong>`].filter(Boolean);
+    const conCartera = saldo != null ? saldo - aprob + t.factura + t.anticipo : null;
+    el.innerHTML = `<b>Cartera por cobrar: <span class="num">${fmt(t.total)}</span></b>${partes.length ? ' — ' + partes.join(' · ') : ''}.` +
+      (conCartera != null ? ` Si se cobran las facturas y anticipos pendientes, quedaría <strong class="num">${fmt(conCartera)}</strong>.` : '') +
+      ` <button class="link" type="button" data-view="cart">Ver cartera</button>`;
+    el.hidden = false;
+  }
+
+  function visibleCartera() {
+    const q = normTxt(C.q);
+    return C.items.filter((it) => {
+      if (C.tipo && it.tipo !== C.tipo) return false;
+      if (C.tab === 'cobrar' && !porCobrarDe(it)) return false;
+      if (C.tab === 'pagado' && it.estado !== 'pagado') return false;
+      if (C.tab === 'otras' && !['anulada', 'cruzada', 'castigada', 'rechazada'].includes(it.estado)) return false;
+      if (q && !normTxt([it.cliente, it.documento, it.descripcion, it.proyecto, it.nit].join(' ')).includes(q)) return false;
+      return true;
+    }).sort((a, b) => C.tab === 'pagado'
+      ? ultimaFechaCobro(b).localeCompare(ultimaFechaCobro(a))
+      : (a.vence || a.fecha || '9999').localeCompare(b.vence || b.fecha || '9999'));
+  }
+
+  function renderCartera() {
+    if (S.view !== 'cart') return;
+    $('#c-admin').hidden = !isAdmin;
+    const lista = $('#c-list'), foot = $('#c-foot');
+    if (!C.loaded) { lista.innerHTML = '<div class="empty"><h3>Cargando cartera…</h3></div>'; return; }
+    const t = totalesCartera();
+    $('#c-sum').innerHTML = `
+      <div class="tile main"><span class="lbl">Por cobrar</span><span class="val">${fmt(t.total)}</span><span>${t.n} ${t.n === 1 ? 'documento' : 'documentos'}</span></div>
+      <div class="tile"><span class="lbl">Vencido</span><span class="val">${fmt(t.vencido)}</span></div>
+      <div class="tile"><span class="lbl">En reclamación</span><span class="val">${fmt(t.reclamacion)}</span></div>
+      <div class="tile"><span class="lbl">Retegarantías</span><span class="val">${fmt(t.retegarantia)}</span></div>
+      <div class="tile"><span class="lbl">Anticipos por recibir</span><span class="val">${fmt(t.anticipo)}</span></div>
+      <div class="tile"><span class="lbl">Cobrado este mes</span><span class="val">${fmt(cobrosEnMes())}</span></div>`;
+    const cuenta = (k) => C.items.filter((it) => k === 'todas' || (k === 'cobrar' ? porCobrarDe(it) > 0 : k === 'pagado' ? it.estado === 'pagado' : ['anulada', 'cruzada', 'castigada', 'rechazada'].includes(it.estado))).length;
+    $('#c-tabs').innerHTML = CTABS.map(([k, l]) => `<button class="tab" role="tab" type="button" data-ctab="${k}" aria-selected="${C.tab === k}">${l}<span class="c">${cuenta(k)}</span></button>`).join('');
+    if (!C.items.length) {
+      lista.innerHTML = `<div class="empty"><h3>La cartera está vacía</h3><p>${isAdmin ? 'Importa tu Excel de cartera para traer las facturas, anticipos y retegarantías con sus estados. Las facturas nuevas llegarán solas desde la carpeta FACTURAS DE VENTA.' : 'Aún no se ha cargado la cartera.'}</p></div>`;
+      foot.innerHTML = ''; return;
+    }
+    const arr = visibleCartera();
+    if (!arr.length) { lista.innerHTML = '<div class="empty"><h3>Nada para mostrar</h3><p>No hay documentos con este filtro.</p></div>'; foot.innerHTML = ''; return; }
+    lista.innerHTML = arr.map((it) => {
+      const pend = porCobrarDe(it), cob = cobrado(it);
+      const fechaTxt = it.estado === 'pagado' ? (ultimaFechaCobro(it) ? 'Pagada el ' + fmtDate(ultimaFechaCobro(it)) : 'Pagada') : it.vence ? 'Vence ' + fmtDate(it.vence) : it.fecha ? 'Elaborada ' + fmtDate(it.fecha) : '';
+      const chip = pend && it.vence ? dueChip({ estado: 'x', vence: it.vence }) : '';
+      const sub = [it.documento, it.descripcion].filter(Boolean).join(' · ');
+      return `<article class="row s-${CE_CLASE[it.estado] || 'revisar'}" data-crow="${it.id}" tabindex="0">
+        <div class="r-main"><div class="r-prov">${it.tipo !== 'factura' ? `<span class="chip doc">${CT[it.tipo]}</span> ` : ''}${esc(it.cliente || 'Sin cliente')}</div><div class="r-sub">${esc(sub.slice(0, 160))}${(it.archivos || []).length ? ` · <span class="clip">${it.archivos.length} ${it.archivos.length === 1 ? 'documento' : 'documentos'}</span>` : ''}</div></div>
+        <div class="r-due">${chip}<span>${esc(fechaTxt)}</span></div>
+        <div class="r-amt">${fmt(pend || (it.estado === 'pagado' ? cob || netoDe(it) : netoDe(it)))}${pend && cob ? `<div class="quien">abonado ${fmt(cob)}</div>` : ''}</div>
+        <div class="r-act"><span class="pill st-${CE_CLASE[it.estado] || 'revisar'}">${CE[it.estado] || it.estado}</span></div>
+      </article>`;
+    }).join('');
+    const tot = arr.reduce((s, it) => s + (C.tab === 'cobrar' ? porCobrarDe(it) : C.tab === 'pagado' ? cobrado(it) : netoDe(it)), 0);
+    foot.innerHTML = `<span>${arr.length} ${arr.length === 1 ? 'documento' : 'documentos'}</span><span>${C.tab === 'cobrar' ? 'Por cobrar' : C.tab === 'pagado' ? 'Cobrado' : 'Total'}: <strong class="num">${fmt(tot)}</strong></span>`;
+  }
+
+  function renderCartDetalle() {
+    const it = C.items.find((x) => x.id === C.openId);
+    const box = $('#cart-detail');
+    if (!it) { box.innerHTML = '<div class="dlg-head"><h2>Este documento ya no existe</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>'; return; }
+    const pend = porCobrarDe(it);
+    const docs = (it.archivos || []).map((a, i) => `<li><span>${esc(a.archivoNombre || 'Documento ' + (i + 1))}</span> <button class="btn sm" type="button" data-cver="${i}">Abrir</button></li>`).join('');
+    const cobros = (it.cobros || []).map((c) => `<li><span class="when">${esc(c.fecha ? fmtDate(c.fecha) : 'sin fecha')}</span><span class="num">${fmt(c.valor)}</span><span>${c.historico ? 'histórico (Excel)' : esc(personName(c.por)) + (c.banco ? ' · sumó al banco' : '')}</span></li>`).join('');
+    const hist = (it.historial || []).slice().reverse().map((h) => `<li><span class="when">${esc(dtFmt.format(new Date(h.en)))}</span><span>${esc(personName(h.por))}</span><span>— ${esc(h.nota || '')}</span></li>`).join('');
+    box.innerHTML = `
+      <div class="dlg-head"><div style="display:grid;gap:6px;min-width:0"><span class="pill st-${CE_CLASE[it.estado] || 'revisar'}" style="justify-self:start">${CE[it.estado] || it.estado} · ${CT[it.tipo] || ''}</span><h2>${esc(it.cliente || 'Sin cliente')}</h2></div><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
+      <div class="big-amt">${fmt(netoDe(it))}${it.neto && it.neto !== it.valor ? `<div class="quien">Facturado ${fmt(it.valor)} · a recibir ${fmt(it.neto)}</div>` : ''}</div>
+      <dl class="facts">
+        <div><dt>Comprobante</dt><dd>${esc(it.documento || '—')}</dd></div>
+        <div><dt>NIT</dt><dd>${esc(it.nit || '—')}</dd></div>
+        <div><dt>Elaborada</dt><dd>${it.fecha ? esc(fmtDate(it.fecha)) : '—'}</dd></div>
+        <div><dt>Vencimiento</dt><dd>${it.vence ? esc(fmtDate(it.vence)) + ' ' + (pend ? dueChip({ estado: 'x', vence: it.vence }) : '') : '—'}</dd></div>
+        <div><dt>Cobrado</dt><dd>${fmt(cobrado(it))}</dd></div>
+        <div><dt>Por cobrar</dt><dd>${fmt(pend)}</dd></div>
+        ${it.proyecto ? `<div><dt>Proyecto</dt><dd>${esc(it.proyecto)}</dd></div>` : ''}
+      </dl>
+      ${it.descripcion ? `<div class="impact"><span class="section-lbl">Descripción</span><span>${esc(it.descripcion)}</span></div>` : ''}
+      ${it.observacion ? `<div class="impact"><span class="section-lbl">Observación</span><span>${esc(it.observacion)}</span></div>` : ''}
+      <div id="cart-visor"></div>
+      ${docs ? `<div style="display:grid;gap:8px"><span class="section-lbl">Documentos</span><ul class="users">${docs}</ul></div>` : '<div class="invoice none">Sin documentos adjuntos.</div>'}
+      ${cobros ? `<div style="display:grid;gap:8px"><span class="section-lbl">Cobros recibidos</span><ul class="hist">${cobros}</ul></div>` : ''}
+      ${isAdmin ? `<div class="admin-box"><span class="section-lbl">Registrar cobro</span>
+        <form class="grid" id="cc-form" novalidate>
+          <div class="field"><label for="cc-fecha">Fecha en que entró el dinero</label><input id="cc-fecha" type="date" value="${todayISO()}" max="${todayISO()}"></div>
+          <div class="field"><label for="cc-valor">Valor recibido (COP)</label><input id="cc-valor" inputmode="decimal" value="${pend ? new Intl.NumberFormat('es-CO').format(pend) : ''}"></div>
+          <label class="check full"><input type="checkbox" id="cc-banco" checked> Sumar este valor al saldo en banco</label>
+          <div class="err full" id="cc-err" hidden></div>
+          <div class="form-actions full"><button class="btn primary sm" type="submit">Registrar cobro</button></div>
+        </form>
+        <span class="section-lbl">Estado</span>
+        <div class="pay-date"><select id="cc-estado">${Object.entries(CE).map(([k, l]) => `<option value="${k}"${k === it.estado ? ' selected' : ''}>${l}</option>`).join('')}</select><input id="cc-nota" placeholder="Motivo u observación (opcional)" style="flex:1 1 200px"><button class="btn sm" type="button" id="cc-estado-go">Cambiar estado</button></div>
+        <div class="decide"><button class="btn sm" type="button" data-cedit="${it.id}">Editar</button><button class="btn sm danger" type="button" id="cc-borrar">${C.borrar ? '¿Seguro? Toca de nuevo para eliminar' : 'Eliminar'}</button></div>
+      </div>` : ''}
+      ${hist ? `<div style="display:grid;gap:8px"><span class="section-lbl">Historial</span><ul class="hist">${hist}</ul></div>` : ''}`;
+    if (!$('#dlg-cart').open) $('#dlg-cart').showModal();
+  }
+
+  async function verDocCartera(i) {
+    const it = C.items.find((x) => x.id === C.openId);
+    const a = it && (it.archivos || [])[Number(i)];
+    if (!a) return;
+    const visor = $('#cart-visor');
+    visor.innerHTML = '<div class="invoice none">Descifrando el documento…</div>';
+    try {
+      if (!facturaUrl[a.archivo]) {
+        const f = await GH.leer(rFactura(a.archivo));
+        if (!f) throw { status: 404 };
+        facturaUrl[a.archivo] = URL.createObjectURL(new Blob([await Cripto.descifrar(maestra, f.bytes)], { type: a.archivoTipo || 'application/pdf' }));
+      }
+      const url = facturaUrl[a.archivo];
+      const isPdf = (a.archivoTipo || '').includes('pdf');
+      visor.innerHTML = `<div class="invoice">${isPdf ? `<iframe src="${url}" title="${esc(a.archivoNombre || 'Documento')}"></iframe>` : `<img src="${url}" alt="${esc(a.archivoNombre || 'Documento')}">`}<div class="inv-bar"><span>${esc(a.archivoNombre || 'Documento')}</span><span class="decide" style="flex:none"><a class="btn sm" href="${url}" target="_blank" rel="noopener">Abrir en pestaña nueva</a><a class="btn sm" href="${url}" download="${esc(a.archivoNombre || 'documento.pdf')}">Descargar</a></span></div></div>`;
+    } catch (e) { visor.innerHTML = '<div class="invoice none">No se pudo abrir el documento.</div>'; }
+  }
+
+  async function registrarCobro(ev) {
+    ev.preventDefault();
+    const it = C.items.find((x) => x.id === C.openId);
+    if (!it) return;
+    const fecha = $('#cc-fecha').value, valor = Math.round(parseMonto($('#cc-valor').value)), alBanco = $('#cc-banco').checked;
+    if (!fecha) return mostrarError('#cc-err', 'Elige la fecha en que entró el dinero.');
+    if (!(valor > 0)) return mostrarError('#cc-err', 'Escribe el valor recibido.');
+    const now = new Date().toISOString();
+    try {
+      let quedoPagada = false;
+      await mutarCartera((d) => {
+        const x = d.items.find((y) => y.id === it.id);
+        if (!x) return false;
+        x.cobros = (x.cobros || []).concat([{ fecha, valor, por: uid, en: now, banco: alBanco }]);
+        if (cobrado(x) >= netoDe(x) - 1 && (x.estado === 'pendiente' || x.estado === 'reclamacion')) { x.estado = 'pagado'; quedoPagada = true; }
+        x.historial = (x.historial || []).slice(-30).concat([{ por: uid, en: now, nota: `Cobro de ${fmt(valor)} el ${fmtDate(fecha)}${alBanco ? ' (sumado al banco)' : ''}${quedoPagada ? ' · quedó pagada' : ''}` }]);
+      });
+      if (alBanco && S.banco && typeof S.banco.saldo === 'number') {
+        await mutar((d) => { if (d.banco && typeof d.banco.saldo === 'number') d.banco = { ...d.banco, saldo: d.banco.saldo + valor, actualizado: now, por: uid }; });
+      }
+      toast(`Cobro registrado${alBanco && S.banco ? ': se sumaron ' + fmt(valor) + ' al saldo en banco' : ''}.`);
+      render(); renderCartDetalle();
+    } catch (e) { mostrarError('#cc-err', msgGitHub(e)); }
+  }
+
+  async function cambiarEstadoCartera() {
+    const it = C.items.find((x) => x.id === C.openId);
+    if (!it) return;
+    const estado = $('#cc-estado').value, nota = $('#cc-nota').value.trim();
+    if (estado === it.estado && !nota) return;
+    const now = new Date().toISOString();
+    try {
+      await mutarCartera((d) => {
+        const x = d.items.find((y) => y.id === it.id);
+        if (!x) return false;
+        x.estado = estado;
+        if (nota) x.observacion = [x.observacion, nota].filter(Boolean).join(' · ');
+        x.historial = (x.historial || []).slice(-30).concat([{ por: uid, en: now, nota: `Estado: ${CE[estado]}${nota ? ' — ' + nota : ''}` }]);
+      });
+      toast('Estado actualizado.'); render(); renderCartDetalle();
+    } catch (e) { toast(msgGitHub(e)); }
+  }
+
+  async function borrarCartera() {
+    if (!C.borrar) { C.borrar = true; renderCartDetalle(); return; }
+    const it = C.items.find((x) => x.id === C.openId);
+    C.borrar = false;
+    try {
+      await mutarCartera((d) => { d.items = d.items.filter((y) => y.id !== it.id); });
+      for (const a of it.archivos || []) { try { await GH.borrar(rFactura(a.archivo)); } catch (e) {} }
+      $('#dlg-cart').close(); toast('Documento eliminado de la cartera.'); render();
+    } catch (e) { toast(msgGitHub(e)); }
+  }
+
+  // Agregar / editar
+  let cartEditId = null;
+  function abrirCartForm(id) {
+    cartEditId = id || null;
+    const it = id ? C.items.find((x) => x.id === id) : null;
+    $('#cf-title').textContent = it ? 'Editar documento de cartera' : 'Agregar a cartera';
+    $('#cf-tipo').value = it ? it.tipo : 'factura';
+    $('#cf-doc').value = it ? it.documento || '' : '';
+    $('#cf-cliente').value = it ? it.cliente || '' : '';
+    $('#cf-nit').value = it ? it.nit || '' : '';
+    $('#cf-fecha').value = it ? it.fecha || '' : todayISO();
+    $('#cf-valor').value = it && it.valor ? new Intl.NumberFormat('es-CO').format(it.valor) : '';
+    $('#cf-neto').value = it && it.neto && it.neto !== it.valor ? new Intl.NumberFormat('es-CO').format(it.neto) : '';
+    $('#cf-vence').value = it ? it.vence || '' : '';
+    $('#cf-proyecto').value = it ? it.proyecto || '' : '';
+    $('#cf-desc').value = it ? it.descripcion || '' : '';
+    $('#cf-obs').value = it ? it.observacion || '' : '';
+    $('#cf-arch').value = '';
+    mostrarError('#cf-err', '');
+    if ($('#dlg-cart').open) $('#dlg-cart').close();
+    $('#dlg-cart-form').showModal();
+  }
+  $('#cart-form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const cliente = $('#cf-cliente').value.trim(), valor = Math.round(parseMonto($('#cf-valor').value));
+    const netoTxt = $('#cf-neto').value.trim();
+    if (!cliente) return mostrarError('#cf-err', 'Escribe el cliente.');
+    if (!(valor > 0)) return mostrarError('#cf-err', 'Escribe el valor facturado.');
+    const btn = $('#cf-save'); btn.disabled = true; btn.textContent = 'Guardando…';
+    try {
+      const adjuntos = [];
+      for (const f of $('#cf-arch').files) adjuntos.push(await subirFactura(f));
+      const datos = {
+        tipo: $('#cf-tipo').value, documento: $('#cf-doc').value.trim().toUpperCase(), cliente, nit: $('#cf-nit').value.replace(/\D/g, ''),
+        fecha: $('#cf-fecha').value, valor, neto: netoTxt ? Math.round(parseMonto(netoTxt)) : valor, vence: $('#cf-vence').value,
+        proyecto: $('#cf-proyecto').value.trim(), descripcion: $('#cf-desc').value.trim(), observacion: $('#cf-obs').value.trim(),
+      };
+      const now = new Date().toISOString();
+      if (cartEditId) {
+        const id = cartEditId;
+        await mutarCartera((d) => {
+          const x = d.items.find((y) => y.id === id);
+          if (!x) return false;
+          Object.assign(x, datos);
+          x.archivos = (x.archivos || []).concat(adjuntos);
+          x.historial = (x.historial || []).slice(-30).concat([{ por: uid, en: now, nota: 'Editado' }]);
+        });
+      } else {
+        await mutarCartera((d) => { d.items.push({ id: nuevoId(), ...datos, estado: 'pendiente', cobros: [], archivos: adjuntos, origen: 'manual', historial: [{ por: uid, en: now, nota: 'Agregado a mano' }] }); });
+      }
+      $('#dlg-cart-form').close(); toast('Guardado.'); render();
+    } catch (e) { mostrarError('#cf-err', msgGitHub(e)); }
+    btn.disabled = false; btn.textContent = 'Guardar';
+  });
+
+  // Importar el Excel de cartera (hojas CARTERA y ANTICIPOS Y GARANTIAS)
+  let cartImport = [];
+  function fechaExcel(v) {
+    if (v instanceof Date && !isNaN(v)) return localISO(v);
+    if (typeof v === 'number' && v > 30000 && v < 70000) return new Date(Math.round((v - 25569) * 86400000)).toISOString().slice(0, 10);
+    const s = String(v || '').trim();
+    if (/^\d{5}$/.test(s) && +s > 30000 && +s < 70000) return fechaExcel(+s);
+    let m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/);
+    if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+    m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return m ? `${m[1]}-${m[2]}-${m[3]}` : '';
+  }
+  const ESTADO_EXCEL = (s) => {
+    const n = normTxt(s);
+    if (!n) return 'pendiente';
+    if (/^PAGAD/.test(n)) return 'pagado';
+    if (/^ANULAD/.test(n)) return 'anulada';
+    if (/^RECLAMAC/.test(n)) return 'reclamacion';
+    if (/^CRUZ/.test(n)) return 'cruzada';
+    if (/^CASTIG/.test(n)) return 'castigada';
+    if (/^RECHAZ/.test(n)) return 'rechazada';
+    return 'pendiente';
+  };
+  function leerHojaCartera(rows) {
+    const iEnc = rows.findIndex((r) => r.some((c) => normTxt(c) === 'IDENTIFICACION') && r.some((c) => normTxt(c) === 'COMPROBANTE'));
+    if (iEnc < 0) return [];
+    const enc = rows[iEnc].map(normTxt);
+    const col = (nombre) => enc.indexOf(nombre);
+    const ci = { nit: col('IDENTIFICACION'), cliente: col('NOMBRE TERCERO'), cuenta: col('CODIGO CONTABLE'), desc: col('CUENTA CONTABLE'), doc: col('COMPROBANTE'), fecha: col('FECHA ELABORACION'), valor: col('DEBITO'), estado: col('ESTADO'), fpago: col('FECHA DE PAGO'), vpago: col('VALOR PAGADO'), obs: col('OBSERVACION') };
+    const out = [];
+    for (const r of rows.slice(iEnc + 1)) {
+      const doc = String(r[ci.doc] || '').trim(), cliente = String(r[ci.cliente] || '').trim();
+      const valor = Math.round(parseMonto(r[ci.valor])) || 0;
+      if (!cliente || (!doc && !(valor > 0))) continue;
+      const desc = String(r[ci.desc] || '').replace(/\s+/g, ' ').trim();
+      const cuenta = String(r[ci.cuenta] || '').trim();
+      const tipo = /anticipo/i.test(desc) || cuenta === '28050501' ? 'anticipo' : cuenta === '13500503' ? 'retegarantia' : 'factura';
+      const estado = ESTADO_EXCEL(r[ci.estado]);
+      // Fecha(s) y valor(es) pagados: pueden venir como "02/02/2026 Y 03/02/2026" y "$15,000,000 Y $13,000,000"
+      const fechas = (typeof r[ci.fpago] === 'number' ? [r[ci.fpago]] : String(r[ci.fpago] || '').split(/\s+y\s+/i)).map(fechaExcel).filter(Boolean);
+      const valores = (typeof r[ci.vpago] === 'number' ? [r[ci.vpago]] : String(r[ci.vpago] || '').split(/\s+y\s+/i)).map((x) => Math.round(parseMonto(x))).filter((x) => x > 0);
+      const cobros = valores.map((v, k) => ({ fecha: fechas[k] || fechas[fechas.length - 1] || '', valor: v, historico: true }));
+      const extras = (ci.obs >= 0 ? r.slice(ci.obs) : []).map((x) => (typeof x === 'number' && x > 30000 && x < 70000 && Number.isInteger(x) ? fmtDate(fechaExcel(x)) : typeof x === 'number' ? fmt(x) : String(x || '').trim())).filter(Boolean);
+      const observacion = extras.join(' · ');
+      const vm = observacion.match(/Vence\s+(\d{1,2}\/\d{1,2}\/\d{4})/i);
+      const pm = desc.match(/PROYECTO\s+([A-ZÁÉÍÓÚÑ0-9 \-]{3,40})/i);
+      out.push({ tipo, documento: doc.toUpperCase(), cliente, nit: String(r[ci.nit] || '').replace(/\D/g, ''), cuenta, descripcion: desc, fecha: fechaExcel(r[ci.fecha]), valor, estado, cobros, observacion, vence: vm ? fechaExcel(vm[1]) : '', proyecto: pm ? pm[1].trim() : '' });
+    }
+    return out;
+  }
+  $('#ci-file').addEventListener('change', async () => {
+    const f = $('#ci-file').files[0];
+    cartImport = []; $('#ci-go').disabled = true;
+    if (!f || !window.XLSX) return;
+    try {
+      const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
+      for (const nombre of wb.SheetNames) cartImport.push(...leerHojaCartera(XLSX.utils.sheet_to_json(wb.Sheets[nombre], { header: 1, raw: true, defval: '' })));
+      if (!cartImport.length) { $('#ci-result').innerHTML = '<p class="err">No encontré la tabla de cartera (columnas Identificación, Comprobante, Débito, Estado…).</p>'; return; }
+      const porEstado = {}; const porTipo = {};
+      for (const x of cartImport) { porEstado[x.estado] = (porEstado[x.estado] || 0) + 1; porTipo[x.tipo] = (porTipo[x.tipo] || 0) + 1; }
+      const existentes = cartImport.filter((x) => x.documento && C.items.some((it) => normDoc(it.documento) === normDoc(x.documento))).length;
+      const pend = cartImport.filter((x) => x.estado === 'pendiente' || x.estado === 'reclamacion').reduce((s, x) => s + Math.max(x.valor - x.cobros.reduce((a, c) => a + c.valor, 0), 0), 0);
+      $('#ci-result').innerHTML = `<p class="mapinfo">Se leyeron <b>${cartImport.length}</b> registros: ${Object.entries(porTipo).map(([k, n]) => `${n} ${CT[k].toLowerCase()}${n === 1 ? '' : 's'}`).join(', ')}.</p>
+        <p class="mapinfo">Estados: ${Object.entries(porEstado).map(([k, n]) => `${CE[k]} ${n}`).join(' · ')}. Por cobrar: <b class="num">${fmt(pend)}</b>.</p>
+        ${existentes ? `<p class="mapinfo">${existentes} ya están en la app y se actualizarán (estado, pagos y observaciones).</p>` : ''}`;
+      $('#ci-go').disabled = false; $('#ci-go').textContent = `Importar ${cartImport.length} registros`;
+    } catch (e) { $('#ci-result').innerHTML = '<p class="err">No pude leer el archivo.</p>'; }
+  });
+  $('#ci-go').addEventListener('click', async () => {
+    const btn = $('#ci-go'); btn.disabled = true; btn.textContent = 'Importando…';
+    const now = new Date().toISOString();
+    try {
+      let nuevos = 0, act = 0;
+      await mutarCartera((d) => {
+        nuevos = 0; act = 0;
+        for (const x of cartImport) {
+          const ex = x.documento && d.items.find((it) => normDoc(it.documento) === normDoc(x.documento) && (!it.nit || !x.nit || it.nit === x.nit));
+          if (ex) {
+            ex.estado = x.estado; ex.tipo = x.tipo; ex.observacion = x.observacion || ex.observacion;
+            ex.cobros = (ex.cobros || []).filter((c) => !c.historico).concat(x.cobros);
+            for (const k of ['cliente', 'nit', 'descripcion', 'fecha', 'vence', 'proyecto', 'cuenta']) if (!ex[k] && x[k]) ex[k] = x[k];
+            if (!ex.valor) ex.valor = x.valor;
+            ex.historial = (ex.historial || []).slice(-30).concat([{ por: uid, en: now, nota: 'Actualizado desde el Excel de cartera' }]);
+            act++;
+          } else {
+            d.items.push({ id: nuevoId(), ...x, neto: x.valor, archivos: [], origen: 'excel', historial: [{ por: uid, en: now, nota: 'Importado del Excel de cartera' }] });
+            nuevos++;
+          }
+        }
+      });
+      $('#dlg-cart-import').close();
+      toast(`Cartera importada: ${nuevos} nuevos, ${act} actualizados.`);
+      render();
+    } catch (e) { $('#ci-result').insertAdjacentHTML('beforeend', `<p class="err">${esc(msgGitHub(e))}</p>`); }
+    btn.disabled = false; btn.textContent = 'Importar';
+  });
+
+  function descargarCartera() {
+    if (!window.XLSX) return;
+    const filas = [['Tipo', 'Identificación', 'Cliente', 'Comprobante', 'Fecha elaboración', 'Vencimiento', 'Valor facturado', 'Valor a recibir', 'Cobrado', 'Por cobrar', 'Estado', 'Fecha último cobro', 'Proyecto', 'Descripción', 'Observación']];
+    const f = (iso) => (iso ? new Date(iso + 'T12:00:00') : '');
+    for (const it of C.items.slice().sort((a, b) => String(a.fecha || '').localeCompare(String(b.fecha || '')))) {
+      filas.push([CT[it.tipo] || '', it.nit || '', it.cliente || '', it.documento || '', f(it.fecha), f(it.vence), it.valor || 0, netoDe(it), cobrado(it), porCobrarDe(it), CE[it.estado] || it.estado, f(ultimaFechaCobro(it)), it.proyecto || '', it.descripcion || '', it.observacion || '']);
+    }
+    const ws = XLSX.utils.aoa_to_sheet(filas, { cellDates: true, dateNF: 'dd/mm/yyyy' });
+    ws['!cols'] = [10, 14, 34, 14, 12, 12, 16, 16, 16, 16, 12, 14, 20, 50, 40].map((w) => ({ wch: w }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Cartera');
+    XLSX.writeFile(wb, `Cartera ODESA ${todayISO()}.xlsx`, { cellDates: true });
+  }
+
+  // Eventos de cartera
+  document.addEventListener('click', (ev) => {
+    const t = ev.target.closest('[data-ctab], [data-crow], [data-cver], [data-cedit], #cc-estado-go, #cc-borrar, #c-btn-add, #c-btn-import, #c-btn-dl');
+    if (!t) return;
+    if (t.dataset.ctab) { C.tab = t.dataset.ctab; renderCartera(); return; }
+    if (t.dataset.cver != null) { verDocCartera(t.dataset.cver); return; }
+    if (t.dataset.cedit) { abrirCartForm(t.dataset.cedit); return; }
+    if (t.id === 'cc-estado-go') { cambiarEstadoCartera(); return; }
+    if (t.id === 'cc-borrar') { borrarCartera(); return; }
+    if (t.id === 'c-btn-add') { abrirCartForm(); return; }
+    if (t.id === 'c-btn-dl') { descargarCartera(); return; }
+    if (t.id === 'c-btn-import') { $('#ci-file').value = ''; $('#ci-result').innerHTML = ''; $('#ci-go').disabled = true; $('#dlg-cart-import').showModal(); return; }
+    if (t.dataset.crow) { C.openId = t.dataset.crow; C.borrar = false; renderCartDetalle(); }
+  });
+  document.addEventListener('submit', (ev) => { if (ev.target.id === 'cc-form') registrarCobro(ev); });
+  $('#dlg-cart').addEventListener('close', () => { C.openId = null; C.borrar = false; });
+  $('#c-q').addEventListener('input', (e) => { C.q = e.target.value; renderCartera(); });
+  $('#c-tipo').addEventListener('change', (e) => { C.tipo = e.target.value; renderCartera(); });
+
+  // Usuario técnico para la tarea automática del computador
+  function renderRobot() {
+    const id = Object.keys(conf.usuarios || {}).find((k) => conf.usuarios[k].rol === 'sistema');
+    $('#rb-estado').textContent = id ? `✓ Ya existe el acceso “${conf.usuarios[id].usuario}”. Si perdiste el archivo, créalo de nuevo (el anterior deja de servir).` : 'Aún no hay acceso para la tarea automática.';
+    mostrarError('#rb-err', '');
+  }
+  $('#rb-crear').addEventListener('click', async () => {
+    const btn = $('#rb-crear'); btn.disabled = true;
+    try {
+      const usuario = 'robot-cartera';
+      const abc = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+      const clave = [...Cripto.aleatorio(32)].map((b) => abc[b % abc.length]).join('');
+      const id = await Cripto.idUsuario(usuario);
+      const u = await leerUsuarios();
+      u.datos.usuarios[id] = await Cripto.envolver(rawMaestra, clave);
+      conf.usuarios[id] = { usuario, nombre: 'Tarea automática de cartera', rol: 'sistema' };
+      await guardarConfig();
+      await guardarUsuarios(u.datos, u.sha);
+      const archivo = JSON.stringify({ owner: conf.owner, repo: conf.repo, branch: conf.branch, usuario, clave }, null, 1);
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([archivo], { type: 'application/json' }));
+      a.download = 'robot-cartera.json';
+      document.body.appendChild(a); a.click(); a.remove();
+      renderRobot(); renderUsuarios();
+      toast('Acceso creado. Se descargó robot-cartera.json en tu carpeta Descargas.');
+    } catch (e) { mostrarError('#rb-err', msgGitHub(e)); }
+    btn.disabled = false;
+  });
+
   // ---------- usuarios y contraseñas ----------
   async function leerUsuarios() {
     const f = await GH.leer(R_USUARIOS);
@@ -1342,7 +1807,7 @@
     $('#c-estado').textContent = conf.claudeKey ? '✓ Lectura con Claude activada.' : 'Lectura con Claude desactivada (se usa el lector propio).';
     $('#c-quitar').hidden = !conf.claudeKey;
   }
-  function openUsuarios() { renderUsuarios(); renderClaude(); renderSiigoConf(); renderCobrosConf(); mostrarError('#user-err', ''); mostrarError('#token-err', ''); mostrarError('#claude-err', ''); $('#user-form').reset(); $('#t-token').value = ''; $('#c-clave').value = ''; $('#dlg-users').showModal(); }
+  function openUsuarios() { renderUsuarios(); renderClaude(); renderSiigoConf(); renderCobrosConf(); renderRobot(); mostrarError('#user-err', ''); mostrarError('#token-err', ''); mostrarError('#claude-err', ''); $('#user-form').reset(); $('#t-token').value = ''; $('#c-clave').value = ''; $('#dlg-users').showModal(); }
 
   $('#claude-form').addEventListener('submit', async (ev) => {
     ev.preventDefault();
@@ -1450,6 +1915,7 @@
     pantalla('#app');
     render();
     await cargarDatos();
+    try { await cargarCartera(); } catch (e) { /* la cartera se vuelve a intentar en la próxima sincronización */ }
     render();
     $('#sync').textContent = 'Actualizado ' + new Intl.DateTimeFormat('es-CO', { hour: 'numeric', minute: '2-digit' }).format(new Date());
     setInterval(sincronizar, 30000);
