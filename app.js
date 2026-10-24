@@ -1363,9 +1363,11 @@
     } finally { escribiendo--; }
   }
 
+  // cobrado = dinero que entró; retenido = retenciones/descuentos del cliente con los que se saldó la factura
   const cobrado = (it) => (it.cobros || []).reduce((t, c) => t + (Number(c.valor) || 0), 0);
+  const retenido = (it) => (it.cobros || []).reduce((t, c) => t + (Number(c.ret) || 0), 0);
   const netoDe = (it) => Number(it.neto) || Number(it.valor) || 0;
-  const porCobrarDe = (it) => (it.estado === 'pendiente' || it.estado === 'reclamacion') ? Math.max(netoDe(it) - cobrado(it), 0) : 0;
+  const porCobrarDe = (it) => (it.estado === 'pendiente' || it.estado === 'reclamacion') ? Math.max(netoDe(it) - cobrado(it) - retenido(it), 0) : 0;
   const ultimaFechaCobro = (it) => (it.cobros || []).map((c) => c.fecha).filter(Boolean).sort().pop() || '';
   const normDoc = (s) => String(s || '').toUpperCase().replace(/\s+/g, '');
 
@@ -1463,7 +1465,7 @@
     if (!it) { box.innerHTML = '<div class="dlg-head"><h2>Este documento ya no existe</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>'; return; }
     const pend = porCobrarDe(it);
     const docs = (it.archivos || []).map((a, i) => `<li><span>${esc(a.archivoNombre || 'Documento ' + (i + 1))}</span> <button class="btn sm" type="button" data-cver="${i}">Abrir</button></li>`).join('');
-    const cobros = (it.cobros || []).map((c) => `<li><span class="when">${esc(c.fecha ? fmtDate(c.fecha) : 'sin fecha')}</span><span class="num">${fmt(c.valor)}</span><span>${c.historico ? 'histórico (Excel)' : esc(personName(c.por)) + (c.banco ? ' · sumó al banco' : '')}</span></li>`).join('');
+    const cobros = (it.cobros || []).map((c) => `<li><span class="when">${esc(c.fecha ? fmtDate(c.fecha) : 'sin fecha')}</span><span class="num">${fmt(c.valor)}</span>${c.ret ? `<span>+ retenciones ${fmt(c.ret)}</span>` : ''}<span>${c.historico ? 'histórico (Excel)' : esc(personName(c.por)) + (c.banco ? ' · sumó al banco' : '')}</span></li>`).join('');
     const hist = (it.historial || []).slice().reverse().map((h) => `<li><span class="when">${esc(dtFmt.format(new Date(h.en)))}</span><span>${esc(personName(h.por))}</span><span>— ${esc(h.nota || '')}</span></li>`).join('');
     box.innerHTML = `
       <div class="dlg-head"><div style="display:grid;gap:6px;min-width:0"><span class="pill st-${CE_CLASE[it.estado] || 'revisar'}" style="justify-self:start">${CE[it.estado] || it.estado} · ${CT[it.tipo] || ''}</span><h2>${esc(it.cliente || 'Sin cliente')}</h2></div><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
@@ -1474,6 +1476,7 @@
         <div><dt>Elaborada</dt><dd>${it.fecha ? esc(fmtDate(it.fecha)) : '—'}</dd></div>
         <div><dt>Vencimiento</dt><dd>${it.vence ? esc(fmtDate(it.vence)) + ' ' + (pend ? dueChip({ estado: 'x', vence: it.vence }) : '') : '—'}</dd></div>
         <div><dt>Cobrado</dt><dd>${fmt(cobrado(it))}</dd></div>
+        ${retenido(it) ? `<div><dt>Retenciones del cliente</dt><dd>${fmt(retenido(it))}</dd></div>` : ''}
         <div><dt>Por cobrar</dt><dd>${fmt(pend)}</dd></div>
         ${it.proyecto ? `<div><dt>Proyecto</dt><dd>${esc(it.proyecto)}</dd></div>` : ''}
       </dl>
@@ -1485,8 +1488,13 @@
       ${isAdmin ? `<div class="admin-box"><span class="section-lbl">Registrar cobro</span>
         <form class="grid" id="cc-form" novalidate>
           <div class="field"><label for="cc-fecha">Fecha en que entró el dinero</label><input id="cc-fecha" type="date" value="${todayISO()}" max="${todayISO()}"></div>
-          <div class="field"><label for="cc-valor">Valor recibido (COP)</label><input id="cc-valor" inputmode="decimal" value="${pend ? new Intl.NumberFormat('es-CO').format(pend) : ''}"></div>
-          <label class="check full"><input type="checkbox" id="cc-banco" checked> Sumar este valor al saldo en banco</label>
+          <div class="field"><label for="cc-valor">Valor recibido en el banco (COP)</label><input id="cc-valor" inputmode="decimal" value="${pend ? new Intl.NumberFormat('es-CO').format(pend) : ''}" data-pend="${pend}"></div>
+          <div class="full" id="cc-dif" hidden style="display:grid;gap:6px">
+            <span class="hint" id="cc-dif-txt"></span>
+            <label class="check"><input type="radio" name="cc-tipo" id="cc-total" value="total"> <span><b>Pago total con retenciones:</b> la factura queda pagada y la diferencia se registra como retenciones del cliente.</span></label>
+            <label class="check"><input type="radio" name="cc-tipo" id="cc-abono" value="abono"> <span><b>Abono parcial:</b> la diferencia sigue pendiente por cobrar.</span></label>
+          </div>
+          <label class="check full"><input type="checkbox" id="cc-banco" checked> Sumar el valor recibido al saldo en banco</label>
           <div class="err full" id="cc-err" hidden></div>
           <div class="form-actions full"><button class="btn primary sm" type="submit">Registrar cobro</button></div>
         </form>
@@ -1523,15 +1531,22 @@
     const fecha = $('#cc-fecha').value, valor = Math.round(parseMonto($('#cc-valor').value)), alBanco = $('#cc-banco').checked;
     if (!fecha) return mostrarError('#cc-err', 'Elige la fecha en que entró el dinero.');
     if (!(valor > 0)) return mostrarError('#cc-err', 'Escribe el valor recibido.');
+    const pend = porCobrarDe(it);
+    const dif = pend - valor;
+    const tipo = (document.querySelector('input[name="cc-tipo"]:checked') || {}).value;
+    if (dif > 0 && !tipo) return mostrarError('#cc-err', 'Indica si es un pago total con retenciones o un abono parcial.');
+    const saldar = dif > 0 && tipo === 'total';
     const now = new Date().toISOString();
     try {
       let quedoPagada = false;
       await mutarCartera((d) => {
         const x = d.items.find((y) => y.id === it.id);
         if (!x) return false;
-        x.cobros = (x.cobros || []).concat([{ fecha, valor, por: uid, en: now, banco: alBanco }]);
-        if (cobrado(x) >= netoDe(x) - 1 && (x.estado === 'pendiente' || x.estado === 'reclamacion')) { x.estado = 'pagado'; quedoPagada = true; }
-        x.historial = (x.historial || []).slice(-30).concat([{ por: uid, en: now, nota: `Cobro de ${fmt(valor)} el ${fmtDate(fecha)}${alBanco ? ' (sumado al banco)' : ''}${quedoPagada ? ' · quedó pagada' : ''}` }]);
+        const pendX = porCobrarDe(x);
+        const ret = saldar ? Math.max(pendX - valor, 0) : 0;
+        x.cobros = (x.cobros || []).concat([{ fecha, valor, ...(ret ? { ret } : {}), por: uid, en: now, banco: alBanco }]);
+        if ((saldar || cobrado(x) + retenido(x) >= netoDe(x) - 1) && (x.estado === 'pendiente' || x.estado === 'reclamacion')) { x.estado = 'pagado'; quedoPagada = true; }
+        x.historial = (x.historial || []).slice(-30).concat([{ por: uid, en: now, nota: `Cobro de ${fmt(valor)} el ${fmtDate(fecha)}${ret ? ` + retenciones ${fmt(ret)}` : ''}${alBanco ? ' (sumado al banco)' : ''}${quedoPagada ? ' · quedó pagada' : ''}` }]);
       });
       if (alBanco && S.banco && typeof S.banco.saldo === 'number') {
         await mutar((d) => { if (d.banco && typeof d.banco.saldo === 'number') d.banco = { ...d.banco, saldo: d.banco.saldo + valor, actualizado: now, por: uid }; });
@@ -1724,13 +1739,13 @@
 
   function descargarCartera() {
     if (!window.XLSX) return;
-    const filas = [['Tipo', 'Identificación', 'Cliente', 'Comprobante', 'Fecha elaboración', 'Vencimiento', 'Valor facturado', 'Valor a recibir', 'Cobrado', 'Por cobrar', 'Estado', 'Fecha último cobro', 'Proyecto', 'Descripción', 'Observación']];
+    const filas = [['Tipo', 'Identificación', 'Cliente', 'Comprobante', 'Fecha elaboración', 'Vencimiento', 'Valor facturado', 'Valor a recibir', 'Cobrado', 'Retenciones', 'Por cobrar', 'Estado', 'Fecha último cobro', 'Proyecto', 'Descripción', 'Observación']];
     const f = (iso) => (iso ? new Date(iso + 'T12:00:00') : '');
     for (const it of C.items.slice().sort((a, b) => String(a.fecha || '').localeCompare(String(b.fecha || '')))) {
-      filas.push([CT[it.tipo] || '', it.nit || '', it.cliente || '', it.documento || '', f(it.fecha), f(it.vence), it.valor || 0, netoDe(it), cobrado(it), porCobrarDe(it), CE[it.estado] || it.estado, f(ultimaFechaCobro(it)), it.proyecto || '', it.descripcion || '', it.observacion || '']);
+      filas.push([CT[it.tipo] || '', it.nit || '', it.cliente || '', it.documento || '', f(it.fecha), f(it.vence), it.valor || 0, netoDe(it), cobrado(it), retenido(it), porCobrarDe(it), CE[it.estado] || it.estado, f(ultimaFechaCobro(it)), it.proyecto || '', it.descripcion || '', it.observacion || '']);
     }
     const ws = XLSX.utils.aoa_to_sheet(filas, { cellDates: true, dateNF: 'dd/mm/yyyy' });
-    ws['!cols'] = [10, 14, 34, 14, 12, 12, 16, 16, 16, 16, 12, 14, 20, 50, 40].map((w) => ({ wch: w }));
+    ws['!cols'] = [10, 14, 34, 14, 12, 12, 16, 16, 16, 14, 16, 12, 14, 20, 50, 40].map((w) => ({ wch: w }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Cartera');
     XLSX.writeFile(wb, `Cartera ODESA ${todayISO()}.xlsx`, { cellDates: true });
@@ -1751,6 +1766,14 @@
     if (t.dataset.crow) { C.openId = t.dataset.crow; C.borrar = false; renderCartDetalle(); }
   });
   document.addEventListener('submit', (ev) => { if (ev.target.id === 'cc-form') registrarCobro(ev); });
+  // Si el valor recibido es menor que el saldo, preguntar si son retenciones (pago total) o un abono
+  document.addEventListener('input', (ev) => {
+    if (ev.target.id !== 'cc-valor') return;
+    const pend = Number(ev.target.dataset.pend) || 0, v = Math.round(parseMonto(ev.target.value)) || 0;
+    const dif = pend - v;
+    $('#cc-dif').hidden = !(v > 0 && dif > 0);
+    if (v > 0 && dif > 0) $('#cc-dif-txt').innerHTML = `Diferencia con el saldo por cobrar: <b class="num">${fmt(dif)}</b>`;
+  });
   $('#dlg-cart').addEventListener('close', () => { C.openId = null; C.borrar = false; });
   $('#c-q').addEventListener('input', (e) => { C.q = e.target.value; renderCartera(); });
   $('#c-tipo').addEventListener('change', (e) => { C.tipo = e.target.value; renderCartera(); });
