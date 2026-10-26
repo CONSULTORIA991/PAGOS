@@ -1465,7 +1465,7 @@
     if (!it) { box.innerHTML = '<div class="dlg-head"><h2>Este documento ya no existe</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>'; return; }
     const pend = porCobrarDe(it);
     const docs = (it.archivos || []).map((a, i) => `<li><span>${esc(a.archivoNombre || 'Documento ' + (i + 1))}</span> <button class="btn sm" type="button" data-cver="${i}">Abrir</button></li>`).join('');
-    const cobros = (it.cobros || []).map((c) => `<li><span class="when">${esc(c.fecha ? fmtDate(c.fecha) : 'sin fecha')}</span><span class="num">${fmt(c.valor)}</span>${c.ret ? `<span>+ retenciones ${fmt(c.ret)}</span>` : ''}<span>${c.historico ? 'histórico (Excel)' : esc(personName(c.por)) + (c.banco ? ' · sumó al banco' : '')}</span></li>`).join('');
+    const cobros = (it.cobros || []).map((c) => `<li><span class="when">${esc(c.fecha ? fmtDate(c.fecha) : 'sin fecha')}</span><span class="num">${fmt(c.valor)}</span>${c.ret ? `<span>+ retenciones ${fmt(c.ret)}</span>` : ''}<span>${c.historico ? 'histórico (Excel)' : esc(personName(c.por)) + (c.banco ? ' · sumó al banco' : '')}</span>${isAdmin && !c.historico && c.en ? `<button class="btn sm danger" type="button" data-canular="${esc(c.en)}">${C.anular === c.en ? '¿Seguro? Toca de nuevo' : 'Anular cobro'}</button>` : ''}</li>`).join('');
     const hist = (it.historial || []).slice().reverse().map((h) => `<li><span class="when">${esc(dtFmt.format(new Date(h.en)))}</span><span>${esc(personName(h.por))}</span><span>— ${esc(h.nota || '')}</span></li>`).join('');
     box.innerHTML = `
       <div class="dlg-head"><div style="display:grid;gap:6px;min-width:0"><span class="pill st-${CE_CLASE[it.estado] || 'revisar'}" style="justify-self:start">${CE[it.estado] || it.estado} · ${CT[it.tipo] || ''}</span><h2>${esc(it.cliente || 'Sin cliente')}</h2></div><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
@@ -1524,10 +1524,36 @@
     } catch (e) { visor.innerHTML = '<div class="invoice none">No se pudo abrir el documento.</div>'; }
   }
 
+  // Anular un cobro registrado por error: se quita de la factura y, si había sumado al banco, se resta del saldo
+  async function anularCobro(en) {
+    if (C.anular !== en) { C.anular = en; renderCartDetalle(); return; }
+    C.anular = null;
+    const it = C.items.find((x) => x.id === C.openId);
+    const c = it && (it.cobros || []).find((y) => y.en === en);
+    if (!c || C.guardando) return;
+    C.guardando = true;
+    const now = new Date().toISOString();
+    try {
+      await mutarCartera((d) => {
+        const x = d.items.find((y) => y.id === it.id);
+        if (!x) return false;
+        x.cobros = (x.cobros || []).filter((y) => y.en !== en);
+        if (x.estado === 'pagado' && porCobrarDe({ ...x, estado: 'pendiente' }) > 0) x.estado = 'pendiente';
+        x.historial = (x.historial || []).slice(-30).concat([{ por: uid, en: now, nota: `Cobro anulado: ${fmt(c.valor)} del ${c.fecha ? fmtDate(c.fecha) : 'sin fecha'}${c.ret ? ` (+ retenciones ${fmt(c.ret)})` : ''}${c.banco ? ' · restado del banco' : ''}` }]);
+      });
+      if (c.banco && S.banco && typeof S.banco.saldo === 'number') {
+        await mutar((d) => { if (d.banco && typeof d.banco.saldo === 'number') d.banco = { ...d.banco, saldo: d.banco.saldo - (Number(c.valor) || 0), actualizado: now, por: uid }; });
+      }
+      toast(`Cobro anulado${c.banco ? ': se restaron ' + fmt(c.valor) + ' del saldo en banco' : ''}.`);
+      render(); renderCartDetalle();
+    } catch (e) { toast(msgGitHub(e)); }
+    finally { C.guardando = false; }
+  }
+
   async function registrarCobro(ev) {
     ev.preventDefault();
     const it = C.items.find((x) => x.id === C.openId);
-    if (!it) return;
+    if (!it || C.guardando) return; // evita registrar el mismo cobro dos veces por doble clic
     const fecha = $('#cc-fecha').value, valor = Math.round(parseMonto($('#cc-valor').value)), alBanco = $('#cc-banco').checked;
     if (!fecha) return mostrarError('#cc-err', 'Elige la fecha en que entró el dinero.');
     if (!(valor > 0)) return mostrarError('#cc-err', 'Escribe el valor recibido.');
@@ -1537,6 +1563,9 @@
     if (dif > 0 && !tipo) return mostrarError('#cc-err', 'Indica si es un pago total con retenciones o un abono parcial.');
     const saldar = dif > 0 && tipo === 'total';
     const now = new Date().toISOString();
+    C.guardando = true;
+    const btnCobro = ev.target.querySelector('button[type="submit"]');
+    if (btnCobro) { btnCobro.disabled = true; btnCobro.textContent = 'Registrando…'; }
     try {
       let quedoPagada = false;
       await mutarCartera((d) => {
@@ -1553,7 +1582,8 @@
       }
       toast(`Cobro registrado${alBanco && S.banco ? ': se sumaron ' + fmt(valor) + ' al saldo en banco' : ''}.`);
       render(); renderCartDetalle();
-    } catch (e) { mostrarError('#cc-err', msgGitHub(e)); }
+    } catch (e) { mostrarError('#cc-err', msgGitHub(e)); if (btnCobro) { btnCobro.disabled = false; btnCobro.textContent = 'Registrar cobro'; } }
+    finally { C.guardando = false; }
   }
 
   async function cambiarEstadoCartera() {
@@ -1753,8 +1783,9 @@
 
   // Eventos de cartera
   document.addEventListener('click', (ev) => {
-    const t = ev.target.closest('[data-ctab], [data-crow], [data-cver], [data-cedit], #cc-estado-go, #cc-borrar, #c-btn-add, #c-btn-import, #c-btn-dl');
+    const t = ev.target.closest('[data-ctab], [data-crow], [data-cver], [data-cedit], [data-canular], #cc-estado-go, #cc-borrar, #c-btn-add, #c-btn-import, #c-btn-dl');
     if (!t) return;
+    if (t.dataset.canular) { anularCobro(t.dataset.canular); return; }
     if (t.dataset.ctab) { C.tab = t.dataset.ctab; renderCartera(); return; }
     if (t.dataset.cver != null) { verDocCartera(t.dataset.cver); return; }
     if (t.dataset.cedit) { abrirCartForm(t.dataset.cedit); return; }
@@ -1774,7 +1805,7 @@
     $('#cc-dif').hidden = !(v > 0 && dif > 0);
     if (v > 0 && dif > 0) $('#cc-dif-txt').innerHTML = `Diferencia con el saldo por cobrar: <b class="num">${fmt(dif)}</b>`;
   });
-  $('#dlg-cart').addEventListener('close', () => { C.openId = null; C.borrar = false; });
+  $('#dlg-cart').addEventListener('close', () => { C.openId = null; C.borrar = false; C.anular = null; });
   $('#c-q').addEventListener('input', (e) => { C.q = e.target.value; renderCartera(); });
   $('#c-tipo').addEventListener('change', (e) => { C.tipo = e.target.value; renderCartera(); });
 
