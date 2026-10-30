@@ -384,6 +384,7 @@
       const a = await cargarDatos();
       const b = await cargarCartera();
       if (a || b) render();
+      revisarAvisos();
       $('#sync').textContent = 'Actualizado ' + new Intl.DateTimeFormat('es-CO', { hour: 'numeric', minute: '2-digit' }).format(new Date());
       notice('');
     } catch (e) {
@@ -1997,6 +1998,63 @@
     btn.disabled = false;
   });
 
+  // ---------- avisos al celular (ntfy) ----------
+  // Cuando la administradora carga pagos "Por revisar", se envía UN aviso por tanda (2 minutos sin pagos nuevos).
+  // El canal es un nombre aleatorio guardado cifrado; el aviso solo dice cuántos pagos hay, sin datos sensibles.
+  const NTFY = 'https://ntfy.sh';
+  const ESPERA_TANDA = 2 * 60 * 1000;
+  let avisoTimer = null, enviandoAviso = false;
+  function urlApp() { return location.origin + location.pathname.replace(/[^/]*$/, '') + '#proveedores'; }
+  async function enviarNtfy(titulo, mensaje) {
+    const r = await fetch(NTFY, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ topic: conf.avisos.canal, title: titulo, message: mensaje, click: urlApp(), tags: ['moneybag'], priority: 4 }) });
+    if (!r.ok) throw { status: r.status };
+  }
+  async function revisarAvisos() {
+    if (!isAdmin || !conf || !conf.avisos || !conf.avisos.canal || enviandoAviso) return;
+    const desde = conf.avisos.desde || '';
+    const nuevos = S.pagos.filter((p) => p.estado === 'revisar' && !p.avisado && String(p.creado || '') >= desde);
+    if (!nuevos.length) return;
+    const ultimo = Math.max(...nuevos.map((p) => Date.parse(p.creado) || 0));
+    const falta = ultimo + ESPERA_TANDA - Date.now();
+    if (falta > 0) { clearTimeout(avisoTimer); avisoTimer = setTimeout(revisarAvisos, falta + 1000); return; }
+    enviandoAviso = true;
+    try {
+      const n = nuevos.length, cobros = nuevos.filter((p) => p.tipoDoc).length;
+      await enviarNtfy('Pagos por autorizar', `${n === 1 ? 'Hay 1 pago nuevo' : `Hay ${n} pagos nuevos`} por revisar${cobros ? ` (${cobros} de contratistas)` : ''}. Toca para abrir la app.`);
+      const ids = new Set(nuevos.map((p) => p.id));
+      await mutar((d) => { for (const p of d.pagos) if (ids.has(p.id)) p.avisado = true; });
+    } catch (e) { /* se reintenta en la próxima sincronización */ }
+    finally { enviandoAviso = false; }
+  }
+  function renderAvisos() {
+    const a = conf.avisos;
+    $('#av-off').hidden = !!a; $('#av-on').hidden = !a;
+    mostrarError('#av-err', '');
+    if (!a) return;
+    $('#av-canal').value = a.canal;
+    $('#av-wa').href = 'https://wa.me/?text=' + encodeURIComponent(`Para recibir en el celular los avisos de pagos por autorizar de ODESA:\n1) Instala la app "ntfy" (Play Store o App Store).\n2) Ábrela, toca + (Suscribirse a un tema) y escribe: ${a.canal}\n3) Toca Suscribirse. Listo.`);
+  }
+  $('#av-activar').addEventListener('click', async () => {
+    try {
+      const abc = 'abcdefghijkmnpqrstuvwxyz23456789';
+      conf.avisos = { canal: 'odesa-pagos-' + [...Cripto.aleatorio(16)].map((b) => abc[b % abc.length]).join(''), desde: new Date().toISOString() };
+      await guardarConfig();
+      renderAvisos(); toast('Avisos activados. Comparte el canal con tus jefes.');
+    } catch (e) { delete conf.avisos; mostrarError('#av-err', msgGitHub(e)); }
+  });
+  $('#av-prueba').addEventListener('click', async () => {
+    try { await enviarNtfy('Pagos por autorizar', 'Aviso de prueba: si ves esto, los avisos de ODESA funcionan.'); toast('Aviso de prueba enviado.'); }
+    catch (e) { mostrarError('#av-err', 'No se pudo enviar el aviso. Revisa la conexión e inténtalo de nuevo.'); }
+  });
+  $('#av-desactivar').addEventListener('click', async () => {
+    const b = $('#av-desactivar');
+    if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = '¿Seguro? Toca de nuevo'; return; }
+    delete b.dataset.sure; b.textContent = 'Desactivar';
+    const antes = conf.avisos;
+    try { delete conf.avisos; await guardarConfig(); renderAvisos(); toast('Avisos desactivados.'); }
+    catch (e) { conf.avisos = antes; mostrarError('#av-err', msgGitHub(e)); }
+  });
+
   // ---------- usuarios y contraseñas ----------
   async function leerUsuarios() {
     const f = await GH.leer(R_USUARIOS);
@@ -2020,7 +2078,7 @@
     $('#c-estado').textContent = conf.claudeKey ? '✓ Lectura con Claude activada.' : 'Lectura con Claude desactivada (se usa el lector propio).';
     $('#c-quitar').hidden = !conf.claudeKey;
   }
-  function openUsuarios() { renderUsuarios(); renderClaude(); renderSiigoConf(); renderCobrosConf(); renderRobot(); mostrarError('#user-err', ''); mostrarError('#token-err', ''); mostrarError('#claude-err', ''); $('#user-form').reset(); $('#t-token').value = ''; $('#c-clave').value = ''; $('#dlg-users').showModal(); }
+  function openUsuarios() { renderUsuarios(); renderClaude(); renderSiigoConf(); renderCobrosConf(); renderRobot(); renderAvisos(); mostrarError('#user-err', ''); mostrarError('#token-err', ''); mostrarError('#claude-err', ''); $('#user-form').reset(); $('#t-token').value = ''; $('#c-clave').value = ''; $('#dlg-users').showModal(); }
 
   $('#claude-form').addEventListener('submit', async (ev) => {
     ev.preventDefault();
@@ -2133,7 +2191,7 @@
     render();
     $('#sync').textContent = 'Actualizado ' + new Intl.DateTimeFormat('es-CO', { hour: 'numeric', minute: '2-digit' }).format(new Date());
     setInterval(sincronizar, 30000);
-    if (isAdmin) { revisarBuzon(); setInterval(revisarBuzon, 120000); }
+    if (isAdmin) { revisarBuzon(); setInterval(revisarBuzon, 120000); revisarAvisos(); }
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') sincronizar(); });
   }
 

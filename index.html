@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="estilos.css?v=10">
+<link rel="stylesheet" href="estilos.css?v=11">
 </head>
 <body>
 
@@ -413,6 +413,20 @@
       <div class="err" id="token-err" hidden></div>
     </div>
     <div class="admin-box">
+      <span class="section-lbl">Avisos al celular de tus jefes</span>
+      <div id="av-off">
+        <p style="margin:0;color:var(--muted);font-size:.9rem">Cuando cargues pagos para revisar, tus jefes reciben una notificación en el celular (“3 pagos nuevos por revisar”) que abre la app al tocarla. Usa la app gratuita <b>ntfy</b> y un canal privado de ODESA. El aviso no incluye proveedores ni valores.</p>
+        <div class="form-actions" style="justify-content:flex-start;margin-top:8px"><button class="btn sm primary" type="button" id="av-activar">Activar avisos</button></div>
+      </div>
+      <div id="av-on" hidden style="display:grid;gap:8px">
+        <p style="margin:0;font-size:.9rem">✓ Avisos activos. Canal privado:</p>
+        <div class="pay-date"><input id="av-canal" readonly style="flex:1 1 220px;font-family:var(--font-num)"><button class="btn sm" type="button" data-copiar="av-canal">Copiar</button></div>
+        <ol class="steps"><li>Cada jefe instala <b>ntfy</b> (Play Store o App Store).</li><li>En ntfy toca <b>+</b> (Suscribirse a un tema), escribe el canal de arriba y toca <b>Suscribirse</b>.</li><li>Listo: cuando cargues pagos les llegará el aviso.</li></ol>
+        <div class="decide" style="justify-content:flex-start"><a class="btn sm" id="av-wa" target="_blank" rel="noopener">Enviar instrucciones por WhatsApp</a><button class="btn sm" type="button" id="av-prueba">Enviar aviso de prueba</button><button class="btn sm danger" type="button" id="av-desactivar">Desactivar</button></div>
+      </div>
+      <div class="err" id="av-err" hidden></div>
+    </div>
+    <div class="admin-box">
       <span class="section-lbl">Tarea automática de cartera (carpeta FACTURAS DE VENTA)</span>
       <p style="margin:0;color:var(--muted);font-size:.9rem">Crea un usuario técnico para que la tarea del computador pueda guardar en la app las facturas de venta nuevas. Se descarga un archivo <b>robot-cartera.json</b> con su acceso; guárdalo solo en tu PC y no lo compartas.</p>
       <p style="margin:0;font-size:.9rem" id="rb-estado"></p>
@@ -472,9 +486,9 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="cripto.js?v=10"></script>
-<script src="github.js?v=10"></script>
-<script src="lector.js?v=10"></script>
-<script src="app.js?v=10"></script>
+<script src="cripto.js?v=11"></script>
+<script src="github.js?v=11"></script>
+<script src="lector.js?v=11"></script>
+<script src="app.js?v=11"></script>
 </body>
 </html>
