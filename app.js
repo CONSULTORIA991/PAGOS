@@ -21,8 +21,8 @@
   const MIN_CLAVE = 10;
   const SESION_KEY = 'pagos.sesion';
 
-  const ESTADOS = { revisar: { label: 'Por revisar' }, aprobado: { label: 'Se procede' }, pendiente: { label: 'Pendiente' }, pagado: { label: 'Pagado' }, rechazado: { label: 'Rechazado' } };
-  const TABS = [['revisar', 'Por revisar'], ['aprobado', 'Se proceden'], ['pendiente', 'Pendientes'], ['pagado', 'Pagados'], ['rechazado', 'Rechazados'], ['todos', 'Todos']];
+  const ESTADOS = { revisar: { label: 'Por revisar' }, aprobado: { label: 'Aprobado' }, pendiente: { label: 'Pendiente' }, pagado: { label: 'Pagado' }, rechazado: { label: 'Rechazado' } };
+  const TABS = [['revisar', 'Por revisar'], ['aprobado', 'Aprobados'], ['pendiente', 'Pendientes'], ['pagado', 'Pagados'], ['rechazado', 'Rechazados'], ['todos', 'Todos']];
   const TIPO_DOC = { cobro: 'Cuenta de cobro', anticipo: 'Anticipo' };
 
   const S = { pagos: [], banco: null, loaded: false, tab: 'revisar', q: '', sort: 'vence', openId: null, confirm: null, view: 'aprob', rDesde: '', rHasta: '', rRange: 'mes', payDate: '' };
@@ -221,7 +221,7 @@
     const dis = busy.has(p.id) ? ' disabled' : '';
     if (p.estado === 'pagado') return '';
     const out = [];
-    if (p.estado !== 'aprobado') out.push(`<button class="btn go${cls}" type="button" data-act="aprobado" data-id="${p.id}"${dis}>Se procede</button>`);
+    if (p.estado !== 'aprobado') out.push(`<button class="btn go${cls}" type="button" data-act="aprobado" data-id="${p.id}"${dis}>Aprobar</button>`);
     if (p.estado !== 'pendiente') out.push(`<button class="btn hold${cls}" type="button" data-act="pendiente" data-id="${p.id}"${dis}>Dejar pendiente</button>`);
     if (!small && p.estado !== 'rechazado') out.push(`<button class="btn no${cls}" type="button" data-act="rechazado" data-id="${p.id}"${dis}>Rechazar</button>`);
     return out.join('');
@@ -307,7 +307,7 @@
       const after = st === 'aprobado' ? now : now - v;
       impact = st === 'aprobado'
         ? `<div class="impact"><span>Este pago ya está aprobado. Con él, en banco quedaría <span class="num ${now < 0 ? 'neg' : ''}">${fmt(now)}</span>.</span><span>Si se deja pendiente, quedaría <span class="num">${fmt(now + v)}</span>.</span></div>`
-        : `<div class="impact"><span>Hoy quedaría en banco <span class="num ${now < 0 ? 'neg' : ''}">${fmt(now)}</span>.</span><span>Si se procede con este pago, quedaría <span class="num ${after < 0 ? 'neg' : ''}">${fmt(after)}</span>.</span></div>`;
+        : `<div class="impact"><span>Hoy quedaría en banco <span class="num ${now < 0 ? 'neg' : ''}">${fmt(now)}</span>.</span><span>Si se aprueba este pago, quedaría <span class="num ${after < 0 ? 'neg' : ''}">${fmt(after)}</span>.</span></div>`;
     }
     const hist = (p.historial || []).slice().reverse().map((h) => `<li><span class="pill st-${ESTADOS[h.estado] ? h.estado : 'revisar'}">${(ESTADOS[h.estado] || ESTADOS.revisar).label}</span><span>${esc(personName(h.por))}</span><span class="when">${esc(dtFmt.format(new Date(h.en)))}</span>${h.nota ? `<span>— ${esc(h.nota)}</span>` : ''}</li>`).join('');
     const canDecide = st !== 'pagado';
@@ -340,7 +340,7 @@
       ${p.nota ? `<div class="impact"><span class="section-lbl">Nota</span><span>${esc(p.nota)}</span></div>` : ''}
       ${impact}
       ${renderInvoice(p)}
-      ${canDecide ? `<div class="field"><label for="d-nota">Comentario de la decisión (opcional)</label><input id="d-nota" autocomplete="off" placeholder="Ej. Pagar la próxima semana" value="${esc(notaPrev)}"></div><div class="decide">${p.estado !== 'aprobado' ? `<button class="btn go" type="button" data-act="aprobado" data-id="${p.id}"${busy.has(p.id) ? ' disabled' : ''}>Se procede con este pago</button>` : ''}${p.estado !== 'pendiente' ? `<button class="btn hold" type="button" data-act="pendiente" data-id="${p.id}"${busy.has(p.id) ? ' disabled' : ''}>Dejar pendiente</button>` : ''}${p.estado !== 'rechazado' ? `<button class="btn no" type="button" data-act="rechazado" data-id="${p.id}"${busy.has(p.id) ? ' disabled' : ''}>Rechazar</button>` : ''}</div>` : ''}
+      ${canDecide ? `<div class="field"><label for="d-nota">Comentario de la decisión (opcional)</label><input id="d-nota" autocomplete="off" placeholder="Ej. Pagar la próxima semana" value="${esc(notaPrev)}"></div><div class="decide">${p.estado !== 'aprobado' ? `<button class="btn go" type="button" data-act="aprobado" data-id="${p.id}"${busy.has(p.id) ? ' disabled' : ''}>Aprobar este pago</button>` : ''}${p.estado !== 'pendiente' ? `<button class="btn hold" type="button" data-act="pendiente" data-id="${p.id}"${busy.has(p.id) ? ' disabled' : ''}>Dejar pendiente</button>` : ''}${p.estado !== 'rechazado' ? `<button class="btn no" type="button" data-act="rechazado" data-id="${p.id}"${busy.has(p.id) ? ' disabled' : ''}>Rechazar</button>` : ''}</div>` : ''}
       ${hist ? `<div style="display:grid;gap:8px"><span class="section-lbl">Historial</span><ul class="hist">${hist}</ul></div>` : ''}
       ${adminBox}`;
     if (!dlg.open) dlg.showModal();
@@ -365,6 +365,7 @@
     renderLedger(); renderTabs(); renderList(); renderReport();
     if (S.openId) renderDetail();
     renderCartResumen(); renderCartera();
+    renderInicio(); renderConsultaProv(); renderConsultaCli();
   }
 
   // ---------- datos: lectura, sincronización y escritura ----------
@@ -428,7 +429,7 @@
         x.estado = estado; x.decididoPor = uid; x.decididoEn = now;
         x.historial = (x.historial || []).slice(-24).concat([{ estado, por: uid, en: now, nota }]);
       });
-      if (ok) toast(estado === 'aprobado' ? `Se procede: ${p.proveedor}` : estado === 'pendiente' ? `Quedó pendiente: ${p.proveedor}` : estado === 'rechazado' ? `Rechazado: ${p.proveedor}` : `Volvió a por revisar: ${p.proveedor}`);
+      if (ok) toast(estado === 'aprobado' ? `Aprobado: ${p.proveedor}` : estado === 'pendiente' ? `Quedó pendiente: ${p.proveedor}` : estado === 'rechazado' ? `Rechazado: ${p.proveedor}` : `Volvió a por revisar: ${p.proveedor}`);
       else toast('Este pago ya no existe.');
       if (notaEl && S.openId === id) notaEl.value = '';
     } catch (e) { writeError(e); }
@@ -822,16 +823,174 @@
   function onDateInput() { S.rDesde = $('#r-desde').value; S.rHasta = $('#r-hasta').value; S.rRange = ''; renderReport(); }
   $('#r-desde').addEventListener('change', onDateInput);
   $('#r-hasta').addEventListener('change', onDateInput);
+  // Secciones: Inicio · Proveedores (aprob, rep, prov) · Clientes (cart, cli)
+  const VISTAS = ['inicio', 'aprob', 'rep', 'prov', 'cart', 'cli'];
   function setView(v) {
-    S.view = ['rep', 'cart'].includes(v) ? v : 'aprob';
-    try { localStorage.setItem('pagos.view', S.view); } catch (e) {}
-    document.querySelectorAll('[data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === S.view)));
-    $('#view-aprob').hidden = S.view !== 'aprob';
-    $('#view-rep').hidden = S.view !== 'rep';
-    $('#view-cart').hidden = S.view !== 'cart';
+    S.view = VISTAS.includes(v) ? v : 'inicio';
+    const grupo = ['aprob', 'rep', 'prov'].includes(S.view) ? 'prov' : ['cart', 'cli'].includes(S.view) ? 'cli' : 'inicio';
+    document.querySelectorAll('.vbtn[data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === S.view)));
+    for (const x of VISTAS) $('#view-' + x).hidden = S.view !== x;
+    $('#nav-prov').hidden = grupo !== 'prov';
+    $('#nav-cli').hidden = grupo !== 'cli';
+    $('#admin-actions').hidden = !isAdmin || grupo !== 'prov';
+    if (S.view === 'inicio') renderInicio();
     if (S.view === 'rep') renderReport();
+    if (S.view === 'prov') renderConsultaProv();
     if (S.view === 'cart' && typeof renderCartera === 'function') renderCartera();
+    if (S.view === 'cli') renderConsultaCli();
+    window.scrollTo({ top: 0 });
   }
+
+  // ---------- inicio ----------
+  const millones = (n) => (Math.abs(n) >= 1e6 ? '$ ' + (n / 1e6).toLocaleString('es-CO', { maximumFractionDigits: 1 }) + ' M' : fmt(n));
+  function renderInicio() {
+    if (S.view !== 'inicio') return;
+    const h = new Date().getHours();
+    const nombre = ((conf && conf.usuarios && conf.usuarios[uid] && conf.usuarios[uid].nombre) || '').split(/\s+/)[0];
+    const nom = nombre ? nombre.charAt(0).toUpperCase() + nombre.slice(1).toLowerCase() : '';
+    $('#i-saludo').textContent = (h < 12 ? 'Buenos días' : h < 19 ? 'Buenas tardes' : 'Buenas noches') + (nom ? ', ' + nom : '');
+    const t = totals();
+    const saldo = S.banco && typeof S.banco.saldo === 'number' ? S.banco.saldo : null;
+    $('#i-saldo').textContent = saldo == null ? 'Sin registrar' : fmt(saldo);
+    $('#i-aprob').textContent = fmt(t.aprob);
+    const q = saldo == null ? null : saldo - t.aprob;
+    $('#i-queda').textContent = q == null ? '—' : fmt(q);
+    $('#i-queda').classList.toggle('neg', q != null && q < 0);
+    $('#i-queda').classList.toggle('ok', !(q != null && q < 0));
+    $('#i-prov-dato').textContent = S.loaded ? (t.nRevisar ? `${t.nRevisar} por revisar · ${millones(t.revisar)}` : 'Nada por revisar') : '';
+    $('#i-cli-dato').textContent = C.loaded && C.items.length ? `Por cobrar · ${millones(totalesCartera().total)}` : '';
+  }
+
+  // ---------- consultas por proveedor y por cliente ----------
+  function rangoConsulta(r) {
+    const d = new Date(); d.setHours(12, 0, 0, 0);
+    if (r === 'anio') return [d.getFullYear() + '-01-01', todayISO()];
+    if (r === 'todo') return ['', ''];
+    return rangeDates(r);
+  }
+  const Q = { prov: { clave: '', per: 'anio', desde: '', hasta: '' }, cli: { clave: '', per: 'anio', desde: '', hasta: '' } };
+  [Q.prov.desde, Q.prov.hasta] = rangoConsulta('anio'); [Q.cli.desde, Q.cli.hasta] = rangoConsulta('anio');
+  const enRango = (f, q) => !!f && (!q.desde || f >= q.desde) && (!q.hasta || f <= q.hasta);
+  const periodoTxt = (q) => (q.desde || q.hasta ? `${q.desde ? fmtDate(q.desde) : 'inicio'} – ${q.hasta ? fmtDate(q.hasta) : 'hoy'}` : 'Todo el tiempo');
+  // Agrupa por NIT (o por nombre si no hay NIT)
+  function grupos(lista, nombreDe) {
+    const m = new Map();
+    for (const x of lista) {
+      const nombre = String(nombreDe(x) || '').trim();
+      if (!nombre) continue;
+      const clave = x.nit ? 'n' + x.nit : 't' + normTxt(nombre);
+      if (!m.has(clave)) m.set(clave, { clave, nombre, nit: x.nit || '', items: [] });
+      m.get(clave).items.push(x);
+    }
+    return [...m.values()].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+  }
+  function buscarGrupo(gs, texto) {
+    const t = normTxt(texto), dig = String(texto).replace(/\D/g, '');
+    if (!t) return { lista: [] };
+    const exacto = gs.find((g) => normTxt(g.nombre) === t || (dig.length >= 6 && g.nit === dig));
+    if (exacto) return { uno: exacto };
+    const lista = gs.filter((g) => normTxt(g.nombre).includes(t) || (dig.length >= 4 && g.nit.includes(dig)));
+    return lista.length === 1 ? { uno: lista[0] } : { lista };
+  }
+  function pintarPeriodo(attr, q) {
+    document.querySelectorAll(`[${attr}]`).forEach((b) => b.setAttribute('aria-pressed', String(b.getAttribute(attr) === q.per)));
+  }
+
+  function renderConsultaProv() {
+    if (S.view !== 'prov') return;
+    const q = Q.prov;
+    const gs = grupos(S.pagos, (p) => p.proveedor);
+    const html = gs.map((g) => `<option value="${esc(g.nombre)}">${g.nit ? 'NIT ' + esc(g.nit) : ''}</option>`).join('');
+    if ($('#qp-lista').dataset.html !== html) { $('#qp-lista').innerHTML = html; $('#qp-lista').dataset.html = html; }
+    $('#qp-desde').value = q.desde; $('#qp-hasta').value = q.hasta; pintarPeriodo('data-qper', q);
+    const res = $('#qp-res');
+    const g = q.clave ? gs.find((x) => x.clave === q.clave) : null;
+    if (!g) {
+      const b = buscarGrupo(gs, $('#qp-input').value);
+      if (b.uno) { q.clave = b.uno.clave; return renderConsultaProv(); }
+      res.innerHTML = b.lista && b.lista.length
+        ? `<div class="res-grupo"><span class="section-lbl">Elige el proveedor</span><div class="elegir">${b.lista.slice(0, 20).map((x) => `<button class="btn sm" type="button" data-qpsel="${esc(x.clave)}">${esc(x.nombre)}</button>`).join('')}</div></div>`
+        : `<div class="empty" style="margin-top:16px"><h3>Busca un proveedor</h3><p>Escribe parte del nombre o el NIT. Verás cuánto se le ha pagado en el periodo, el detalle de cada pago y lo que tiene pendiente.</p></div>`;
+      return;
+    }
+    const pagados = g.items.filter((p) => p.estado === 'pagado' && enRango(fechaPagoDe(p), q)).sort((a, b) => fechaPagoDe(b).localeCompare(fechaPagoDe(a)));
+    const pendientes = g.items.filter((p) => ['revisar', 'aprobado', 'pendiente'].includes(p.estado));
+    const totPag = pagados.reduce((s, p) => s + (Number(p.valor) || 0), 0);
+    const totPend = pendientes.reduce((s, p) => s + (Number(p.valor) || 0), 0);
+    const fila = (p, pag) => {
+      const st = ESTADOS[p.estado] ? p.estado : 'revisar';
+      const ap = aprobacion(p);
+      const det = pag ? `Pagado el ${esc(fmtDate(fechaPagoDe(p)))}${ap ? ' · Aprobó ' + esc(personName(ap.por)) : ''}` : (p.vence ? 'Vence ' + esc(fmtDate(p.vence)) : 'Sin fecha');
+      return `<article class="row rrow s-${st}" data-row="${p.id}" tabindex="0"><div class="r-main"><div class="r-prov">${esc([p.factura ? 'Fact. ' + p.factura : '', p.concepto].filter(Boolean).join(' · ') || 'Pago')}</div><div class="r-sub">${det}</div></div><div class="r-amt">${fmt(p.valor)}<div class="quien">${ESTADOS[st].label}</div></div></article>`;
+    };
+    res.innerHTML = `
+      <div class="ficha" style="margin-top:16px">
+        <div><h3>${esc(g.nombre)}</h3><span class="nit">${g.nit ? 'NIT ' + esc(g.nit) + ' · ' : ''}${esc(periodoTxt(q))}</span></div>
+        <div class="cifras">
+          <div><span class="l">Total pagado</span><span class="v g">${fmt(totPag)}</span></div>
+          <div><span class="l">Pagos</span><span class="v">${pagados.length}</span></div>
+          <div><span class="l">Por pagar</span><span class="v">${fmt(totPend)}</span></div>
+        </div>
+      </div>
+      <div class="res-grupo"><span class="section-lbl">Pagos realizados</span>${pagados.length ? pagados.map((p) => fila(p, true)).join('') : '<p class="rep-note">No hay pagos en este periodo.</p>'}</div>
+      ${pendientes.length ? `<div class="res-grupo"><span class="section-lbl">Pendientes por pagar</span>${pendientes.map((p) => fila(p, false)).join('')}</div>` : ''}`;
+  }
+
+  function renderConsultaCli() {
+    if (S.view !== 'cli') return;
+    const q = Q.cli;
+    const gs = grupos(C.items, (it) => it.cliente);
+    const html = gs.map((g) => `<option value="${esc(g.nombre)}">${g.nit ? 'NIT ' + esc(g.nit) : ''}</option>`).join('');
+    if ($('#qc-lista').dataset.html !== html) { $('#qc-lista').innerHTML = html; $('#qc-lista').dataset.html = html; }
+    $('#qc-desde').value = q.desde; $('#qc-hasta').value = q.hasta; pintarPeriodo('data-qcper', q);
+    const res = $('#qc-res');
+    if (!C.loaded) { res.innerHTML = '<div class="empty" style="margin-top:16px"><h3>Cargando cartera…</h3></div>'; return; }
+    const g = q.clave ? gs.find((x) => x.clave === q.clave) : null;
+    if (!g) {
+      const b = buscarGrupo(gs, $('#qc-input').value);
+      if (b.uno) { q.clave = b.uno.clave; return renderConsultaCli(); }
+      res.innerHTML = b.lista && b.lista.length
+        ? `<div class="res-grupo"><span class="section-lbl">Elige el cliente</span><div class="elegir">${b.lista.slice(0, 20).map((x) => `<button class="btn sm" type="button" data-qcsel="${esc(x.clave)}">${esc(x.nombre)}</button>`).join('')}</div></div>`
+        : `<div class="empty" style="margin-top:16px"><h3>Busca un cliente</h3><p>Escribe parte del nombre o el NIT. Verás cuánto te ha pagado en el periodo, cada cobro y lo que tiene pendiente por pagar.</p></div>`;
+      return;
+    }
+    const cobros = [];
+    for (const it of g.items) for (const c of it.cobros || []) if (enRango(c.fecha, q) || (!c.fecha && !q.desde && !q.hasta)) cobros.push({ it, c });
+    cobros.sort((a, b) => String(b.c.fecha || '').localeCompare(String(a.c.fecha || '')));
+    const pendientes = g.items.filter((it) => porCobrarDe(it) > 0).sort((a, b) => String(a.vence || a.fecha || '').localeCompare(String(b.vence || b.fecha || '')));
+    const totCob = cobros.reduce((s, x) => s + (Number(x.c.valor) || 0), 0);
+    const totRet = cobros.reduce((s, x) => s + (Number(x.c.ret) || 0), 0);
+    const totPend = pendientes.reduce((s, it) => s + porCobrarDe(it), 0);
+    res.innerHTML = `
+      <div class="ficha" style="margin-top:16px">
+        <div><h3>${esc(g.nombre)}</h3><span class="nit">${g.nit ? 'NIT ' + esc(g.nit) + ' · ' : ''}${esc(periodoTxt(q))}</span></div>
+        <div class="cifras">
+          <div><span class="l">Total cobrado</span><span class="v g">${fmt(totCob)}</span></div>
+          <div><span class="l">Cobros</span><span class="v">${cobros.length}</span></div>
+          ${totRet ? `<div><span class="l">Retenciones</span><span class="v">${fmt(totRet)}</span></div>` : ''}
+          <div><span class="l">Por cobrar</span><span class="v">${fmt(totPend)}</span></div>
+        </div>
+      </div>
+      <div class="res-grupo"><span class="section-lbl">Cobros recibidos</span>${cobros.length ? cobros.map(({ it, c }) => `<article class="row rrow s-aprobado" data-crow="${it.id}" tabindex="0"><div class="r-main"><div class="r-prov">${esc([it.documento, it.descripcion].filter(Boolean).join(' · ').slice(0, 140) || 'Cobro')}</div><div class="r-sub">${c.fecha ? 'Recibido el ' + esc(fmtDate(c.fecha)) : 'Sin fecha'}${c.historico ? ' · histórico' : ''}${c.ret ? ' · retenciones ' + fmt(c.ret) : ''}</div></div><div class="r-amt">${fmt(c.valor)}</div></article>`).join('') : '<p class="rep-note">No hay cobros en este periodo.</p>'}</div>
+      ${pendientes.length ? `<div class="res-grupo"><span class="section-lbl">Pendiente por cobrar</span>${pendientes.map((it) => `<article class="row rrow s-${CE_CLASE[it.estado] || 'revisar'}" data-crow="${it.id}" tabindex="0"><div class="r-main"><div class="r-prov">${esc([it.documento, it.descripcion].filter(Boolean).join(' · ').slice(0, 140))}</div><div class="r-sub">${it.vence ? 'Vence ' + esc(fmtDate(it.vence)) : it.fecha ? 'Elaborada ' + esc(fmtDate(it.fecha)) : ''} · ${CE[it.estado] || it.estado}</div></div><div class="r-amt">${fmt(porCobrarDe(it))}</div></article>`).join('')}</div>` : ''}`;
+  }
+
+  // Eventos de las consultas
+  $('#qp-input').addEventListener('input', () => { Q.prov.clave = ''; renderConsultaProv(); });
+  $('#qc-input').addEventListener('input', () => { Q.cli.clave = ''; renderConsultaCli(); });
+  ['qp', 'qc'].forEach((k) => {
+    const q = k === 'qp' ? Q.prov : Q.cli, rend = () => (k === 'qp' ? renderConsultaProv() : renderConsultaCli());
+    $(`#${k}-desde`).addEventListener('change', (e) => { q.desde = e.target.value; q.per = ''; rend(); });
+    $(`#${k}-hasta`).addEventListener('change', (e) => { q.hasta = e.target.value; q.per = ''; rend(); });
+  });
+  document.addEventListener('click', (ev) => {
+    const t = ev.target.closest('[data-qper], [data-qcper], [data-qpsel], [data-qcsel]');
+    if (!t) return;
+    if (t.dataset.qper) { Q.prov.per = t.dataset.qper; [Q.prov.desde, Q.prov.hasta] = rangoConsulta(t.dataset.qper); renderConsultaProv(); }
+    if (t.dataset.qcper) { Q.cli.per = t.dataset.qcper; [Q.cli.desde, Q.cli.hasta] = rangoConsulta(t.dataset.qcper); renderConsultaCli(); }
+    if (t.dataset.qpsel) { Q.prov.clave = t.dataset.qpsel; const g = grupos(S.pagos, (p) => p.proveedor).find((x) => x.clave === t.dataset.qpsel); if (g) $('#qp-input').value = g.nombre; renderConsultaProv(); }
+    if (t.dataset.qcsel) { Q.cli.clave = t.dataset.qcsel; const g = grupos(C.items, (it) => it.cliente).find((x) => x.clave === t.dataset.qcsel); if (g) $('#qc-input').value = g.nombre; renderConsultaCli(); }
+  });
   function pagosEnRango() {
     let a = S.rDesde, b = S.rHasta;
     if (a && b && a > b) [a, b] = [b, a];
@@ -1964,7 +2123,8 @@
     try { localStorage.setItem('pagos.repo', JSON.stringify({ owner: conf.owner, repo: conf.repo, branch: conf.branch })); } catch (e) {}
     $('#role').textContent = isAdmin ? 'Administras los pagos' : 'Puedes aprobar pagos';
     $('#who').textContent = yo.nombre || yo.usuario;
-    $('#admin-actions').hidden = !isAdmin;
+    $('#btn-users').hidden = !isAdmin;
+    setView(S.view);
     $('#btn-saldo').hidden = !isAdmin;
     pantalla('#app');
     render();
@@ -2097,9 +2257,9 @@
     }
     [S.rDesde, S.rHasta] = rangeDates('mes');
     $('#r-desde').value = S.rDesde; $('#r-hasta').value = S.rHasta;
-    let v = location.hash === '#reporte' ? 'rep' : '';
-    if (!v) { try { v = localStorage.getItem('pagos.view') || ''; } catch (e) {} }
-    setView(v || 'aprob');
+    // Al entrar siempre se ve el inicio (o una sección pedida en el enlace: #reporte, #cartera, #proveedores, #clientes)
+    const porHash = { '#reporte': 'rep', '#cartera': 'cart', '#proveedores': 'aprob', '#clientes': 'cart' };
+    setView(porHash[location.hash] || 'inicio');
 
     let repo = GH.desdeUbicacion();
     if (!repo) { try { repo = JSON.parse(localStorage.getItem('pagos.repo') || 'null'); } catch (e) {} }

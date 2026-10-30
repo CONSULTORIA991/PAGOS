@@ -14,20 +14,20 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="estilos.css?v=9">
+<link rel="stylesheet" href="estilos.css?v=10">
 </head>
 <body>
 
 <!-- Pantalla de carga -->
 <div class="gate" id="pantalla-carga">
-  <div class="gate-card"><span class="lock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>Acceso protegido</span><h1>Pagos por aprobar</h1><p id="carga-msg">Cargando…</p></div>
+  <div class="gate-card"><span class="lock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>Acceso protegido</span><h1>Pagos ODESA</h1><p id="carga-msg">Cargando…</p></div>
 </div>
 
 <!-- Inicio de sesión -->
 <div class="gate" id="pantalla-login" hidden>
   <div class="gate-card">
     <span class="lock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>Acceso protegido</span>
-    <div style="display:grid;gap:6px"><h1>Pagos por aprobar</h1><p>Ingresa con el usuario y la contraseña que te dieron.</p></div>
+    <div style="display:grid;gap:6px"><h1>Pagos ODESA</h1><p>Ingresa con el usuario y la contraseña que te dieron.</p></div>
     <form id="login-form" novalidate>
       <div class="field"><label for="l-usuario">Usuario</label><input id="l-usuario" autocomplete="username" autocapitalize="none" required></div>
       <div class="field"><label for="l-clave">Contraseña</label><input id="l-clave" type="password" autocomplete="current-password" required></div>
@@ -71,30 +71,110 @@
 <div class="wrap" id="app" hidden>
   <header class="top">
     <div>
-      <h1>Pagos por aprobar</h1>
+      <h1>Pagos ODESA</h1>
       <div class="sub"><span id="hoy"></span><span class="role" id="role"></span><span class="user-chip" id="who"></span><span class="sync" id="sync"></span></div>
     </div>
     <div class="top-actions">
       <span id="admin-actions" class="top-actions" hidden>
-        <button class="btn" id="btn-users" type="button">Usuarios</button>
         <button class="btn" id="btn-import" type="button">Importar desde Excel</button>
         <button class="btn" id="btn-masiva" type="button">Subir varias facturas</button>
         <button class="btn primary" id="btn-add" type="button">+ Agregar pago</button>
       </span>
+      <button class="btn" id="btn-users" type="button" hidden>Usuarios</button>
       <button class="btn ghost" id="btn-clave" type="button">Cambiar contraseña</button>
       <button class="btn ghost" id="btn-salir" type="button">Salir</button>
     </div>
   </header>
 
-  <nav class="views" aria-label="Secciones">
-    <button class="vbtn" type="button" data-view="aprob" aria-pressed="true">Aprobación de pagos</button>
-    <button class="vbtn" type="button" data-view="rep" aria-pressed="false">Reporte de pagos realizados</button>
+  <nav class="views" aria-label="Proveedores" id="nav-prov" hidden>
+    <button class="vbtn volver" type="button" data-view="inicio">← Inicio</button>
+    <button class="vbtn" type="button" data-view="aprob" aria-pressed="false">Pagos por autorizar</button>
+    <button class="vbtn" type="button" data-view="rep" aria-pressed="false">Pagos realizados</button>
+    <button class="vbtn" type="button" data-view="prov" aria-pressed="false">Consultar proveedor</button>
+  </nav>
+  <nav class="views" aria-label="Clientes" id="nav-cli" hidden>
+    <button class="vbtn volver" type="button" data-view="inicio">← Inicio</button>
     <button class="vbtn" type="button" data-view="cart" aria-pressed="false">Cartera</button>
+    <button class="vbtn" type="button" data-view="cli" aria-pressed="false">Consultar cliente</button>
   </nav>
 
   <div class="notice" id="notice" hidden></div>
 
-  <div class="view" id="view-aprob">
+  <!-- Inicio: dos puertas grandes -->
+  <div class="view" id="view-inicio" hidden>
+    <div class="saludo"><h2 id="i-saludo">Hola</h2></div>
+    <section class="ini-banco" aria-label="Resumen del banco">
+      <div><span class="lbl">Saldo en banco</span><span class="v" id="i-saldo">—</span></div>
+      <div><span class="lbl">Aprobado por pagar</span><span class="v" id="i-aprob">—</span></div>
+      <div><span class="lbl">Quedaría</span><span class="v ok" id="i-queda">—</span></div>
+    </section>
+    <div class="puertas">
+      <button class="puerta prov" type="button" data-view="aprob">
+        <span class="txt">
+          <span><span class="ptit">Proveedores</span><span class="pdesc">Facturas y cuentas de cobro por pagar, aprobaciones y pagos realizados.</span></span>
+          <span class="pdato" id="i-prov-dato"></span>
+          <span class="ir">Entrar →</span>
+        </span>
+        <span class="ilus" aria-hidden="true">
+          <svg viewBox="0 0 140 150">
+            <circle cx="110" cy="30" r="16" fill="#f2c063"/>
+            <rect x="0" y="118" width="140" height="32" fill="#e3d3b4"/>
+            <rect x="14" y="70" width="62" height="42" rx="4" fill="#0d5c4b"/>
+            <rect x="20" y="76" width="22" height="14" rx="2" fill="#e8f3ee"/>
+            <rect x="46" y="76" width="24" height="14" rx="2" fill="#e8f3ee"/>
+            <path d="M76 82h22l14 16v14H76z" fill="#1a7343"/>
+            <rect x="82" y="86" width="16" height="10" rx="2" fill="#cfe9df"/>
+            <circle cx="34" cy="114" r="9" fill="#12201b"/><circle cx="34" cy="114" r="4" fill="#cfd8d4"/>
+            <circle cx="96" cy="114" r="9" fill="#12201b"/><circle cx="96" cy="114" r="4" fill="#cfd8d4"/>
+            <g transform="rotate(-8 40 40)"><rect x="22" y="18" width="40" height="48" rx="3" fill="#fff" stroke="#c9b48a"/><rect x="28" y="26" width="26" height="3" fill="#c9b48a"/><rect x="28" y="33" width="20" height="3" fill="#e3d3b4"/><rect x="28" y="40" width="24" height="3" fill="#e3d3b4"/><rect x="28" y="52" width="14" height="5" fill="#0d5c4b"/></g>
+          </svg>
+        </span>
+      </button>
+      <button class="puerta cli" type="button" data-view="cart">
+        <span class="txt">
+          <span><span class="ptit">Clientes</span><span class="pdesc">Cartera: facturas de venta, anticipos y retegarantías por cobrar.</span></span>
+          <span class="pdato" id="i-cli-dato"></span>
+          <span class="ir">Entrar →</span>
+        </span>
+        <span class="ilus" aria-hidden="true">
+          <svg viewBox="0 0 140 150">
+            <rect x="70" y="20" width="44" height="80" rx="3" fill="#2f4f7f"/>
+            <g fill="#cfe0f2"><rect x="76" y="28" width="10" height="8"/><rect x="92" y="28" width="10" height="8"/><rect x="76" y="44" width="10" height="8"/><rect x="92" y="44" width="10" height="8"/><rect x="76" y="60" width="10" height="8"/><rect x="92" y="60" width="10" height="8"/><rect x="76" y="76" width="10" height="8"/><rect x="92" y="76" width="10" height="8"/></g>
+            <rect x="30" y="50" width="34" height="50" rx="3" fill="#5577a8"/>
+            <g fill="#cfe0f2"><rect x="36" y="58" width="8" height="7"/><rect x="50" y="58" width="8" height="7"/><rect x="36" y="72" width="8" height="7"/><rect x="50" y="72" width="8" height="7"/></g>
+            <rect x="0" y="100" width="140" height="50" fill="#e9e4d8"/>
+            <rect x="14" y="108" width="112" height="30" rx="10" fill="#4fb3d9"/>
+            <path d="M22 120c8-5 14 5 22 0s14 5 22 0 14 5 22 0 14 5 22 0" stroke="#bfe8f5" stroke-width="3" fill="none"/>
+            <path d="M110 108v-14h8" stroke="#8a96a0" stroke-width="3" fill="none"/>
+          </svg>
+        </span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Consultar proveedor -->
+  <div class="view" id="view-prov" hidden>
+    <section class="consulta">
+      <label class="buscar" for="qp-input"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input id="qp-input" list="qp-lista" autocomplete="off" placeholder="Escribe el nombre o NIT del proveedor"></label>
+      <datalist id="qp-lista"></datalist>
+      <div class="rep-dates"><div class="field"><label for="qp-desde">Desde</label><input type="date" id="qp-desde"></div><div class="field"><label for="qp-hasta">Hasta</label><input type="date" id="qp-hasta"></div></div>
+      <div class="quick"><button class="qbtn" type="button" data-qper="mes">Este mes</button><button class="qbtn" type="button" data-qper="mesant">Mes anterior</button><button class="qbtn" type="button" data-qper="anio">Este año</button><button class="qbtn" type="button" data-qper="todo">Todo</button></div>
+    </section>
+    <div id="qp-res"></div>
+  </div>
+
+  <!-- Consultar cliente -->
+  <div class="view" id="view-cli" hidden>
+    <section class="consulta">
+      <label class="buscar" for="qc-input"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input id="qc-input" list="qc-lista" autocomplete="off" placeholder="Escribe el nombre o NIT del cliente"></label>
+      <datalist id="qc-lista"></datalist>
+      <div class="rep-dates"><div class="field"><label for="qc-desde">Desde</label><input type="date" id="qc-desde"></div><div class="field"><label for="qc-hasta">Hasta</label><input type="date" id="qc-hasta"></div></div>
+      <div class="quick"><button class="qbtn" type="button" data-qcper="mes">Este mes</button><button class="qbtn" type="button" data-qcper="mesant">Mes anterior</button><button class="qbtn" type="button" data-qcper="anio">Este año</button><button class="qbtn" type="button" data-qcper="todo">Todo</button></div>
+    </section>
+    <div id="qc-res"></div>
+  </div>
+
+  <div class="view" id="view-aprob" hidden>
     <section class="ledger" aria-label="Saldo en banco">
       <div class="eq">
         <div class="term">
@@ -105,7 +185,7 @@
         </div>
         <span class="op" aria-hidden="true">−</span>
         <div class="term">
-          <span class="lbl">Pagos que se proceden</span>
+          <span class="lbl">Pagos aprobados</span>
           <span class="val" id="v-aprob">$ 0</span>
           <span class="meta" id="m-aprob">0 pagos aprobados</span>
         </div>
@@ -119,7 +199,7 @@
       <div class="bar">
         <div class="track" id="track"><span class="seg a" id="seg-a" style="width:0"></span><span class="seg r" id="seg-r" style="width:0"></span><span class="seg f" id="seg-f" style="width:0"></span><span class="limit" id="limit" hidden></span></div>
         <div class="legend">
-          <span><i style="background:var(--info)"></i>Se proceden</span>
+          <span><i style="background:var(--info)"></i>Aprobados</span>
           <span><i style="background:var(--warn)"></i>Por revisar</span>
           <span><i style="background:var(--ok);opacity:.55"></i>Libre en banco</span>
         </div>
@@ -238,7 +318,7 @@
       <div class="field"><label for="f-valor">Valor a pagar (COP)</label><input id="f-valor" inputmode="decimal" autocomplete="off" placeholder="1.250.000" required></div>
       <div class="field"><label for="f-vence">Fecha de vencimiento</label><input id="f-vence" type="date"></div>
       <div class="field"><label for="f-estado">Estado</label>
-        <select id="f-estado"><option value="revisar">Por revisar</option><option value="aprobado">Se procede</option><option value="pendiente">Pendiente</option><option value="pagado">Pagado</option></select>
+        <select id="f-estado"><option value="revisar">Por revisar</option><option value="aprobado">Aprobado</option><option value="pendiente">Pendiente</option><option value="pagado">Pagado</option></select>
       </div>
       <div class="field" id="f-fpago-wrap" hidden><label for="f-fpago">Fecha de pago</label><input id="f-fpago" type="date"><span class="hint">Día en que salió el pago del banco.</span></div>
       <div class="field full"><label for="f-nota">Nota para los jefes</label><textarea id="f-nota" placeholder="Opcional"></textarea></div>
@@ -392,9 +472,9 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="cripto.js?v=9"></script>
-<script src="github.js?v=9"></script>
-<script src="lector.js?v=9"></script>
-<script src="app.js?v=9"></script>
+<script src="cripto.js?v=10"></script>
+<script src="github.js?v=10"></script>
+<script src="lector.js?v=10"></script>
+<script src="app.js?v=10"></script>
 </body>
 </html>

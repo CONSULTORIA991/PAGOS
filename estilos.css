@@ -278,6 +278,47 @@ details.repo .field { margin-top: 8px; }
 .users .who { display: grid; min-width: 0; }
 .users .who small { color: var(--muted); }
 .sync { font-size: .8rem; color: var(--muted); }
+
+/* Inicio: resumen y puertas a Proveedores / Clientes */
+.vbtn.volver { color: var(--accent); }
+.saludo h2 { font-size: clamp(1.4rem, 3vw, 1.8rem); }
+.ini-banco { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; box-shadow: var(--shadow); }
+.ini-banco > div { display: grid; gap: 2px; min-width: 0; }
+.ini-banco .lbl { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
+.ini-banco .v { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-weight: 600; font-size: clamp(1rem, 2.4vw, 1.35rem); overflow-wrap: anywhere; }
+.ini-banco .v.ok { color: var(--ok); }
+.ini-banco .v.neg { color: var(--bad); }
+.puertas { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.puerta { all: unset; box-sizing: border-box; cursor: pointer; position: relative; border-radius: 18px; overflow: hidden; border: 1px solid var(--line); background: var(--surface); display: grid; grid-template-columns: minmax(0, 1fr) 170px; min-height: 190px; box-shadow: var(--shadow); transition: transform .15s, box-shadow .15s; }
+.puerta:hover { transform: translateY(-3px); box-shadow: 0 10px 30px rgba(18, 32, 27, .14); }
+.puerta:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.puerta .txt { padding: 18px; display: grid; align-content: space-between; gap: 12px; }
+.puerta .ptit { display: block; font-family: var(--font-display); font-weight: 700; font-size: 1.6rem; }
+.puerta .pdesc { display: block; color: var(--muted); font-size: .9rem; margin-top: 4px; }
+.puerta .pdato { font-family: var(--font-num); font-weight: 600; font-size: .95rem; }
+.puerta .ir { font-weight: 600; color: var(--accent); }
+.puerta .ilus { display: block; }
+.puerta .ilus svg { width: 100%; height: 100%; display: block; }
+.puerta.prov .ilus { background: #f4ead7; }
+.puerta.cli .ilus { background: #d9ecf2; }
+@media (max-width: 420px) { .puerta { grid-template-columns: minmax(0, 1fr) 120px; min-height: 170px; } .puerta .ptit { font-size: 1.35rem; } .ini-banco { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: reduce) { .puerta { transition: none; } }
+
+/* Consultas por proveedor / cliente */
+.consulta { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 12px; box-shadow: var(--shadow); }
+.buscar { display: flex; gap: 10px; align-items: center; border: 2px solid var(--accent); border-radius: 12px; padding: 10px 12px; background: var(--surface); }
+.buscar svg { width: 20px; height: 20px; flex: none; color: var(--accent); }
+.buscar input { border: 0; outline: 0; background: transparent; flex: 1; min-width: 0; font-size: 1rem; }
+.ficha { background: var(--ink); color: var(--bg); border-radius: 14px; padding: 16px 18px; display: grid; gap: 12px; }
+.ficha h3 { font-size: 1.25rem; }
+.ficha .nit { font-size: .82rem; opacity: .75; }
+.ficha .cifras { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+.ficha .cifras > div { display: grid; gap: 2px; }
+.ficha .cifras .l { font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; opacity: .75; }
+.ficha .cifras .v { font-family: var(--font-num); font-weight: 600; font-size: 1.05rem; }
+.ficha .cifras .v.g { color: #7fe0b8; font-size: 1.3rem; }
+.res-grupo { display: grid; gap: 8px; margin-top: 16px; }
+.elegir { display: flex; flex-wrap: wrap; gap: 8px; }
 .r-state-box { display: inline-grid; gap: 2px; justify-items: end; }
 .quien { font-size: .76rem; color: var(--muted); white-space: nowrap; }
 .r-main .quien { white-space: normal; }
