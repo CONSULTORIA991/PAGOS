@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="estilos.css?v=11">
+<link rel="stylesheet" href="estilos.css?v=12">
 </head>
 <body>
 
@@ -378,7 +378,7 @@
 <dialog class="sheet" id="dlg-siigo">
   <div class="dlg">
     <div class="dlg-head"><h2>Exportar pagos a Siigo</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
-    <p style="margin:0;color:var(--muted)">Genera el <b>modelo de importación de comprobantes contables</b> con los pagos marcados como pagados en el periodo: un comprobante por factura, débito a la cuenta del proveedor y crédito al banco.</p>
+    <p style="margin:0;color:var(--muted)">Genera el <b>modelo de importación de comprobantes contables</b> con los pagos marcados como pagados en el periodo: <b>un comprobante por día de pago</b> con todos los pagos de esa fecha; cada pago lleva su débito a la cuenta del proveedor y su crédito al banco.</p>
     <div class="rep-dates">
       <div class="field"><label for="sg-desde">Pagados desde</label><input type="date" id="sg-desde"></div>
       <div class="field"><label for="sg-hasta">Hasta</label><input type="date" id="sg-hasta"></div>
@@ -486,9 +486,9 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="cripto.js?v=11"></script>
-<script src="github.js?v=11"></script>
-<script src="lector.js?v=11"></script>
-<script src="app.js?v=11"></script>
+<script src="cripto.js?v=12"></script>
+<script src="github.js?v=12"></script>
+<script src="lector.js?v=12"></script>
+<script src="app.js?v=12"></script>
 </body>
 </html>

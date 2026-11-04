@@ -1083,6 +1083,13 @@
       });
   }
 
+  // Un comprobante por día de pago: todos los pagos de la misma fecha comparten el consecutivo
+  function consecutivosPorDia(filas, inicial) {
+    const m = new Map();
+    for (const f of filas) { const dia = fechaPagoDe(f.p); if (!m.has(dia)) m.set(dia, inicial + m.size); }
+    return m;
+  }
+
   function renderSiigo() {
     const filas = filasSiigo();
     const sc = siigoConf();
@@ -1093,8 +1100,9 @@
       return;
     }
     const consec = Number($('#sg-consec').value);
+    const porDia = consecutivosPorDia(filas, consec > 0 ? consec : 1);
     $('#sg-tabla').innerHTML = `<table><thead><tr><th>Comp.</th><th>Fecha pago</th><th>Proveedor</th><th>NIT</th><th>Factura</th><th>Vence</th><th>Centro de costo</th><th style="text-align:right">Valor</th><th>Estado</th></tr></thead><tbody>
-      ${filas.map((f, i) => `<tr><td>${consec > 0 ? consec + i : '—'}</td><td>${esc(fmtDate(fechaPagoDe(f.p)))}</td><td>${esc(f.p.proveedor)}</td><td>${esc(f.p.nit || '—')}</td><td>${esc(f.prefijo ? f.prefijo + ' / ' + f.numero : f.p.factura || '—')}</td><td>${esc(f.p.vence ? fmtDate(f.p.vence) : '—')}</td><td>${esc(f.p.cc || '—')}</td><td class="n">${fmt(f.p.valor)}</td>
+      ${filas.map((f) => `<tr><td>${consec > 0 ? porDia.get(fechaPagoDe(f.p)) : '—'}</td><td>${esc(fmtDate(fechaPagoDe(f.p)))}</td><td>${esc(f.p.proveedor)}</td><td>${esc(f.p.nit || '—')}</td><td>${esc(f.prefijo ? f.prefijo + ' / ' + f.numero : f.p.factura || '—')}</td><td>${esc(f.p.vence ? fmtDate(f.p.vence) : '—')}</td><td>${esc(f.p.cc || '—')}</td><td class="n">${fmt(f.p.valor)}</td>
         <td>${f.errores.length ? `<span class="bulk"><span class="bad">Falta: ${esc(f.errores.join(', '))}</span></span>` : f.avisos.length ? `<span class="bulk"><span class="warn">Sin ${esc(f.avisos.join(', '))}</span></span>` : '<span class="bulk"><span class="ok">Listo</span></span>'} <button class="btn sm ghost" type="button" data-sg-editar="${f.p.id}">Editar</button></td></tr>`).join('')}
       </tbody></table>`;
     const conErrores = filas.filter((f) => f.errores.length).length;
@@ -1102,7 +1110,7 @@
     else if (conErrores) mostrarError('#sg-err', `${conErrores} ${conErrores === 1 ? 'pago tiene' : 'pagos tienen'} datos obligatorios incompletos. Usa “Completar desde las facturas” o “Editar”.`);
     else mostrarError('#sg-err', '');
     $('#sg-go').disabled = !(consec > 0) || conErrores > 0;
-    $('#sg-go').textContent = `Descargar archivo para Siigo (${filas.length} ${filas.length === 1 ? 'comprobante' : 'comprobantes'})`;
+    $('#sg-go').textContent = `Descargar archivo para Siigo (${porDia.size} ${porDia.size === 1 ? 'comprobante' : 'comprobantes'} · ${filas.length} ${filas.length === 1 ? 'pago' : 'pagos'})`;
   }
 
   function openSiigo() {
@@ -1163,14 +1171,16 @@
   $('#sg-go').addEventListener('click', async () => {
     const filas = filasSiigo();
     const sc = siigoConf();
-    let consec = Number($('#sg-consec').value);
-    if (!(consec > 0) || !filas.length || filas.some((f) => f.errores.length)) return;
+    const inicial = Number($('#sg-consec').value);
+    if (!(inicial > 0) || !filas.length || filas.some((f) => f.errores.length)) return;
     const tipo = Number(sc.tipo) || 11;
     const filasXls = [ENCABEZADO_SIIGO];
     const asignados = {};
     const vacio = () => new Array(ENCABEZADO_SIIGO.length).fill('');
+    const porDia = consecutivosPorDia(filas, inicial);
     for (const f of filas) {
       const p = f.p;
+      const consec = porDia.get(fechaPagoDe(p));
       const fecha = ddmmaaaa(fechaPagoDe(p));
       const desc = (p.concepto || `Pago factura ${f.prefijo}-${f.numero}`).slice(0, 100);
       const obs = `Pago ${p.proveedor} factura ${f.prefijo}-${f.numero}`.slice(0, 300);
@@ -1186,7 +1196,6 @@
       cre[19] = desc; cre[22] = valor; cre[23] = obs;
       filasXls.push(deb, cre);
       asignados[p.id] = consec;
-      consec++;
     }
     const ws = XLSX.utils.aoa_to_sheet(filasXls);
     ws['!cols'] = ENCABEZADO_SIIGO.map((h) => ({ wch: Math.max(12, Math.min(28, h.length + 2)) }));
@@ -1194,14 +1203,14 @@
     XLSX.utils.book_append_sheet(wb, ws, 'Datos');
     const a = $('#sg-desde').value, b = $('#sg-hasta').value;
     XLSX.writeFile(wb, `Siigo comprobantes ${tipo} ${a === b ? a : a + ' a ' + b}.xlsx`);
-    const ultimo = consec - 1;
+    const ultimo = inicial + porDia.size - 1;
     const ahora = new Date().toISOString();
     try {
       await mutar((d) => {
         for (const x of d.pagos) if (asignados[x.id]) x.siigo = { tipo, comprobante: asignados[x.id], en: ahora };
         d.siigo = { ...(d.siigo || {}), ultimo: Math.max(ultimo, Number((d.siigo || {}).ultimo) || 0) };
       });
-      toast(`Archivo generado: comprobantes ${tipo}-${ultimo - filas.length + 1} a ${tipo}-${ultimo}. Súbelo en Siigo.`);
+      toast(porDia.size === 1 ? `Archivo generado: comprobante ${tipo}-${inicial} con ${filas.length} pagos. Súbelo en Siigo.` : `Archivo generado: comprobantes ${tipo}-${inicial} a ${tipo}-${ultimo} (uno por día, ${filas.length} pagos). Súbelo en Siigo.`);
       render(); renderSiigo();
     } catch (e) { mostrarError('#sg-err', 'El archivo se descargó, pero no se pudo marcar como exportado: ' + msgGitHub(e)); }
   });
