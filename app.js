@@ -25,7 +25,7 @@
   const TABS = [['revisar', 'Por revisar'], ['aprobado', 'Aprobados'], ['pendiente', 'Pendientes'], ['pagado', 'Pagados'], ['rechazado', 'Rechazados'], ['todos', 'Todos']];
   const TIPO_DOC = { cobro: 'Cuenta de cobro', anticipo: 'Anticipo' };
 
-  const S = { pagos: [], banco: null, loaded: false, tab: 'revisar', q: '', sort: 'vence', openId: null, confirm: null, view: 'aprob', rDesde: '', rHasta: '', rRange: 'mes', payDate: '' };
+  const S = { pagos: [], banco: null, loaded: false, tab: 'revisar', q: '', sort: 'vence', openId: null, confirm: null, view: 'aprob', rDesde: '', rHasta: '', rRange: 'mes', payDate: '', sel: new Set() };
   // Sesión: llave maestra, identidad y configuración descifrada.
   let maestra = null, rawMaestra = null, uid = null, conf = null;
   let isAdmin = false;
@@ -247,7 +247,7 @@
       const st = ESTADOS[p.estado] ? p.estado : 'revisar';
       const sub = [p.concepto, p.factura ? 'Fact. ' + p.factura : ''].filter(Boolean).map(esc).join(' · ');
       return `<article class="row s-${st}" data-row="${p.id}" tabindex="0">
-        <div class="r-main"><div class="r-prov">${TIPO_DOC[p.tipoDoc] ? `<span class="chip doc">${TIPO_DOC[p.tipoDoc]}</span> ` : ''}${esc(p.proveedor || 'Sin proveedor')}</div><div class="r-sub">${sub || '&nbsp;'}${p.archivo ? ` · <span class="clip">${p.tipoDoc ? 'Documento adjunto' : 'Factura adjunta'}</span>` : ''}</div></div>
+        <div class="r-main"><div class="r-prov">${isAdmin && st === 'aprobado' ? `<input type="checkbox" class="sel" data-sel="${p.id}"${S.sel.has(p.id) ? ' checked' : ''} aria-label="Seleccionar para pagar junto con otras"> ` : ''}${TIPO_DOC[p.tipoDoc] ? `<span class="chip doc">${TIPO_DOC[p.tipoDoc]}</span> ` : ''}${esc(p.proveedor || 'Sin proveedor')}</div><div class="r-sub">${sub || '&nbsp;'}${p.archivo ? ` · <span class="clip">${p.tipoDoc ? 'Documento adjunto' : 'Factura adjunta'}</span>` : ''}</div></div>
         <div class="r-due">${st === 'pagado'
           ? `<span>${fechaPagoDe(p) ? 'Pagado el ' + esc(fmtDate(fechaPagoDe(p))) : 'Pagado (sin fecha)'}</span>`
           : `${dueChip(p)}<span>${p.vence ? 'Vence ' + esc(fmtDate(p.vence)) : 'Sin fecha'}</span>`}</div>
@@ -362,7 +362,7 @@
   function render() {
     $('#hoy').textContent = dayFmt.format(new Date());
     renderAprobadores();
-    renderLedger(); renderTabs(); renderList(); renderReport();
+    renderLedger(); renderTabs(); renderList(); renderReport(); renderSelBar();
     if (S.openId) renderDetail();
     renderCartResumen(); renderCartera();
     renderInicio(); renderConsultaProv(); renderConsultaCli();
@@ -455,6 +455,68 @@
     } catch (e) { writeError(e); }
     render();
   }
+
+  // ---------- pagar varias facturas de un mismo proveedor juntas (un solo movimiento de banco) ----------
+  const claveProv = (p) => (p.nit ? 'n' + p.nit : 't' + normTxt(p.proveedor));
+  function seleccionados() {
+    for (const id of [...S.sel]) { const p = S.pagos.find((x) => x.id === id); if (!p || p.estado !== 'aprobado') S.sel.delete(id); }
+    return S.pagos.filter((p) => S.sel.has(p.id));
+  }
+  function renderSelBar() {
+    const sel = seleccionados();
+    const bar = $('#sel-bar');
+    bar.hidden = !isAdmin || !sel.length;
+    if (!sel.length) return;
+    const total = sel.reduce((s, p) => s + (Number(p.valor) || 0), 0);
+    const provs = new Set(sel.map(claveProv));
+    $('#sel-txt').textContent = `${sel.length} ${sel.length === 1 ? 'factura' : 'facturas'} de ${sel[0].proveedor}${provs.size > 1 ? ' y otros' : ''} · ${fmt(total)}`;
+    const err = $('#sel-err');
+    err.hidden = provs.size <= 1;
+    err.textContent = provs.size > 1 ? 'Selecciona solo facturas de un mismo proveedor para hacer un solo pago.' : '';
+    $('#sel-pagar').disabled = provs.size > 1 || S.pagandoLote;
+    $('#sel-pagar').textContent = sel.length === 1 ? 'Marcar pagada' : `Marcar ${sel.length} pagadas juntas`;
+    if (!$('#sel-fecha').value) $('#sel-fecha').value = todayISO();
+    $('#sel-fecha').max = todayISO();
+    $('#sel-banco').closest('label').hidden = !(S.banco && typeof S.banco.saldo === 'number');
+  }
+  // El clic en la casilla solo selecciona (no abre el detalle del pago)
+  document.addEventListener('click', (ev) => {
+    const c = ev.target.closest && ev.target.closest('input[data-sel]');
+    if (!c) return;
+    ev.stopPropagation();
+    if (c.checked) S.sel.add(c.dataset.sel); else S.sel.delete(c.dataset.sel);
+    renderSelBar();
+  }, true);
+  $('#sel-limpiar').addEventListener('click', () => { S.sel.clear(); renderList(); renderSelBar(); });
+  $('#sel-pagar').addEventListener('click', async () => {
+    const sel = seleccionados();
+    if (!sel.length || new Set(sel.map(claveProv)).size > 1 || S.pagandoLote) return;
+    const fechaPago = $('#sel-fecha').value || todayISO();
+    const descontar = $('#sel-banco').checked && S.banco && typeof S.banco.saldo === 'number';
+    const ids = new Set(sel.map((p) => p.id));
+    const total = sel.reduce((s, p) => s + (Number(p.valor) || 0), 0);
+    const lote = sel.length > 1 ? nuevoId() : '';
+    const now = new Date().toISOString();
+    const facturas = sel.map((p) => p.factura || p.concepto || 'sin número').join(', ');
+    S.pagandoLote = true; renderSelBar();
+    try {
+      await mutar((d) => {
+        let suma = 0;
+        for (const x of d.pagos) {
+          if (!ids.has(x.id)) continue;
+          suma += Number(x.valor) || 0;
+          x.estado = 'pagado'; x.decididoPor = uid; x.decididoEn = now; x.pagadoEn = now; x.fechaPago = fechaPago;
+          if (lote) x.lote = lote;
+          x.historial = (x.historial || []).slice(-24).concat([{ estado: 'pagado', por: uid, en: now, nota: `Pagado el ${fmtDate(fechaPago)}${lote ? ` junto con ${sel.length - 1} ${sel.length === 2 ? 'factura más' : 'facturas más'} (${facturas}) en un solo pago de ${fmt(total)}` : ''}${descontar ? ' · descontado del saldo' : ''}` }]);
+        }
+        if (descontar && d.banco && typeof d.banco.saldo === 'number') d.banco = { ...d.banco, saldo: d.banco.saldo - suma, actualizado: now, por: uid };
+      });
+      S.sel.clear();
+      toast(`${sel.length === 1 ? 'Pago registrado' : `${sel.length} facturas pagadas en un solo movimiento`} por ${fmt(total)}${descontar ? ', descontado del saldo' : ''}.`);
+    } catch (e) { writeError(e); }
+    S.pagandoLote = false;
+    render();
+  });
 
   async function eliminar(id) {
     const p = S.pagos.find((x) => x.id === id);
@@ -1178,24 +1240,42 @@
     const asignados = {};
     const vacio = () => new Array(ENCABEZADO_SIIGO.length).fill('');
     const porDia = consecutivosPorDia(filas, inicial);
+    // Grupos: los pagos hechos juntos (mismo "lote") comparten UN movimiento de banco; los demás van solos
+    const gruposPago = [];
+    const porLote = new Map();
     for (const f of filas) {
-      const p = f.p;
-      const consec = porDia.get(fechaPagoDe(p));
-      const fecha = ddmmaaaa(fechaPagoDe(p));
-      const desc = (p.concepto || `Pago factura ${f.prefijo}-${f.numero}`).slice(0, 100);
-      const obs = `Pago ${p.proveedor} factura ${f.prefijo}-${f.numero}`.slice(0, 300);
-      const valor = Math.round(Number(p.valor) || 0);
-      // Línea 1: débito a la cuenta del proveedor (cruza la factura)
-      const deb = vacio();
-      deb[0] = tipo; deb[1] = consec; deb[2] = fecha; deb[5] = Number(f.cuenta); deb[6] = String(p.nit);
-      if (CUENTAS_CON_VENCIMIENTO.has(f.cuenta)) { deb[12] = f.prefijo; deb[13] = Number(f.numero); deb[14] = 1; deb[15] = ddmmaaaa(p.vence); }
-      deb[19] = desc; deb[20] = p.cc || ''; deb[21] = valor; deb[23] = obs;
-      // Línea 2: crédito al banco, mismo tercero
-      const cre = vacio();
-      cre[0] = tipo; cre[1] = consec; cre[2] = fecha; cre[5] = Number(sc.cuentaBanco); cre[6] = String(p.nit);
-      cre[19] = desc; cre[22] = valor; cre[23] = obs;
-      filasXls.push(deb, cre);
-      asignados[p.id] = consec;
+      const k = f.p.lote ? fechaPagoDe(f.p) + '|' + f.p.lote : 'p' + f.p.id;
+      if (!porLote.has(k)) { const g = []; porLote.set(k, g); gruposPago.push(g); }
+      porLote.get(k).push(f);
+    }
+    for (const grupo of gruposPago) {
+      const p0 = grupo[0].p;
+      const consec = porDia.get(fechaPagoDe(p0));
+      const fecha = ddmmaaaa(fechaPagoDe(p0));
+      const facturas = grupo.map((f) => `${f.prefijo}-${f.numero}`);
+      // Líneas débito: una por factura, a la cuenta del proveedor (cruza cada factura)
+      for (const f of grupo) {
+        const p = f.p;
+        const deb = vacio();
+        deb[0] = tipo; deb[1] = consec; deb[2] = fecha; deb[5] = Number(f.cuenta); deb[6] = String(p.nit);
+        if (CUENTAS_CON_VENCIMIENTO.has(f.cuenta)) { deb[12] = f.prefijo; deb[13] = Number(f.numero); deb[14] = 1; deb[15] = ddmmaaaa(p.vence); }
+        deb[19] = (p.concepto || `Pago factura ${f.prefijo}-${f.numero}`).slice(0, 100);
+        deb[20] = p.cc || ''; deb[21] = Math.round(Number(p.valor) || 0);
+        deb[23] = `Pago ${p.proveedor} factura ${f.prefijo}-${f.numero}`.slice(0, 300);
+        filasXls.push(deb);
+        asignados[p.id] = consec;
+      }
+      // Líneas crédito al banco: una por centro de costo (con el centro de costo de las facturas), mismo tercero
+      const porCC = new Map();
+      for (const f of grupo) porCC.set(f.p.cc || '', (porCC.get(f.p.cc || '') || 0) + Math.round(Number(f.p.valor) || 0));
+      for (const [cc, valor] of porCC) {
+        const cre = vacio();
+        cre[0] = tipo; cre[1] = consec; cre[2] = fecha; cre[5] = Number(sc.cuentaBanco); cre[6] = String(p0.nit);
+        cre[19] = (grupo.length === 1 ? (p0.concepto || `Pago factura ${facturas[0]}`) : `Pago facturas ${facturas.join(', ')}`).slice(0, 100);
+        cre[20] = cc; cre[22] = valor;
+        cre[23] = `Pago ${p0.proveedor} ${grupo.length === 1 ? 'factura' : 'facturas'} ${facturas.join(', ')}`.slice(0, 300);
+        filasXls.push(cre);
+      }
     }
     const ws = XLSX.utils.aoa_to_sheet(filasXls);
     ws['!cols'] = ENCABEZADO_SIIGO.map((h) => ({ wch: Math.max(12, Math.min(28, h.length + 2)) }));

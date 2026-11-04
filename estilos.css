@@ -279,6 +279,12 @@ details.repo .field { margin-top: 8px; }
 .users .who small { color: var(--muted); }
 .sync { font-size: .8rem; color: var(--muted); }
 
+/* Pago de varias facturas juntas */
+.row .sel { width: 18px; height: 18px; vertical-align: -3px; margin: 0 4px 0 0; accent-color: var(--accent); cursor: pointer; }
+.sel-bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 12px; padding: 12px 14px; display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; box-shadow: var(--shadow); }
+.sel-bar .sel-info { display: grid; gap: 2px; flex: 1 1 220px; min-width: 0; }
+.sel-bar input[type="date"] { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; }
+
 /* Inicio: resumen y puertas a Proveedores / Clientes */
 .vbtn.volver { color: var(--accent); }
 .saludo h2 { font-size: clamp(1.4rem, 3vw, 1.8rem); }

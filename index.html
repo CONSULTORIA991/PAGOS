@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="estilos.css?v=12">
+<link rel="stylesheet" href="estilos.css?v=13">
 </head>
 <body>
 
@@ -221,6 +221,12 @@
       </div>
     </div>
 
+    <div class="sel-bar" id="sel-bar" hidden>
+      <div class="sel-info"><b id="sel-txt"></b><span id="sel-err" class="err" hidden></span></div>
+      <div class="pay-date"><label for="sel-fecha">Fecha de pago</label><input type="date" id="sel-fecha"></div>
+      <label class="check"><input type="checkbox" id="sel-banco" checked> Descontar el total del saldo en banco</label>
+      <div class="decide" style="flex:none"><button class="btn sm" type="button" id="sel-limpiar">Quitar selección</button><button class="btn sm primary" type="button" id="sel-pagar">Marcar pagadas juntas</button></div>
+    </div>
     <section class="list" id="list" aria-live="polite">
       <div class="empty"><h3>Cargando pagos…</h3><p>En un momento aparece la lista de pagos pendientes de aprobación.</p></div>
     </section>
@@ -486,9 +492,9 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="cripto.js?v=12"></script>
-<script src="github.js?v=12"></script>
-<script src="lector.js?v=12"></script>
-<script src="app.js?v=12"></script>
+<script src="cripto.js?v=13"></script>
+<script src="github.js?v=13"></script>
+<script src="lector.js?v=13"></script>
+<script src="app.js?v=13"></script>
 </body>
 </html>
