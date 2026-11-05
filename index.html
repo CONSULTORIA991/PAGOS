@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="estilos.css?v=14">
+<link rel="stylesheet" href="estilos.css?v=15">
 </head>
 <body>
 
@@ -171,6 +171,8 @@
       <datalist id="qc-lista"></datalist>
       <div class="rep-dates"><div class="field"><label for="qc-desde">Desde</label><input type="date" id="qc-desde"></div><div class="field"><label for="qc-hasta">Hasta</label><input type="date" id="qc-hasta"></div></div>
       <div class="quick"><button class="qbtn" type="button" data-qcper="mes">Este mes</button><button class="qbtn" type="button" data-qcper="mesant">Mes anterior</button><button class="qbtn" type="button" data-qcper="anio">Este año</button><button class="qbtn" type="button" data-qcper="todo">Todo</button></div>
+      <div class="quick"><span class="qlbl">Ver</span><button class="qbtn" type="button" data-qcver="todo">Todo</button><button class="qbtn" type="button" data-qcver="pend">Por cobrar</button><button class="qbtn" type="button" data-qcver="cob">Cobrado</button></div>
+      <div class="quick"><span class="qlbl">Orden</span><button class="qbtn" type="button" data-qcord="desc">Más reciente primero</button><button class="qbtn" type="button" data-qcord="asc">Más antiguo primero</button></div>
     </section>
     <div id="qc-res"></div>
   </div>
@@ -527,9 +529,9 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="cripto.js?v=14"></script>
-<script src="github.js?v=14"></script>
-<script src="lector.js?v=14"></script>
-<script src="app.js?v=14"></script>
+<script src="cripto.js?v=15"></script>
+<script src="github.js?v=15"></script>
+<script src="lector.js?v=15"></script>
+<script src="app.js?v=15"></script>
 </body>
 </html>

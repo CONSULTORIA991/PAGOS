@@ -215,6 +215,7 @@ form.grid .full { grid-column: 1 / -1; }
 .rep-dates .btn { margin-left: auto; }
 .quick { display: flex; flex-wrap: wrap; gap: 6px; }
 .qbtn { border: 1px solid var(--line); background: var(--surface); border-radius: 99px; padding: 4px 12px; cursor: pointer; font-size: .86rem; color: var(--muted); }
+.quick .qlbl { align-self: center; font-size: .8rem; color: var(--muted); min-width: 44px; }
 .qbtn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
 .rep-sum { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
 .rep-sum .tile { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: grid; gap: 2px; }

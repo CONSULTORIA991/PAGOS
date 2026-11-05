@@ -932,7 +932,7 @@
     if (r === 'todo') return ['', ''];
     return rangeDates(r);
   }
-  const Q = { prov: { clave: '', per: 'anio', desde: '', hasta: '' }, cli: { clave: '', per: 'anio', desde: '', hasta: '' } };
+  const Q = { prov: { clave: '', per: 'anio', desde: '', hasta: '' }, cli: { clave: '', per: 'anio', desde: '', hasta: '', ver: 'todo', orden: 'desc' } };
   [Q.prov.desde, Q.prov.hasta] = rangoConsulta('anio'); [Q.cli.desde, Q.cli.hasta] = rangoConsulta('anio');
   const enRango = (f, q) => !!f && (!q.desde || f >= q.desde) && (!q.hasta || f <= q.hasta);
   const periodoTxt = (q) => (q.desde || q.hasta ? `${q.desde ? fmtDate(q.desde) : 'inicio'} – ${q.hasta ? fmtDate(q.hasta) : 'hoy'}` : 'Todo el tiempo');
@@ -1007,6 +1007,8 @@
     const html = gs.map((g) => `<option value="${esc(g.nombre)}">${g.nit ? 'NIT ' + esc(g.nit) : ''}</option>`).join('');
     if ($('#qc-lista').dataset.html !== html) { $('#qc-lista').innerHTML = html; $('#qc-lista').dataset.html = html; }
     $('#qc-desde').value = q.desde; $('#qc-hasta').value = q.hasta; pintarPeriodo('data-qcper', q);
+    document.querySelectorAll('[data-qcver]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.qcver === q.ver)));
+    document.querySelectorAll('[data-qcord]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.qcord === q.orden)));
     const res = $('#qc-res');
     if (!C.loaded) { res.innerHTML = '<div class="empty" style="margin-top:16px"><h3>Cargando cartera…</h3></div>'; return; }
     const g = q.clave ? gs.find((x) => x.clave === q.clave) : null;
@@ -1020,8 +1022,11 @@
     }
     const cobros = [];
     for (const it of g.items) for (const c of it.cobros || []) if (enRango(c.fecha, q) || (!c.fecha && !q.desde && !q.hasta)) cobros.push({ it, c });
-    cobros.sort((a, b) => String(b.c.fecha || '').localeCompare(String(a.c.fecha || '')));
-    const pendientes = g.items.filter((it) => porCobrarDe(it) > 0).sort((a, b) => String(a.vence || a.fecha || '').localeCompare(String(b.vence || b.fecha || '')));
+    const dir = q.orden === 'asc' ? 1 : -1;
+    cobros.sort((a, b) => dir * String(a.c.fecha || '').localeCompare(String(b.c.fecha || '')));
+    const fDoc = (it) => String(it.fecha || it.vence || '');
+    const pendientes = g.items.filter((it) => porCobrarDe(it) > 0).sort((a, b) => dir * fDoc(a).localeCompare(fDoc(b)) || dir * String(a.documento || '').localeCompare(String(b.documento || ''), 'es', { numeric: true }));
+    const verCob = q.ver !== 'pend', verPend = q.ver !== 'cob';
     const totCob = cobros.reduce((s, x) => s + (Number(x.c.valor) || 0), 0);
     const totRet = cobros.reduce((s, x) => s + (Number(x.c.ret) || 0), 0);
     const totPend = pendientes.reduce((s, it) => s + porCobrarDe(it), 0);
@@ -1035,8 +1040,8 @@
           <div><span class="l">Por cobrar</span><span class="v">${fmt(totPend)}</span></div>
         </div>
       </div>
-      <div class="res-grupo"><span class="section-lbl">Cobros recibidos</span>${cobros.length ? cobros.map(({ it, c }) => `<article class="row rrow s-aprobado" data-crow="${it.id}" tabindex="0"><div class="r-main"><div class="r-prov">${esc([it.documento, it.descripcion].filter(Boolean).join(' · ').slice(0, 140) || 'Cobro')}</div><div class="r-sub">${c.fecha ? 'Recibido el ' + esc(fmtDate(c.fecha)) : 'Sin fecha'}${c.historico ? ' · histórico' : ''}${c.ret ? ' · retenciones ' + fmt(c.ret) : ''}</div></div><div class="r-amt">${fmt(c.valor)}</div></article>`).join('') : '<p class="rep-note">No hay cobros en este periodo.</p>'}</div>
-      ${pendientes.length ? `<div class="res-grupo"><span class="section-lbl">Pendiente por cobrar</span>${pendientes.map((it) => `<article class="row rrow s-${CE_CLASE[it.estado] || 'revisar'}" data-crow="${it.id}" tabindex="0"><div class="r-main"><div class="r-prov">${esc([it.documento, it.descripcion].filter(Boolean).join(' · ').slice(0, 140))}</div><div class="r-sub">${it.vence ? 'Vence ' + esc(fmtDate(it.vence)) : it.fecha ? 'Elaborada ' + esc(fmtDate(it.fecha)) : ''} · ${CE[it.estado] || it.estado}</div></div><div class="r-amt">${fmt(porCobrarDe(it))}</div></article>`).join('')}</div>` : ''}`;
+      ${verCob ? `<div class="res-grupo"><span class="section-lbl">Cobros recibidos</span>${cobros.length ? cobros.map(({ it, c }) => `<article class="row rrow s-aprobado" data-crow="${it.id}" tabindex="0"><div class="r-main"><div class="r-prov">${esc([it.documento, it.descripcion].filter(Boolean).join(' · ').slice(0, 140) || 'Cobro')}</div><div class="r-sub">${c.fecha ? 'Recibido el ' + esc(fmtDate(c.fecha)) : 'Sin fecha'}${c.historico ? ' · histórico' : ''}${c.ret ? ' · retenciones ' + fmt(c.ret) : ''}</div></div><div class="r-amt">${fmt(c.valor)}</div></article>`).join('') : '<p class="rep-note">No hay cobros en este periodo.</p>'}</div>` : ''}
+      ${verPend ? `<div class="res-grupo"><span class="section-lbl">Pendiente por cobrar</span>${pendientes.length ? pendientes.map((it) => `<article class="row rrow s-${CE_CLASE[it.estado] || 'revisar'}" data-crow="${it.id}" tabindex="0"><div class="r-main"><div class="r-prov">${esc([it.documento, it.descripcion].filter(Boolean).join(' · ').slice(0, 140))}</div><div class="r-sub">${it.vence ? 'Vence ' + esc(fmtDate(it.vence)) : it.fecha ? 'Elaborada ' + esc(fmtDate(it.fecha)) : ''} · ${CE[it.estado] || it.estado}</div></div><div class="r-amt">${fmt(porCobrarDe(it))}</div></article>`).join('') : '<p class="rep-note">No tiene nada pendiente por cobrar.</p>'}</div>` : ''}`;
   }
 
   // Eventos de las consultas
@@ -1048,8 +1053,10 @@
     $(`#${k}-hasta`).addEventListener('change', (e) => { q.hasta = e.target.value; q.per = ''; rend(); });
   });
   document.addEventListener('click', (ev) => {
-    const t = ev.target.closest('[data-qper], [data-qcper], [data-qpsel], [data-qcsel]');
+    const t = ev.target.closest('[data-qper], [data-qcper], [data-qpsel], [data-qcsel], [data-qcver], [data-qcord]');
     if (!t) return;
+    if (t.dataset.qcver) { Q.cli.ver = t.dataset.qcver; renderConsultaCli(); }
+    if (t.dataset.qcord) { Q.cli.orden = t.dataset.qcord; renderConsultaCli(); }
     if (t.dataset.qper) { Q.prov.per = t.dataset.qper; [Q.prov.desde, Q.prov.hasta] = rangoConsulta(t.dataset.qper); renderConsultaProv(); }
     if (t.dataset.qcper) { Q.cli.per = t.dataset.qcper; [Q.cli.desde, Q.cli.hasta] = rangoConsulta(t.dataset.qcper); renderConsultaCli(); }
     if (t.dataset.qpsel) { Q.prov.clave = t.dataset.qpsel; const g = grupos(S.pagos, (p) => p.proveedor).find((x) => x.clave === t.dataset.qpsel); if (g) $('#qp-input').value = g.nombre; renderConsultaProv(); }
