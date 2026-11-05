@@ -1169,7 +1169,8 @@
     $('#sg-conf').textContent = `Comprobante tipo ${sc.tipo} · crédito a ${sc.cuentaBanco}${sc.cuentaBanco === '11100501' ? ' (Bancolombia cte 2278)' : ''} · ${sc.centros.length ? sc.centros.length + ' centros de costo cargados' : 'sin centros de costo cargados (Usuarios → Siigo)'}`;
     if (!filas.length) {
       $('#sg-tabla').innerHTML = '<p style="margin:12px;color:var(--muted)">No hay pagos marcados como pagados en este periodo' + ($('#sg-incluir').checked ? '' : ' sin exportar') + '.</p>';
-      $('#sg-go').disabled = true;
+      $('#sg-go').disabled = true; $('#sg-go').textContent = 'Descargar archivo para Siigo';
+      botonSubir('#sg-subir', true, 'Subir a Siigo');
       return;
     }
     const consec = Number($('#sg-consec').value);
@@ -2651,7 +2652,7 @@
   function renderSiigo14() {
     const arr = cajasParaSiigo();
     const consec = Number($('#s14-consec').value);
-    if (!arr.length) { $('#s14-tabla').innerHTML = '<p style="margin:12px;color:var(--muted)">No hay cajas aprobadas o reembolsadas por exportar.</p>'; $('#s14-go').disabled = true; mostrarError('#s14-err', ''); return; }
+    if (!arr.length) { $('#s14-tabla').innerHTML = '<p style="margin:12px;color:var(--muted)">No hay cajas aprobadas o reembolsadas por exportar.</p>'; $('#s14-go').disabled = true; $('#s14-go').textContent = 'Descargar archivo para Siigo'; botonSubir('#s14-subir', true, 'Subir a Siigo'); mostrarError('#s14-err', ''); return; }
     let errores = 0;
     $('#s14-tabla').innerHTML = `<table><thead><tr><th>Comp.</th><th>Caja</th><th>Responsable</th><th>Fecha</th><th>Soportes</th><th style="text-align:right">Total</th><th>Estado</th></tr></thead><tbody>${arr.map((p, i) => {
       const malos = (p.soportes || []).filter((s) => !s.nit || !(s.valor > 0) || (CUENTAS_CON_VENCIMIENTO.has(s.cuenta) && (!s.prefijo || !s.numero))).length;
