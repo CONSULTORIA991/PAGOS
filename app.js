@@ -23,7 +23,7 @@
 
   const ESTADOS = { revisar: { label: 'Por revisar' }, aprobado: { label: 'Aprobado' }, pendiente: { label: 'Pendiente' }, pagado: { label: 'Pagado' }, rechazado: { label: 'Rechazado' } };
   const TABS = [['revisar', 'Por revisar'], ['aprobado', 'Aprobados'], ['pendiente', 'Pendientes'], ['pagado', 'Pagados'], ['rechazado', 'Rechazados'], ['todos', 'Todos']];
-  const TIPO_DOC = { cobro: 'Cuenta de cobro', anticipo: 'Anticipo' };
+  const TIPO_DOC = { cobro: 'Cuenta de cobro', anticipo: 'Anticipo', caja: 'Caja menor' };
 
   const S = { pagos: [], banco: null, loaded: false, tab: 'revisar', q: '', sort: 'vence', openId: null, confirm: null, view: 'aprob', rDesde: '', rHasta: '', rRange: 'mes', payDate: '', sel: new Set() };
   // Sesión: llave maestra, identidad y configuración descifrada.
@@ -339,7 +339,7 @@
       </dl>
       ${p.nota ? `<div class="impact"><span class="section-lbl">Nota</span><span>${esc(p.nota)}</span></div>` : ''}
       ${impact}
-      ${renderInvoice(p)}
+      ${p.tipoDoc === 'caja' ? renderSoportesCaja(p) : renderInvoice(p)}
       ${canDecide ? `<div class="field"><label for="d-nota">Comentario de la decisión (opcional)</label><input id="d-nota" autocomplete="off" placeholder="Ej. Pagar la próxima semana" value="${esc(notaPrev)}"></div><div class="decide">${p.estado !== 'aprobado' ? `<button class="btn go" type="button" data-act="aprobado" data-id="${p.id}"${busy.has(p.id) ? ' disabled' : ''}>Aprobar este pago</button>` : ''}${p.estado !== 'pendiente' ? `<button class="btn hold" type="button" data-act="pendiente" data-id="${p.id}"${busy.has(p.id) ? ' disabled' : ''}>Dejar pendiente</button>` : ''}${p.estado !== 'rechazado' ? `<button class="btn no" type="button" data-act="rechazado" data-id="${p.id}"${busy.has(p.id) ? ' disabled' : ''}>Rechazar</button>` : ''}</div>` : ''}
       ${hist ? `<div style="display:grid;gap:8px"><span class="section-lbl">Historial</span><ul class="hist">${hist}</ul></div>` : ''}
       ${adminBox}`;
@@ -365,7 +365,7 @@
     renderLedger(); renderTabs(); renderList(); renderReport(); renderSelBar();
     if (S.openId) renderDetail();
     renderCartResumen(); renderCartera();
-    renderInicio(); renderConsultaProv(); renderConsultaCli();
+    renderInicio(); renderConsultaProv(); renderConsultaCli(); renderCajas();
   }
 
   // ---------- datos: lectura, sincronización y escritura ----------
@@ -887,10 +887,10 @@
   $('#r-desde').addEventListener('change', onDateInput);
   $('#r-hasta').addEventListener('change', onDateInput);
   // Secciones: Inicio · Proveedores (aprob, rep, prov) · Clientes (cart, cli)
-  const VISTAS = ['inicio', 'aprob', 'rep', 'prov', 'cart', 'cli'];
+  const VISTAS = ['inicio', 'aprob', 'cajas', 'rep', 'prov', 'cart', 'cli'];
   function setView(v) {
     S.view = VISTAS.includes(v) ? v : 'inicio';
-    const grupo = ['aprob', 'rep', 'prov'].includes(S.view) ? 'prov' : ['cart', 'cli'].includes(S.view) ? 'cli' : 'inicio';
+    const grupo = ['aprob', 'cajas', 'rep', 'prov'].includes(S.view) ? 'prov' : ['cart', 'cli'].includes(S.view) ? 'cli' : 'inicio';
     document.querySelectorAll('.vbtn[data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === S.view)));
     for (const x of VISTAS) $('#view-' + x).hidden = S.view !== x;
     $('#nav-prov').hidden = grupo !== 'prov';
@@ -898,6 +898,7 @@
     $('#admin-actions').hidden = !isAdmin || grupo !== 'prov';
     if (S.view === 'inicio') renderInicio();
     if (S.view === 'rep') renderReport();
+    if (S.view === 'cajas') renderCajas();
     if (S.view === 'prov') renderConsultaProv();
     if (S.view === 'cart' && typeof renderCartera === 'function') renderCartera();
     if (S.view === 'cli') renderConsultaCli();
@@ -1134,9 +1135,12 @@
         const cuenta = p.cuenta || siigoConf().cuentaProv;
         const errores = [], avisos = [];
         if (!p.nit) errores.push('NIT');
-        if (!prefijo) errores.push('prefijo');
-        else if (prefijo.length > 6) errores.push('prefijo de más de 6 caracteres');
-        if (!numero) errores.push('n.º de factura');
+        // Prefijo y número solo son obligatorios en cuentas que cruzan documentos (con vencimiento)
+        if (CUENTAS_CON_VENCIMIENTO.has(cuenta)) {
+          if (!prefijo) errores.push('prefijo');
+          else if (prefijo.length > 6) errores.push('prefijo de más de 6 caracteres');
+          if (!numero) errores.push('n.º de factura');
+        }
         if (CUENTAS_CON_VENCIMIENTO.has(cuenta) && !p.vence) errores.push('vencimiento');
         if (!(Number(p.valor) > 0)) errores.push('valor');
         if (!p.cc) avisos.push('centro de costo');
@@ -2142,6 +2146,269 @@
     const antes = conf.avisos;
     try { delete conf.avisos; await guardarConfig(); renderAvisos(); toast('Avisos desactivados.'); }
     catch (e) { conf.avisos = antes; mostrarError('#av-err', msgGitHub(e)); }
+  });
+
+  // ---------- cajas menores ----------
+  // Cada relación llega del enlace del responsable, la tarea del PC lee los soportes y la deja como un pago
+  // tipoDoc "caja" (Por revisar) con sus soportes. Se aprueba completa; el reembolso es el pago (13300502 vs banco)
+  // y la legalización se exporta a Siigo como comprobante 14.
+  const CJ_TABS = [['revisar', 'Por revisar'], ['aprobado', 'Aprobadas'], ['pendiente', 'Pendientes'], ['pagado', 'Reembolsadas'], ['rechazado', 'Rechazadas'], ['todos', 'Todas']];
+  const CJ_CUENTA = { '22050501': 'Factura a nombre de ODESA', '51959502': 'Factura a nombre de otro', '13300501': 'Recibo / cuenta de cobro' };
+  const CJ = { tab: 'revisar', editando: null };
+  const ddmmDe = (iso) => { const m = String(iso || '').match(/^\d{4}-(\d{2})-(\d{2})/); return m ? m[2] + m[1] : ''; };
+  const cajasDe = () => S.pagos.filter((p) => p.tipoDoc === 'caja');
+
+  function renderCajas() {
+    if (S.view !== 'cajas') return;
+    const todas = cajasDe();
+    $('#cj-tabs').innerHTML = CJ_TABS.map(([k, l]) => `<button class="tab" role="tab" type="button" data-cjtab="${k}" aria-selected="${CJ.tab === k}">${l}<span class="c">${todas.filter((p) => k === 'todos' || p.estado === k).length}</span></button>`).join('');
+    $('#cj-siigo').hidden = !isAdmin || !window.XLSX;
+    const arr = todas.filter((p) => CJ.tab === 'todos' || p.estado === CJ.tab).sort((a, b) => String(b.creado || '').localeCompare(String(a.creado || '')));
+    $('#cj-list').innerHTML = arr.length ? arr.map((p) => {
+      const st = ESTADOS[p.estado] ? p.estado : 'revisar';
+      const c = p.caja || {};
+      const malos = (p.soportes || []).filter((s) => s.revisar).length;
+      return `<article class="row s-${st}" data-row="${p.id}" tabindex="0">
+        <div class="r-main"><div class="r-prov">Caja No. ${esc(c.numero || '')} · ${esc(c.responsable || p.proveedor)}</div><div class="r-sub">${(p.soportes || []).length} soportes · enviada el ${esc(fmtDate(c.fecha || p.vence))}${malos ? ` · <span class="warn" style="color:var(--warn)">${malos} por revisar datos</span>` : ''}${p.siigo14 ? ` · Siigo 14-${esc(p.siigo14.comprobante)}` : ''}</div></div>
+        <div class="r-due"><span>${etiquetaDecision(p) ? esc(etiquetaDecision(p)) : ''}</span></div>
+        <div class="r-amt">${fmt(p.valor)}</div>
+        <div class="r-act"><span class="pill st-${st}">${st === 'pagado' ? 'Reembolsada' : ESTADOS[st].label}</span></div>
+      </article>`;
+    }).join('') : `<div class="empty"><h3>No hay cajas en este estado</h3><p>${isAdmin ? 'Cuando un responsable envíe su relación desde su enlace, aparecerá aquí con sus soportes leídos.' : 'Aquí aparecen las relaciones de caja menor para aprobar.'}</p></div>`;
+    // Responsables (solo administradora)
+    $('#cj-resp').hidden = !isAdmin;
+    if (!isAdmin) return;
+    $('#cc-lista').innerHTML = siigoConf().centros.map((c) => `<option value="${esc(c.codigo + ' · ' + c.nombre)}"></option>`).join('');
+    const resp = (conf.cajas && conf.cajas.responsables) || [];
+    $('#cj-resp-lista').innerHTML = resp.length ? resp.map((r) => {
+      const n = todas.filter((p) => p.caja && p.caja.responsableId === r.id).length;
+      return `<li><span class="who"><b>${esc(r.nombre)}</b><small>C.C. ${esc(r.cedula)}${r.cc ? ' · ' + esc(ccTexto(r.cc)) : ''} · ${n} ${n === 1 ? 'caja enviada' : 'cajas enviadas'}${r.activo === false ? ' · enlace desactivado' : ''}</small></span>
+        <span class="decide" style="flex:none">${r.activo === false ? `<button class="btn sm" type="button" data-cjact="${r.id}">Reactivar</button>` : `<button class="btn sm" type="button" data-cjcopiar="${r.id}">Copiar enlace</button><a class="btn sm" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(`Hola ${r.nombre.split(' ')[0]}. Este es tu enlace para enviar la caja menor a ODESA desde el celular (toma una foto de cada soporte y envía la relación): ${enlaceCaja(r)}`)}">WhatsApp</a><button class="btn sm danger" type="button" data-cjdes="${r.id}">Desactivar</button>`}</span></li>`;
+    }).join('') : '<li><span class="who"><small>Aún no hay responsables. Agrégalos abajo.</small></span></li>';
+  }
+  function enlaceCaja(r) {
+    const t = Cripto.b64(Cripto.enc.encode(JSON.stringify({ i: r.id, n: r.nombre, s: r.secreto }))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    return location.origin + location.pathname.replace(/[^/]*$/, '') + 'caja.html#' + t;
+  }
+  $('#cj-form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const nombre = $('#cj-nombre').value.trim().replace(/\s+/g, ' '), cedula = $('#cj-cedula').value.replace(/\D/g, '');
+    if (nombre.split(' ').length < 2) return mostrarError('#cj-err', 'Escribe nombre y apellido.');
+    if (cedula.length < 5) return mostrarError('#cj-err', 'Escribe la cédula (solo números).');
+    const abc = 'abcdefghjkmnpqrstuvwxyz23456789';
+    const r = { id: nuevoId().slice(0, 10), nombre, cedula, cc: ccDeInput($('#cj-cc').value), secreto: [...Cripto.aleatorio(16)].map((b) => abc[b % abc.length]).join(''), activo: true, creado: new Date().toISOString() };
+    const antes = conf.cajas;
+    conf.cajas = { ...(conf.cajas || {}), responsables: [...((conf.cajas && conf.cajas.responsables) || []), r] };
+    try { await guardarConfig(); $('#cj-form').reset(); mostrarError('#cj-err', ''); renderCajas(); toast(`Listo. Envíale a ${nombre.split(' ')[0]} su enlace por WhatsApp.`); }
+    catch (e) { conf.cajas = antes; mostrarError('#cj-err', msgGitHub(e)); }
+  });
+  async function cambiarResponsable(id, activo) {
+    const antes = conf.cajas;
+    conf.cajas = { ...conf.cajas, responsables: conf.cajas.responsables.map((r) => (r.id === id ? { ...r, activo } : r)) };
+    try { await guardarConfig(); renderCajas(); toast(activo ? 'Enlace reactivado.' : 'Enlace desactivado: ya no podrá enviar cajas.'); }
+    catch (e) { conf.cajas = antes; toast(msgGitHub(e)); }
+  }
+
+  // Soportes dentro del detalle de la relación
+  function renderSoportesCaja(p) {
+    const sops = p.soportes || [];
+    const edit = isAdmin && CJ.editando === p.id;
+    const filas = sops.map((s, i) => edit ? `<tr>
+        <td><button class="btn sm ghost" type="button" data-cjfoto="${i}">Ver</button></td>
+        <td><select data-cjk="cuenta" data-cji="${i}">${Object.entries(CJ_CUENTA).map(([k, l]) => `<option value="${k}"${s.cuenta === k ? ' selected' : ''}>${l}</option>`).join('')}</select></td>
+        <td><input data-cjk="tercero" data-cji="${i}" value="${esc(s.tercero)}"></td>
+        <td><input data-cjk="nit" data-cji="${i}" value="${esc(s.nit)}" inputmode="numeric" size="11"></td>
+        <td><input data-cjk="prefijo" data-cji="${i}" value="${esc(s.prefijo)}" size="5"></td>
+        <td><input data-cjk="numero" data-cji="${i}" value="${esc(s.numero)}" size="8"></td>
+        <td><input type="date" data-cjk="fecha" data-cji="${i}" value="${esc(s.fecha)}"></td>
+        <td><input data-cjk="descripcion" data-cji="${i}" value="${esc(s.descripcion)}"></td>
+        <td><input data-cjk="valor" data-cji="${i}" value="${new Intl.NumberFormat('es-CO').format(s.valor || 0)}" inputmode="numeric" size="10"></td></tr>`
+      : `<tr${s.revisar ? ' style="background:var(--warn-soft)"' : ''}><td><button class="btn sm ghost" type="button" data-cjfoto="${i}">Ver</button></td><td>${esc(s.tercero || '—')}<br><small style="color:var(--muted)">${esc(CJ_CUENTA[s.cuenta] || s.cuenta)} · ${esc(s.cuenta)}</small></td><td>${esc(s.nit || '—')}</td><td>${esc((s.prefijo || '') + '-' + (s.numero || ''))}</td><td>${esc(s.fecha ? fmtDate(s.fecha) : '—')}</td><td>${esc(s.descripcion || s.nota || '')}</td><td class="n">${fmt(s.valor)}</td></tr>`).join('');
+    const cab = edit ? '<tr><th></th><th>Tipo</th><th>Tercero</th><th>NIT / C.C.</th><th>Pref.</th><th>Núm.</th><th>Fecha</th><th>Descripción</th><th>Valor</th></tr>'
+      : '<tr><th></th><th>Tercero</th><th>NIT / C.C.</th><th>Documento</th><th>Fecha</th><th>Descripción</th><th style="text-align:right">Valor</th></tr>';
+    const malos = sops.filter((s) => s.revisar).length;
+    return `<div style="display:grid;gap:8px">
+      <span class="section-lbl">Soportes (${sops.length})${malos ? ` · <span style="color:var(--warn)">${malos} con datos incompletos</span>` : ''}</span>
+      <div class="preview"><table>${cab}${filas}<tr><td colspan="${edit ? 8 : 6}"><b>Total a reembolsar</b></td><td class="n"><b>${fmt(sops.reduce((t, s) => t + (Number(s.valor) || 0), 0))}</b></td></tr></table></div>
+      <div id="cj-visor"></div>
+      <div class="decide" style="justify-content:flex-start">
+        <button class="btn sm" type="button" data-cjpdf="${p.id}">Descargar relación en PDF</button>
+        ${isAdmin ? (edit ? `<button class="btn sm primary" type="button" data-cjguardar="${p.id}">Guardar cambios</button><button class="btn sm" type="button" data-cjcancel="1">Cancelar</button>` : `<button class="btn sm" type="button" data-cjeditar="${p.id}">Corregir datos de los soportes</button>`) : ''}
+      </div></div>`;
+  }
+  async function bytesSoporte(s) {
+    const f = await GH.leer(rFactura(s.foto));
+    if (!f) throw { status: 404 };
+    return Cripto.descifrar(maestra, f.bytes);
+  }
+  async function verSoporte(i) {
+    const p = S.pagos.find((x) => x.id === S.openId);
+    const s = p && (p.soportes || [])[Number(i)];
+    if (!s) return;
+    const visor = $('#cj-visor');
+    visor.innerHTML = '<div class="invoice none">Descifrando el soporte…</div>';
+    try {
+      if (!facturaUrl[s.foto]) facturaUrl[s.foto] = URL.createObjectURL(new Blob([await bytesSoporte(s)], { type: s.fotoTipo || 'image/jpeg' }));
+      const url = facturaUrl[s.foto], pdf = (s.fotoTipo || '').includes('pdf');
+      visor.innerHTML = `<div class="invoice">${pdf ? `<iframe src="${url}" title="Soporte ${Number(i) + 1}"></iframe>` : `<img src="${url}" alt="Soporte ${Number(i) + 1}">`}<div class="inv-bar"><span>Soporte ${Number(i) + 1}${s.nota ? ' · ' + esc(s.nota) : ''}</span><a class="btn sm" href="${url}" target="_blank" rel="noopener">Abrir en pestaña nueva</a></div></div>`;
+    } catch (e) { visor.innerHTML = '<div class="invoice none">No se pudo abrir el soporte.</div>'; }
+  }
+  async function guardarSoportes(id) {
+    const p = S.pagos.find((x) => x.id === id);
+    if (!p) return;
+    const sops = (p.soportes || []).map((s) => ({ ...s }));
+    document.querySelectorAll('[data-cjk]').forEach((el) => {
+      const s = sops[Number(el.dataset.cji)], k = el.dataset.cjk;
+      if (!s) return;
+      s[k] = k === 'valor' ? Math.round(parseMonto(el.value)) || 0 : k === 'nit' || k === 'numero' ? el.value.replace(/\D/g, '') : k === 'prefijo' ? el.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6) : el.value.trim();
+    });
+    for (const s of sops) {
+      s.tipoSoporte = s.cuenta === '13300501' ? 'recibo' : 'fe';
+      if (s.tipoSoporte === 'recibo') { s.prefijo = 'RC'; s.numero = ddmmDe(s.fecha); }
+      s.revisar = !s.nit || !(s.valor > 0) || !s.numero;
+    }
+    const total = sops.reduce((t, s) => t + (Number(s.valor) || 0), 0);
+    const now = new Date().toISOString();
+    try {
+      await mutar((d) => {
+        const x = d.pagos.find((y) => y.id === id);
+        if (!x) return false;
+        x.soportes = sops; x.valor = total;
+        x.concepto = `Caja menor No. ${(x.caja || {}).numero || ''} – ${sops.length} soportes`;
+        x.historial = (x.historial || []).slice(-24).concat([{ estado: x.estado, por: uid, en: now, nota: `Soportes corregidos · total ${fmt(total)}` }]);
+      });
+      CJ.editando = null; toast('Soportes actualizados.'); render();
+    } catch (e) { toast(msgGitHub(e)); }
+  }
+
+  // PDF de la relación: tabla de soportes + las fotos
+  async function pdfRelacion(id) {
+    const p = S.pagos.find((x) => x.id === id);
+    if (!p) return;
+    toast('Generando el PDF de la relación…');
+    try {
+      await cargarScriptApp(JSPDF);
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ unit: 'mm', format: 'letter' });
+      const c = p.caja || {}, izq = 14, W = 215.9;
+      let y = 18;
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.text(`RELACIÓN DE CAJA MENOR No. ${c.numero || ''}`, W / 2, y, { align: 'center' }); y += 7;
+      doc.setFontSize(10); doc.setFont('helvetica', 'normal');
+      doc.text(`ODESA CARIBE S.A.S. · NIT 900.409.543-1`, W / 2, y, { align: 'center' }); y += 9;
+      doc.text(`Responsable: ${c.responsable || p.proveedor} · C.C. ${c.cedula || p.nit}`, izq, y); y += 5;
+      doc.text(`Fecha de la relación: ${fmtDate(c.fecha || p.vence)} · Radicado ${p.radicado || ''} · Estado: ${ESTADOS[p.estado] ? ESTADOS[p.estado].label : p.estado}`, izq, y); y += 8;
+      const cols = [[izq, 'N.º'], [izq + 9, 'Tercero'], [izq + 62, 'NIT / C.C.'], [izq + 88, 'Documento'], [izq + 112, 'Fecha'], [izq + 132, 'Descripción']];
+      const fila = (vals, bold) => { doc.setFont('helvetica', bold ? 'bold' : 'normal'); cols.forEach(([x], k) => doc.text(String(vals[k] || '').slice(0, k === 1 ? 30 : k === 5 ? 30 : 16), x, y)); doc.text(String(vals[6] || ''), W - 14, y, { align: 'right' }); y += 5; };
+      doc.setFontSize(8.5);
+      fila(['N.º', 'Tercero', 'NIT / C.C.', 'Documento', 'Fecha', 'Descripción', 'Valor'], true);
+      doc.line(izq, y - 3.5, W - 14, y - 3.5);
+      (p.soportes || []).forEach((s, i) => { if (y > 260) { doc.addPage(); y = 18; } fila([i + 1, s.tercero, s.nit, `${s.prefijo}-${s.numero}`, s.fecha ? fmtDate(s.fecha) : '', s.descripcion || s.nota, fmt(s.valor)]); });
+      doc.line(izq, y - 3.5, W - 14, y - 3.5);
+      doc.setFont('helvetica', 'bold'); doc.text('TOTAL A REEMBOLSAR', izq, y + 1); doc.text(fmt(p.valor), W - 14, y + 1, { align: 'right' });
+      const ap = aprobacion(p);
+      y += 10; doc.setFont('helvetica', 'normal');
+      if (ap) doc.text(`Aprobada por ${personName(ap.por) === 'Tú' ? ((conf.usuarios[uid] || {}).nombre || '') : personName(ap.por)} el ${dtFmt.format(new Date(ap.en))}`, izq, y);
+      for (const [i, s] of (p.soportes || []).entries()) {
+        doc.addPage();
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
+        doc.text(`Soporte ${i + 1} · ${s.tercero || ''} · ${s.prefijo}-${s.numero} · ${fmt(s.valor)}`, izq, 14);
+        if ((s.fotoTipo || '').includes('pdf')) { doc.setFont('helvetica', 'normal'); doc.text('Soporte en PDF: ábrelo desde la aplicación (Cajas menores → Ver).', izq, 24); continue; }
+        try {
+          const bytes = await bytesSoporte(s);
+          const url = await new Promise((ok) => { const r = new FileReader(); r.onload = () => ok(r.result); r.readAsDataURL(new Blob([bytes], { type: 'image/jpeg' })); });
+          const pr = doc.getImageProperties(url);
+          let w = W - 28, h = w * pr.height / pr.width;
+          if (h > 245) { h = 245; w = h * pr.width / pr.height; }
+          doc.addImage(url, 'JPEG', izq, 20, w, h, undefined, 'FAST');
+        } catch (e) { doc.text('No se pudo cargar la imagen de este soporte.', izq, 24); }
+      }
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(doc.output('blob'));
+      a.download = `Relación caja menor No. ${c.numero || ''} - ${c.responsable || ''}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+    } catch (e) { toast('No se pudo generar el PDF.'); }
+  }
+
+  // Exportación a Siigo, comprobante 14 (legalización de la caja)
+  function cajasParaSiigo() {
+    const incluir = $('#s14-incluir').checked;
+    return cajasDe().filter((p) => (p.estado === 'aprobado' || p.estado === 'pagado') && (incluir || !p.siigo14))
+      .sort((a, b) => String((a.caja || {}).fecha || '').localeCompare(String((b.caja || {}).fecha || '')) || ((a.caja || {}).numero || 0) - ((b.caja || {}).numero || 0));
+  }
+  function renderSiigo14() {
+    const arr = cajasParaSiigo();
+    const consec = Number($('#s14-consec').value);
+    if (!arr.length) { $('#s14-tabla').innerHTML = '<p style="margin:12px;color:var(--muted)">No hay cajas aprobadas o reembolsadas por exportar.</p>'; $('#s14-go').disabled = true; mostrarError('#s14-err', ''); return; }
+    let errores = 0;
+    $('#s14-tabla').innerHTML = `<table><thead><tr><th>Comp.</th><th>Caja</th><th>Responsable</th><th>Fecha</th><th>Soportes</th><th style="text-align:right">Total</th><th>Estado</th></tr></thead><tbody>${arr.map((p, i) => {
+      const malos = (p.soportes || []).filter((s) => !s.nit || !(s.valor > 0) || (CUENTAS_CON_VENCIMIENTO.has(s.cuenta) && (!s.prefijo || !s.numero))).length;
+      errores += malos ? 1 : 0;
+      return `<tr><td>${consec > 0 ? consec + i : '—'}</td><td>No. ${esc((p.caja || {}).numero)}</td><td>${esc((p.caja || {}).responsable || p.proveedor)}</td><td>${esc(fmtDate((p.caja || {}).fecha || p.vence))}</td><td>${(p.soportes || []).length}</td><td class="n">${fmt(p.valor)}</td><td>${malos ? `<span class="bulk"><span class="bad">${malos} soporte(s) incompletos</span></span>` : p.siigo14 ? `<span class="bulk"><span class="warn">ya exportada (14-${esc(p.siigo14.comprobante)})</span></span>` : '<span class="bulk"><span class="ok">Lista</span></span>'} <button class="btn sm ghost" type="button" data-row="${p.id}">Ver</button></td></tr>`;
+    }).join('')}</tbody></table>`;
+    mostrarError('#s14-err', !(consec > 0) ? 'Escribe el primer consecutivo del comprobante 14.' : errores ? 'Hay cajas con soportes incompletos: ábrelas con “Ver” y usa “Corregir datos de los soportes”.' : '');
+    $('#s14-go').disabled = !(consec > 0) || errores > 0;
+    $('#s14-go').textContent = `Descargar archivo para Siigo (${arr.length} ${arr.length === 1 ? 'caja' : 'cajas'})`;
+  }
+  $('#s14-consec').addEventListener('input', renderSiigo14);
+  $('#s14-incluir').addEventListener('change', renderSiigo14);
+  $('#s14-go').addEventListener('click', async () => {
+    const arr = cajasParaSiigo();
+    let consec = Number($('#s14-consec').value);
+    if (!(consec > 0) || !arr.length) return;
+    const filas = [ENCABEZADO_SIIGO], asignados = {};
+    const vacio = () => new Array(ENCABEZADO_SIIGO.length).fill('');
+    for (const p of arr) {
+      const c = p.caja || {};
+      const fecha = ddmmaaaa(c.fecha || p.vence);
+      for (const s of p.soportes || []) {
+        const d = vacio();
+        d[0] = 14; d[1] = consec; d[2] = fecha; d[5] = Number(s.cuenta); d[6] = String(s.nit);
+        if (CUENTAS_CON_VENCIMIENTO.has(s.cuenta)) { d[12] = s.prefijo; d[13] = Number(s.numero); d[14] = 1; d[15] = ddmmaaaa(s.fecha || c.fecha); }
+        d[19] = String(s.descripcion || s.nota || `Soporte caja menor No. ${c.numero}`).slice(0, 100);
+        d[20] = s.cc || p.cc || ''; d[21] = Math.round(Number(s.valor) || 0);
+        d[23] = `Caja menor No. ${c.numero} ${c.responsable || ''} · ${s.tercero || ''} ${s.prefijo}-${s.numero}`.slice(0, 300);
+        filas.push(d);
+      }
+      // Crédito: 13300502 Caja menor a nombre del responsable (una línea por centro de costo)
+      const porCC = new Map();
+      for (const s of p.soportes || []) porCC.set(s.cc || p.cc || '', (porCC.get(s.cc || p.cc || '') || 0) + Math.round(Number(s.valor) || 0));
+      for (const [cc, valor] of porCC) {
+        const cr = vacio();
+        cr[0] = 14; cr[1] = consec; cr[2] = fecha; cr[5] = 13300502; cr[6] = String(c.cedula || p.nit);
+        cr[19] = `Legalización caja menor No. ${c.numero} – ${c.responsable || ''}`.slice(0, 100);
+        cr[20] = cc; cr[22] = valor; cr[23] = `Legalización caja menor No. ${c.numero} (${(p.soportes || []).length} soportes)`;
+        filas.push(cr);
+      }
+      asignados[p.id] = consec; consec++;
+    }
+    const ws = XLSX.utils.aoa_to_sheet(filas);
+    ws['!cols'] = ENCABEZADO_SIIGO.map((h) => ({ wch: Math.max(12, Math.min(28, h.length + 2)) }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Datos');
+    XLSX.writeFile(wb, `Siigo comprobantes 14 cajas menores ${todayISO()}.xlsx`);
+    const ahora = new Date().toISOString();
+    try {
+      await mutar((d) => { for (const x of d.pagos) if (asignados[x.id]) x.siigo14 = { comprobante: asignados[x.id], en: ahora }; d.siigo = { ...(d.siigo || {}), ultimo14: consec - 1 }; });
+      toast(`Archivo generado: comprobantes 14-${consec - arr.length} a 14-${consec - 1}. Súbelo en Siigo.`); render(); renderSiigo14();
+    } catch (e) { mostrarError('#s14-err', 'El archivo se descargó, pero no se pudo marcar como exportado: ' + msgGitHub(e)); }
+  });
+
+  document.addEventListener('click', (ev) => {
+    const t = ev.target.closest('[data-cjtab], [data-cjcopiar], [data-cjdes], [data-cjact], [data-cjfoto], [data-cjeditar], [data-cjguardar], [data-cjcancel], [data-cjpdf], #cj-siigo');
+    if (!t) return;
+    if (t.dataset.cjtab) { CJ.tab = t.dataset.cjtab; renderCajas(); }
+    else if (t.dataset.cjcopiar) {
+      const r = conf.cajas.responsables.find((x) => x.id === t.dataset.cjcopiar);
+      navigator.clipboard.writeText(enlaceCaja(r)).then(() => toast('Enlace copiado.'), () => toast(enlaceCaja(r)));
+    }
+    else if (t.dataset.cjdes) { if (t.dataset.sure) cambiarResponsable(t.dataset.cjdes, false); else { t.dataset.sure = '1'; t.textContent = '¿Seguro? Toca de nuevo'; } }
+    else if (t.dataset.cjact) cambiarResponsable(t.dataset.cjact, true);
+    else if (t.dataset.cjfoto != null) verSoporte(t.dataset.cjfoto);
+    else if (t.dataset.cjeditar) { CJ.editando = t.dataset.cjeditar; renderDetail(); }
+    else if (t.dataset.cjcancel) { CJ.editando = null; renderDetail(); }
+    else if (t.dataset.cjguardar) guardarSoportes(t.dataset.cjguardar);
+    else if (t.dataset.cjpdf) pdfRelacion(t.dataset.cjpdf);
+    else if (t.id === 'cj-siigo') { const u = S.siigo && Number(S.siigo.ultimo14); if (!$('#s14-consec').value && u > 0) $('#s14-consec').value = u + 1; renderSiigo14(); $('#dlg-siigo14').showModal(); }
   });
 
   // ---------- usuarios y contraseñas ----------

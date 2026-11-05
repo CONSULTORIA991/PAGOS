@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="estilos.css?v=13">
+<link rel="stylesheet" href="estilos.css?v=14">
 </head>
 <body>
 
@@ -89,6 +89,7 @@
   <nav class="views" aria-label="Proveedores" id="nav-prov" hidden>
     <button class="vbtn volver" type="button" data-view="inicio">← Inicio</button>
     <button class="vbtn" type="button" data-view="aprob" aria-pressed="false">Pagos por autorizar</button>
+    <button class="vbtn" type="button" data-view="cajas" aria-pressed="false">Cajas menores</button>
     <button class="vbtn" type="button" data-view="rep" aria-pressed="false">Pagos realizados</button>
     <button class="vbtn" type="button" data-view="prov" aria-pressed="false">Consultar proveedor</button>
   </nav>
@@ -231,6 +232,27 @@
       <div class="empty"><h3>Cargando pagos…</h3><p>En un momento aparece la lista de pagos pendientes de aprobación.</p></div>
     </section>
     <div class="list-foot" id="list-foot"></div>
+  </div>
+
+  <!-- Cajas menores -->
+  <div class="view" id="view-cajas" hidden>
+    <div class="controls">
+      <div class="tabs" role="tablist" id="cj-tabs"></div>
+      <div class="filters"><button class="btn primary" type="button" id="cj-siigo" hidden>Exportar a Siigo (comprobante 14)</button></div>
+    </div>
+    <section class="list" id="cj-list"></section>
+    <section class="consulta" id="cj-resp" hidden>
+      <span class="section-lbl">Responsables de caja menor</span>
+      <p style="margin:0;color:var(--muted);font-size:.9rem">Cada responsable recibe un enlace propio para enviar sus soportes desde el celular. Con ese enlace solo puede enviar su caja; no ve nada más de la aplicación.</p>
+      <ul class="users" id="cj-resp-lista"></ul>
+      <form class="grid" id="cj-form" novalidate>
+        <div class="field"><label for="cj-nombre">Nombre</label><input id="cj-nombre" autocomplete="off" required></div>
+        <div class="field"><label for="cj-cedula">Cédula</label><input id="cj-cedula" inputmode="numeric" autocomplete="off" required></div>
+        <div class="field full"><label for="cj-cc">Centro de costo de su caja</label><input id="cj-cc" list="cc-lista" autocomplete="off" placeholder="Ej. 100043-1 · CASTELO"></div>
+        <div class="err full" id="cj-err" hidden></div>
+        <div class="form-actions full"><button class="btn sm primary" type="submit">Agregar responsable</button></div>
+      </form>
+    </section>
   </div>
 
   <div class="view" id="view-rep" hidden>
@@ -398,6 +420,19 @@
   </div>
 </dialog>
 
+<!-- Exportar cajas menores a Siigo (comprobante 14) -->
+<dialog class="sheet" id="dlg-siigo14">
+  <div class="dlg">
+    <div class="dlg-head"><h2>Cajas menores a Siigo (comprobante 14)</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
+    <p style="margin:0;color:var(--muted)">Un comprobante por caja: una línea débito por cada soporte (22050501 factura a nombre de ODESA · 51959502 factura a nombre de otro · 13300501 recibo o cuenta de cobro) y el crédito a <b>13300502 Caja menor</b> a nombre del responsable.</p>
+    <div class="rep-dates"><div class="field"><label for="s14-consec">Primer consecutivo</label><input id="s14-consec" inputmode="numeric" autocomplete="off" placeholder="Ej. 85"></div></div>
+    <label class="check"><input type="checkbox" id="s14-incluir"> Incluir cajas ya exportadas</label>
+    <div class="preview" id="s14-tabla"></div>
+    <div class="err" id="s14-err" hidden></div>
+    <div class="form-actions"><button class="btn primary" type="button" id="s14-go" disabled>Descargar archivo para Siigo</button></div>
+  </div>
+</dialog>
+
 <!-- Usuarios -->
 <dialog class="sheet" id="dlg-users">
   <div class="dlg">
@@ -492,9 +527,9 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="cripto.js?v=13"></script>
-<script src="github.js?v=13"></script>
-<script src="lector.js?v=13"></script>
-<script src="app.js?v=13"></script>
+<script src="cripto.js?v=14"></script>
+<script src="github.js?v=14"></script>
+<script src="lector.js?v=14"></script>
+<script src="app.js?v=14"></script>
 </body>
 </html>
