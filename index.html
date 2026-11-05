@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="estilos.css?v=17">
+<link rel="stylesheet" href="estilos.css?v=18">
 </head>
 <body>
 
@@ -72,7 +72,7 @@
   <header class="top">
     <div>
       <h1>Pagos ODESA</h1>
-      <div class="sub"><span id="hoy"></span><span class="role" id="role"></span><span class="user-chip" id="who"></span><span class="sync" id="sync"></span></div>
+      <div class="sub"><span id="hoy"></span><span class="role" id="role"></span><span class="user-chip" id="who"></span><span class="sync" id="sync"></span><button class="siigo-luz" id="siigo-luz" type="button" hidden data-nivel="rojo"><i aria-hidden="true"></i><span></span></button></div>
     </div>
     <div class="top-actions">
       <span id="admin-actions" class="top-actions" hidden>
@@ -458,7 +458,7 @@
     <div class="admin-box">
       <span class="section-lbl">Conexión con Siigo (API)</span>
       <p style="margin:0;color:var(--muted);font-size:.9rem">Datos de Siigo Nube → Alianzas → Mi credencial API. Se guardan cifrados; solo los usa la tarea del computador para crear los comprobantes en Siigo.</p>
-      <p id="sa-estado" style="margin:0;font-size:.9rem"></p>
+      <p id="sa-estado" class="siigo-luz-txt" style="margin:0;font-size:.9rem"></p>
       <form id="sa-form" class="grid" novalidate autocomplete="off">
         <div class="field"><label for="sa-usuario">Usuario API</label><input id="sa-usuario" autocomplete="off" placeholder="usuario@odesa.com.co"></div>
         <div class="field"><label for="sa-partner">Partner-ID</label><input id="sa-partner" autocomplete="off" placeholder="Ej. odesaPagos"></div>
@@ -541,9 +541,9 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="cripto.js?v=17"></script>
-<script src="github.js?v=17"></script>
-<script src="lector.js?v=17"></script>
-<script src="app.js?v=17"></script>
+<script src="cripto.js?v=18"></script>
+<script src="github.js?v=18"></script>
+<script src="lector.js?v=18"></script>
+<script src="app.js?v=18"></script>
 </body>
 </html>

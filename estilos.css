@@ -62,6 +62,17 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .top .sub { color: var(--muted); margin-top: 4px; display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
 .role { font-size: .78rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; padding: 3px 9px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); }
 .top-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Semáforo de conexión con Siigo */
+.siigo-luz { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--surface); border-radius: 99px; padding: 2px 10px 2px 8px; font: inherit; font-size: .8rem; cursor: pointer; color: var(--ink, inherit); }
+.siigo-luz i, .siigo-luz-txt i { width: 10px; height: 10px; border-radius: 50%; flex: none; display: inline-block; }
+.siigo-luz[data-nivel="verde"] { background: var(--ok-soft); border-color: transparent; color: var(--ok); }
+.siigo-luz[data-nivel="amarillo"] { background: var(--warn-soft); border-color: transparent; color: var(--warn); }
+.siigo-luz[data-nivel="rojo"] { background: var(--bad-soft); border-color: transparent; color: var(--bad); }
+[data-nivel="verde"] i { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 25%, transparent); }
+[data-nivel="amarillo"] i { background: var(--warn); }
+[data-nivel="rojo"] i { background: var(--bad); }
+.siigo-luz-txt { display: flex; align-items: flex-start; gap: 8px; }
+.siigo-luz-txt i { margin-top: 5px; }
 
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid var(--line); background: var(--surface); padding: 8px 14px; border-radius: 8px; cursor: pointer; font-weight: 500; font-size: .92rem; white-space: nowrap; text-decoration: none; color: var(--ink); }
 .btn:hover { border-color: var(--muted); }

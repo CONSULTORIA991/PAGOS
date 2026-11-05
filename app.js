@@ -2156,6 +2156,33 @@
   });
 
   // ---------- credenciales API de Siigo (las usa la tarea del PC) ----------
+  // Semáforo: verde = la tarea del PC se conectó a Siigo con las credenciales actuales en los últimos 3 días;
+  // amarillo = credenciales guardadas pero sin verificar (o verificación vieja); rojo = sin credenciales o Siigo las rechazó.
+  const fechaHora = (iso) => new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(iso));
+  function estadoSiigo() {
+    const a = conf && conf.siigoApi;
+    if (!a || !a.llave) return { nivel: 'rojo', corto: 'Siigo: sin conectar', largo: 'Sin conexión con Siigo: faltan las credenciales de la API.' };
+    const ver = a.verificado || '', err = a.error && a.error.en ? a.error : null;
+    if (err && err.en >= (a.guardado || '') && err.en > ver) return { nivel: 'rojo', corto: 'Siigo: error', largo: `Siigo rechazó la conexión (${fechaHora(err.en)}): ${err.msg || 'error desconocido'}. Revisa el usuario, el Partner-ID y la access key.` };
+    if (!ver || ver < (a.guardado || '')) return { nivel: 'amarillo', corto: 'Siigo: por verificar', largo: 'Credenciales guardadas. Falta que la tarea del computador pruebe la conexión (se hace cada hora, con el PC encendido y Claude abierto).' };
+    if (Date.now() - new Date(ver).getTime() > 3 * 864e5) return { nivel: 'amarillo', corto: 'Siigo: sin revisar', largo: `La última conexión exitosa con Siigo fue el ${fechaHora(ver)}. Enciende el computador para que la tarea la vuelva a revisar.` };
+    return { nivel: 'verde', corto: 'Siigo: conectado', largo: `Conectado a Siigo. Última verificación: ${fechaHora(ver)}.` };
+  }
+  function pintarSiigo() {
+    const b = $('#siigo-luz');
+    b.hidden = !isAdmin;
+    if (!isAdmin) return;
+    const e = estadoSiigo();
+    b.dataset.nivel = e.nivel; b.title = e.largo; b.setAttribute('aria-label', e.largo);
+    b.querySelector('span').textContent = e.corto;
+    const t = $('#sa-estado');
+    t.dataset.nivel = e.nivel; t.innerHTML = `<i aria-hidden="true"></i><span>${esc(e.largo)}</span>`;
+  }
+  // Relee solo la parte de Siigo de la configuración (la actualiza la tarea del PC)
+  async function refrescarSiigo() {
+    try { const f = await GH.leer(R_CONFIG); if (!f) return; const c = await Cripto.descifrarJSON(maestra, f.bytes); conf.siigoApi = c.siigoApi; pintarSiigo(); } catch (e) { /* se reintenta luego */ }
+  }
+  $('#siigo-luz').addEventListener('click', () => { openUsuarios(); setTimeout(() => $('#sa-form').scrollIntoView({ block: 'center', behavior: 'smooth' }), 80); });
   function renderSiigoApi() {
     const a = conf.siigoApi;
     mostrarError('#sa-err', '');
@@ -2163,7 +2190,7 @@
     $('#sa-usuario').value = a ? a.usuario : '';
     $('#sa-partner').value = a ? a.partner : '';
     $('#sa-quitar').hidden = !a;
-    $('#sa-estado').textContent = a ? `✓ Credenciales guardadas${a.verificado ? ' y verificadas el ' + fmtDate(String(a.verificado).slice(0, 10)) : ' (pendiente de verificar la conexión)'}.` : '';
+    pintarSiigo();
   }
   $('#sa-form').addEventListener('submit', async (ev) => {
     ev.preventDefault();
@@ -2172,7 +2199,7 @@
     if (!usuario || !partner) return mostrarError('#sa-err', 'Escribe el usuario API y el Partner-ID.');
     if (!llave && !antes) return mostrarError('#sa-err', 'Pega la access key.');
     try {
-      conf.siigoApi = { usuario, partner, llave: llave || antes.llave, guardado: new Date().toISOString() };
+      conf.siigoApi = { usuario, partner, llave: llave || antes.llave, guardado: new Date().toISOString(), ...(antes && antes.verificado ? { verificado: antes.verificado } : {}) };
       await guardarConfig(); renderSiigoApi(); toast('Credenciales de Siigo guardadas.');
     } catch (e) { conf.siigoApi = antes; mostrarError('#sa-err', msgGitHub(e)); }
   });
@@ -2590,7 +2617,7 @@
     render();
     $('#sync').textContent = 'Actualizado ' + new Intl.DateTimeFormat('es-CO', { hour: 'numeric', minute: '2-digit' }).format(new Date());
     setInterval(sincronizar, 30000);
-    if (isAdmin) { revisarBuzon(); setInterval(revisarBuzon, 120000); revisarAvisos(); }
+    if (isAdmin) { revisarBuzon(); setInterval(revisarBuzon, 120000); revisarAvisos(); pintarSiigo(); setInterval(refrescarSiigo, 300000); }
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') sincronizar(); });
   }
 
