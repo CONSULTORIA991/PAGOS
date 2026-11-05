@@ -2158,7 +2158,7 @@
   // ---------- credenciales API de Siigo (las usa la tarea del PC) ----------
   // Semáforo: verde = la tarea del PC se conectó a Siigo con las credenciales actuales en los últimos 3 días;
   // amarillo = credenciales guardadas pero sin verificar (o verificación vieja); rojo = sin credenciales o Siigo las rechazó.
-  const fechaHora = (iso) => new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(iso));
+  const fechaHora = (iso) => new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(iso)).replace(/\.$/, '').replace(/\s/g, ' ');
   function estadoSiigo() {
     const a = conf && conf.siigoApi;
     if (!a || !a.llave) return { nivel: 'rojo', corto: 'Siigo: sin conectar', largo: 'Sin conexión con Siigo: faltan las credenciales de la API.' };
