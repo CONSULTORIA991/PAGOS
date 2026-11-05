@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="estilos.css?v=20">
+<link rel="stylesheet" href="estilos.css?v=21">
 </head>
 <body>
 
@@ -418,7 +418,8 @@
     <div class="sync" id="sg-conf"></div>
     <div class="preview" id="sg-tabla"></div>
     <div class="err" id="sg-err" hidden></div>
-    <div class="form-actions"><button class="btn" type="button" id="sg-completar">Completar NIT y centro de costo desde las facturas</button><button class="btn primary" type="button" id="sg-go" disabled>Descargar archivo para Siigo</button></div>
+    <div class="form-actions"><button class="btn" type="button" id="sg-completar">Completar NIT y centro de costo desde las facturas</button><button class="btn" type="button" id="sg-go" disabled>Descargar archivo para Siigo</button><button class="btn primary" type="button" id="sg-subir" disabled>Subir a Siigo</button></div>
+    <div class="sd-envios" id="sg-envios"></div>
   </div>
 </dialog>
 
@@ -427,11 +428,13 @@
   <div class="dlg">
     <div class="dlg-head"><h2>Cajas menores a Siigo (comprobante 14)</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
     <p style="margin:0;color:var(--muted)">Un comprobante por caja: una línea débito por cada soporte (22050501 factura a nombre de ODESA · 51959502 factura a nombre de otro · 13300501 recibo o cuenta de cobro) y el crédito a <b>13300502 Caja menor</b> a nombre del responsable.</p>
-    <div class="rep-dates"><div class="field"><label for="s14-consec">Primer consecutivo</label><input id="s14-consec" inputmode="numeric" autocomplete="off" placeholder="Ej. 85"></div></div>
+    <div class="rep-dates"><div class="field"><label for="s14-consec">Primer consecutivo (solo para el Excel)</label><input id="s14-consec" inputmode="numeric" autocomplete="off" placeholder="Ej. 85"></div></div>
+    <p class="sync" style="margin:0">Con <b>Subir a Siigo</b> no hace falta el consecutivo: Siigo lo asigna (el 14 tiene numeración automática).</p>
     <label class="check"><input type="checkbox" id="s14-incluir"> Incluir cajas ya exportadas</label>
     <div class="preview" id="s14-tabla"></div>
     <div class="err" id="s14-err" hidden></div>
-    <div class="form-actions"><button class="btn primary" type="button" id="s14-go" disabled>Descargar archivo para Siigo</button></div>
+    <div class="form-actions"><button class="btn" type="button" id="s14-go" disabled>Descargar archivo para Siigo</button><button class="btn primary" type="button" id="s14-subir" disabled>Subir a Siigo</button></div>
+    <div class="sd-envios" id="s14-envios"></div>
   </div>
 </dialog>
 
@@ -568,9 +571,9 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="cripto.js?v=20"></script>
-<script src="github.js?v=20"></script>
-<script src="lector.js?v=20"></script>
-<script src="app.js?v=20"></script>
+<script src="cripto.js?v=21"></script>
+<script src="github.js?v=21"></script>
+<script src="lector.js?v=21"></script>
+<script src="app.js?v=21"></script>
 </body>
 </html>

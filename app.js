@@ -1135,7 +1135,7 @@
     if (a && b && a > b) [a, b] = [b, a];
     const incluir = $('#sg-incluir').checked;
     return S.pagos
-      .filter((p) => p.estado === 'pagado' && fechaPagoDe(p) && (!a || fechaPagoDe(p) >= a) && (!b || fechaPagoDe(p) <= b) && (incluir || !p.siigo))
+      .filter((p) => p.estado === 'pagado' && !p.siigoEnvio && fechaPagoDe(p) && (!a || fechaPagoDe(p) >= a) && (!b || fechaPagoDe(p) <= b) && (incluir || !p.siigo))
       .sort((x, y) => fechaPagoDe(x).localeCompare(fechaPagoDe(y)) || String(x.proveedor || '').localeCompare(String(y.proveedor || ''), 'es'))
       .map((p) => {
         const { prefijo, numero } = partirFactura(p.factura);
@@ -1184,6 +1184,7 @@
     else mostrarError('#sg-err', '');
     $('#sg-go').disabled = !(consec > 0) || conErrores > 0;
     $('#sg-go').textContent = `Descargar archivo para Siigo (${porDia.size} ${porDia.size === 1 ? 'comprobante' : 'comprobantes'} · ${filas.length} ${filas.length === 1 ? 'pago' : 'pagos'})`;
+    botonSubir('#sg-subir', !(consec > 0) || conErrores > 0, `Subir a Siigo (${porDia.size} ${porDia.size === 1 ? 'comprobante' : 'comprobantes'})`);
   }
 
   function openSiigo() {
@@ -1192,6 +1193,7 @@
     if (!$('#sg-consec').value && ult > 0) $('#sg-consec').value = ult + 1;
     renderSiigo();
     $('#dlg-siigo').showModal();
+    abrirEnvios();
   }
   ['#sg-desde', '#sg-hasta', '#sg-incluir'].forEach((s) => $(s).addEventListener('change', renderSiigo));
   $('#sg-consec').addEventListener('input', renderSiigo);
@@ -1241,17 +1243,11 @@
     toast(total ? `Se completaron datos en ${total} ${total === 1 ? 'pago' : 'pagos'}. Revisa los que sigan incompletos.` : 'No encontré más datos en las facturas; complétalos con Editar.');
   });
 
-  $('#sg-go').addEventListener('click', async () => {
-    const filas = filasSiigo();
-    const sc = siigoConf();
-    const inicial = Number($('#sg-consec').value);
-    if (!(inicial > 0) || !filas.length || filas.some((f) => f.errores.length)) return;
-    const tipo = Number(sc.tipo) || 11;
-    const filasXls = [ENCABEZADO_SIIGO];
-    const asignados = {};
-    const vacio = () => new Array(ENCABEZADO_SIIGO.length).fill('');
+  // Arma los comprobantes (las mismas líneas para el Excel y para subir a Siigo por la API).
+  // Un comprobante por día de pago; los pagos del mismo "lote" comparten UN crédito al banco.
+  function comprobantesPagos(filas, inicial, tipo, sc) {
     const porDia = consecutivosPorDia(filas, inicial);
-    // Grupos: los pagos hechos juntos (mismo "lote") comparten UN movimiento de banco; los demás van solos
+    const comps = new Map();
     const gruposPago = [];
     const porLote = new Map();
     for (const f of filas) {
@@ -1261,33 +1257,53 @@
     }
     for (const grupo of gruposPago) {
       const p0 = grupo[0].p;
-      const consec = porDia.get(fechaPagoDe(p0));
-      const fecha = ddmmaaaa(fechaPagoDe(p0));
+      const dia = fechaPagoDe(p0), consec = porDia.get(dia);
+      if (!comps.has(consec)) comps.set(consec, { tipo, consec, fecha: dia, ids: [], lineas: [], observaciones: `Pagos del ${fmtDate(dia)} (app Pagos ODESA)` });
+      const c = comps.get(consec);
       const facturas = grupo.map((f) => `${f.prefijo}-${f.numero}`);
-      // Líneas débito: una por factura, a la cuenta del proveedor (cruza cada factura)
+      // Débito: una línea por factura, a la cuenta del proveedor (cruza cada factura)
       for (const f of grupo) {
-        const p = f.p;
-        const deb = vacio();
-        deb[0] = tipo; deb[1] = consec; deb[2] = fecha; deb[5] = Number(f.cuenta); deb[6] = String(p.nit);
-        if (CUENTAS_CON_VENCIMIENTO.has(f.cuenta)) { deb[12] = f.prefijo; deb[13] = Number(f.numero); deb[14] = 1; deb[15] = ddmmaaaa(p.vence); }
-        deb[19] = (p.concepto || `Pago factura ${f.prefijo}-${f.numero}`).slice(0, 100);
-        deb[20] = p.cc || ''; deb[21] = Math.round(Number(p.valor) || 0);
-        deb[23] = `Pago ${p.proveedor} factura ${f.prefijo}-${f.numero}`.slice(0, 300);
-        filasXls.push(deb);
-        asignados[p.id] = consec;
+        const p = f.p, cruza = CUENTAS_CON_VENCIMIENTO.has(f.cuenta);
+        c.lineas.push({ cuenta: f.cuenta, nit: String(p.nit), prefijo: cruza ? f.prefijo : '', numero: cruza ? f.numero : '', vence: cruza ? p.vence : '',
+          descripcion: (p.concepto || `Pago factura ${f.prefijo}-${f.numero}`).slice(0, 100), cc: p.cc || '', debito: Math.round(Number(p.valor) || 0), credito: 0,
+          obs: `Pago ${p.proveedor} factura ${f.prefijo}-${f.numero}`.slice(0, 300) });
+        c.ids.push(p.id);
       }
-      // Líneas crédito al banco: una por centro de costo (con el centro de costo de las facturas), mismo tercero
+      // Crédito al banco: una línea por centro de costo, mismo tercero
       const porCC = new Map();
       for (const f of grupo) porCC.set(f.p.cc || '', (porCC.get(f.p.cc || '') || 0) + Math.round(Number(f.p.valor) || 0));
       for (const [cc, valor] of porCC) {
-        const cre = vacio();
-        cre[0] = tipo; cre[1] = consec; cre[2] = fecha; cre[5] = Number(sc.cuentaBanco); cre[6] = String(p0.nit);
-        cre[19] = (grupo.length === 1 ? (p0.concepto || `Pago factura ${facturas[0]}`) : `Pago facturas ${facturas.join(', ')}`).slice(0, 100);
-        cre[20] = cc; cre[22] = valor;
-        cre[23] = `Pago ${p0.proveedor} ${grupo.length === 1 ? 'factura' : 'facturas'} ${facturas.join(', ')}`.slice(0, 300);
-        filasXls.push(cre);
+        c.lineas.push({ cuenta: String(sc.cuentaBanco), nit: String(p0.nit), prefijo: '', numero: '', vence: '',
+          descripcion: (grupo.length === 1 ? (p0.concepto || `Pago factura ${facturas[0]}`) : `Pago facturas ${facturas.join(', ')}`).slice(0, 100), cc, debito: 0, credito: valor,
+          obs: `Pago ${p0.proveedor} ${grupo.length === 1 ? 'factura' : 'facturas'} ${facturas.join(', ')}`.slice(0, 300) });
       }
     }
+    return [...comps.values()];
+  }
+  // Líneas → filas del modelo de importación de Siigo
+  function filasExcelSiigo(comps) {
+    const filas = [ENCABEZADO_SIIGO];
+    for (const c of comps) for (const l of c.lineas) {
+      const r = new Array(ENCABEZADO_SIIGO.length).fill('');
+      r[0] = c.tipo; r[1] = c.consec; r[2] = ddmmaaaa(c.fecha); r[5] = Number(l.cuenta); r[6] = String(l.nit);
+      if (l.prefijo) { r[12] = l.prefijo; r[13] = Number(l.numero); r[14] = 1; r[15] = ddmmaaaa(l.vence || c.fecha); }
+      r[19] = l.descripcion; r[20] = l.cc; if (l.debito) r[21] = l.debito; if (l.credito) r[22] = l.credito; r[23] = l.obs || '';
+      filas.push(r);
+    }
+    return filas;
+  }
+
+  $('#sg-go').addEventListener('click', async () => {
+    const filas = filasSiigo();
+    const sc = siigoConf();
+    const inicial = Number($('#sg-consec').value);
+    if (!(inicial > 0) || !filas.length || filas.some((f) => f.errores.length)) return;
+    const tipo = Number(sc.tipo) || 11;
+    const comps = comprobantesPagos(filas, inicial, tipo, sc);
+    const asignados = {};
+    for (const c of comps) for (const id of c.ids) asignados[id] = c.consec;
+    const porDia = { size: comps.length };
+    const filasXls = filasExcelSiigo(comps);
     const ws = XLSX.utils.aoa_to_sheet(filasXls);
     ws['!cols'] = ENCABEZADO_SIIGO.map((h) => ({ wch: Math.max(12, Math.min(28, h.length + 2)) }));
     const wb = XLSX.utils.book_new();
@@ -2485,10 +2501,151 @@
     } catch (e) { toast('No se pudo generar el PDF.'); }
   }
 
+  // ---------- Subir a Siigo (por la API, a través del computador de la oficina) ----------
+  // La app deja los comprobantes armados en datos/siigo-envios.enc; la tarea del PC (siigo-api.js atender, cada 2 min)
+  // valida terceros/centros de costo/cuadre, los crea en Siigo y marca los pagos o cajas como exportados.
+  const R_ENVIOS = 'datos/siigo-envios.enc';
+  const SE = { datos: { envios: [] }, sha: null, timer: null };
+  function botonSubir(sel, deshabilitar, texto) {
+    const b = $(sel);
+    delete b.dataset.sure;
+    b.textContent = texto;
+    b.disabled = deshabilitar || !(conf && conf.siigoApi);
+    b.title = conf && conf.siigoApi ? '' : 'Primero guarda las credenciales de Siigo (Usuarios → Conexión con Siigo)';
+  }
+  async function leerEnvios() {
+    const f = await GH.leer(R_ENVIOS);
+    SE.sha = f ? f.sha : null;
+    SE.datos = f ? await Cripto.descifrarJSON(maestra, f.bytes) : { envios: [] };
+    SE.datos.envios = SE.datos.envios || [];
+  }
+  async function mutarEnvios(fn) {
+    for (let i = 0; i < 4; i++) {
+      await leerEnvios();
+      if (fn(SE.datos) === false) return false;
+      try { SE.sha = await GH.escribir(R_ENVIOS, await Cripto.cifrarJSON(maestra, SE.datos), SE.sha); return true; }
+      catch (e) { if (i === 3) throw e; await new Promise((ok) => setTimeout(ok, 800)); }
+    }
+  }
+  const CAMPO_ENVIO = { siigo: 'siigoEnvio', siigo14: 'siigoEnvio14' };
+  async function subirASiigo(marca, comps) {
+    const campo = CAMPO_ENVIO[marca], id = nuevoId(), ids = new Set(comps.flatMap((c) => c.ids)), ahora = new Date().toISOString();
+    // 1) Bloquear los pagos/cajas para que no se exporten ni suban dos veces
+    let ocupado = false;
+    await mutar((d) => {
+      ocupado = d.pagos.some((x) => ids.has(x.id) && (x[campo] || (marca === 'siigo14' ? x.siigo14 : x.siigo) && !$(marca === 'siigo14' ? '#s14-incluir' : '#sg-incluir').checked));
+      if (ocupado) return false;
+      for (const x of d.pagos) if (ids.has(x.id)) x[campo] = { id, en: ahora };
+    });
+    if (ocupado) throw new Error('Alguno de estos ya se está subiendo o ya se exportó. Cierra y abre la ventana de nuevo.');
+    // 2) Dejar el envío en la cola
+    const yo = conf.usuarios && conf.usuarios[uid];
+    const envio = { id, estado: 'pendiente', pedido: ahora, porNombre: yo ? (yo.nombre || yo.usuario) : '', marca, tipo: comps[0].tipo, comprobantes: comps, hechos: [] };
+    try { await mutarEnvios((d) => { d.envios = [envio, ...d.envios].slice(0, 30); }); }
+    catch (e) { try { await mutar((d) => { for (const x of d.pagos) if (x[campo] && x[campo].id === id) delete x[campo]; }); } catch (e2) {} throw e; }
+    vigilarEnvios();
+  }
+  async function cancelarEnvio(id) {
+    let marca = null;
+    const ok = await mutarEnvios((d) => {
+      const e = d.envios.find((x) => x.id === id);
+      if (!e || e.estado !== 'pendiente') return false;
+      marca = e.marca; d.envios = d.envios.filter((x) => x.id !== id);
+    });
+    if (!ok) throw new Error('Ese envío ya lo está procesando el computador; espera el resultado.');
+    const campo = CAMPO_ENVIO[marca];
+    await mutar((d) => { for (const x of d.pagos) if (x[campo] && x[campo].id === id) delete x[campo]; });
+  }
+  function renderEnvios() {
+    for (const [sel, marca] of [['#sg-envios', 'siigo'], ['#s14-envios', 'siigo14']]) {
+      const lista = SE.datos.envios.filter((e) => e.marca === marca).slice(0, 5);
+      $(sel).innerHTML = lista.length ? `<span class="section-lbl">Subidas a Siigo</span>${lista.map((e) => {
+        const n = e.comprobantes.length, cab = `<header><b>${n} ${n === 1 ? 'comprobante' : 'comprobantes'} ${e.tipo}</b><small>Pedido ${esc(fechaHora(e.pedido))}${e.porNombre ? ' · ' + esc(e.porNombre) : ''}${e.terminado ? ' · terminado ' + esc(fechaHora(e.terminado)) : ''}</small></header>`;
+        const hechos = (e.hechos || []).map((h) => h.nombre || `${e.tipo}-${h.numero}`);
+        let cuerpo;
+        if (e.estado === 'pendiente') cuerpo = `<span class="pill st-pendiente" style="justify-self:start">Esperando al computador de la oficina…</span><div><button class="btn sm ghost" type="button" data-secancel="${esc(e.id)}">Cancelar</button></div>`;
+        else if (e.estado === 'enviando') cuerpo = `<span class="pill st-pendiente" style="justify-self:start">Creando en Siigo…${hechos.length ? ' ' + hechos.length + ' de ' + n : ''}</span>`;
+        else if (e.estado === 'listo') cuerpo = `<span class="sd-ok">✓ Creado en Siigo: ${esc(hechos.join(', '))}</span>`;
+        else cuerpo = `<span class="sd-mal">✗ No se subió${hechos.length ? ' completo' : ''}. Corrige y vuelve a subir.</span>${hechos.length ? `<span class="sd-ok">Sí se crearon: ${esc(hechos.join(', '))}</span>` : ''}<ul>${(e.problemas || []).map((p) => `<li>${esc(p)}</li>`).join('')}${e.error ? `<li>${esc(e.error)}</li>` : ''}</ul>`;
+        return `<div class="sd-item">${cab}${cuerpo}</div>`;
+      }).join('')}` : '';
+    }
+  }
+  function vigilarEnvios() {
+    clearInterval(SE.timer);
+    const tick = async () => {
+      const abierto = $('#dlg-siigo').open || $('#dlg-siigo14').open;
+      if (!abierto) { clearInterval(SE.timer); return; }
+      const habia = SE.datos.envios.filter((e) => e.estado === 'pendiente' || e.estado === 'enviando').map((e) => e.id);
+      try { await leerEnvios(); } catch (e) { return; }
+      renderEnvios();
+      const termino = habia.some((id) => { const e = SE.datos.envios.find((x) => x.id === id); return !e || e.estado === 'listo' || e.estado === 'error'; });
+      if (termino) { try { await sincronizar(); } catch (e) {} if ($('#dlg-siigo').open) renderSiigo(); if ($('#dlg-siigo14').open) renderSiigo14(); }
+      if (!SE.datos.envios.some((e) => e.estado === 'pendiente' || e.estado === 'enviando')) clearInterval(SE.timer);
+    };
+    renderEnvios();
+    SE.timer = setInterval(tick, 15000);
+  }
+  async function abrirEnvios() { try { await leerEnvios(); } catch (e) { /* sin envíos aún */ } renderEnvios(); vigilarEnvios(); }
+  async function clickSubir(btnSel, errSel, marca, armar) {
+    const b = $(btnSel);
+    if (!b.dataset.sure) { b.dataset.sure = '1'; b.dataset.txt = b.textContent; b.textContent = '¿Crear en Siigo? Toca de nuevo para confirmar'; setTimeout(() => { if (b.dataset.sure) { delete b.dataset.sure; b.textContent = b.dataset.txt; } }, 6000); return; }
+    delete b.dataset.sure;
+    const comps = armar();
+    if (!comps || !comps.length) return;
+    b.disabled = true; b.textContent = 'Enviando a la cola…';
+    try {
+      await subirASiigo(marca, comps);
+      toast(`Listo: ${comps.length} ${comps.length === 1 ? 'comprobante quedó' : 'comprobantes quedaron'} en cola. El computador de la oficina los crea en Siigo en 1–2 minutos.`);
+      render();
+    } catch (e) { mostrarError(errSel, e.message && !e.status ? e.message : msgGitHub(e)); }
+    if (marca === 'siigo') renderSiigo(); else renderSiigo14();
+    renderEnvios();
+  }
+  $('#sg-subir').addEventListener('click', () => clickSubir('#sg-subir', '#sg-err', 'siigo', () => {
+    const filas = filasSiigo(), sc = siigoConf(), inicial = Number($('#sg-consec').value);
+    if (!(inicial > 0) || !filas.length || filas.some((f) => f.errores.length)) return null;
+    return comprobantesPagos(filas, inicial, Number(sc.tipo) || 11, sc);
+  }));
+  $('#s14-subir').addEventListener('click', () => clickSubir('#s14-subir', '#s14-err', 'siigo14', () => {
+    const arr = cajasParaSiigo();
+    return arr.length ? comprobantesCajas(arr, 0) : null;
+  }));
+  document.addEventListener('click', async (ev) => {
+    const b = ev.target.closest('[data-secancel]');
+    if (!b) return;
+    try { await cancelarEnvio(b.dataset.secancel); toast('Envío cancelado.'); render(); }
+    catch (e) { toast(e.message || 'No se pudo cancelar.'); }
+    if ($('#dlg-siigo').open) renderSiigo(); if ($('#dlg-siigo14').open) renderSiigo14();
+    try { await leerEnvios(); } catch (e) {} renderEnvios();
+  });
+
+  // Un comprobante 14 por caja: un débito por soporte y el crédito a 13300502 a nombre del responsable (uno por centro de costo)
+  function comprobantesCajas(arr, inicial) {
+    return arr.map((p, i) => {
+      const c = p.caja || {};
+      const fecha = c.fecha || p.vence;
+      const lineas = [];
+      for (const s of p.soportes || []) {
+        const cruza = CUENTAS_CON_VENCIMIENTO.has(s.cuenta);
+        lineas.push({ cuenta: String(s.cuenta), nit: String(s.nit), prefijo: cruza ? s.prefijo : '', numero: cruza ? s.numero : '', vence: cruza ? (s.fecha || fecha) : '',
+          descripcion: String(s.descripcion || s.nota || `Soporte caja menor No. ${c.numero}`).slice(0, 100), cc: s.cc || p.cc || '', debito: Math.round(Number(s.valor) || 0), credito: 0,
+          obs: `Caja menor No. ${c.numero} ${c.responsable || ''} · ${s.tercero || ''} ${s.prefijo}-${s.numero}`.slice(0, 300) });
+      }
+      const porCC = new Map();
+      for (const s of p.soportes || []) porCC.set(s.cc || p.cc || '', (porCC.get(s.cc || p.cc || '') || 0) + Math.round(Number(s.valor) || 0));
+      for (const [cc, valor] of porCC) {
+        lineas.push({ cuenta: '13300502', nit: String(c.cedula || p.nit), prefijo: '', numero: '', vence: '', descripcion: `Legalización caja menor No. ${c.numero} – ${c.responsable || ''}`.slice(0, 100),
+          cc, debito: 0, credito: valor, obs: `Legalización caja menor No. ${c.numero} (${(p.soportes || []).length} soportes)` });
+      }
+      return { tipo: 14, consec: inicial > 0 ? inicial + i : 0, fecha, ids: [p.id], lineas, observaciones: `Legalización caja menor No. ${c.numero} – ${c.responsable || ''} (app Pagos ODESA)` };
+    });
+  }
+
   // Exportación a Siigo, comprobante 14 (legalización de la caja)
   function cajasParaSiigo() {
     const incluir = $('#s14-incluir').checked;
-    return cajasDe().filter((p) => (p.estado === 'aprobado' || p.estado === 'pagado') && (incluir || !p.siigo14))
+    return cajasDe().filter((p) => (p.estado === 'aprobado' || p.estado === 'pagado') && !p.siigoEnvio14 && (incluir || !p.siigo14))
       .sort((a, b) => String((a.caja || {}).fecha || '').localeCompare(String((b.caja || {}).fecha || '')) || ((a.caja || {}).numero || 0) - ((b.caja || {}).numero || 0));
   }
   function renderSiigo14() {
@@ -2501,9 +2658,11 @@
       errores += malos ? 1 : 0;
       return `<tr><td>${consec > 0 ? consec + i : '—'}</td><td>No. ${esc((p.caja || {}).numero)}</td><td>${esc((p.caja || {}).responsable || p.proveedor)}</td><td>${esc(fmtDate((p.caja || {}).fecha || p.vence))}</td><td>${(p.soportes || []).length}</td><td class="n">${fmt(p.valor)}</td><td>${malos ? `<span class="bulk"><span class="bad">${malos} soporte(s) incompletos</span></span>` : p.siigo14 ? `<span class="bulk"><span class="warn">ya exportada (14-${esc(p.siigo14.comprobante)})</span></span>` : '<span class="bulk"><span class="ok">Lista</span></span>'} <button class="btn sm ghost" type="button" data-row="${p.id}">Ver</button></td></tr>`;
     }).join('')}</tbody></table>`;
-    mostrarError('#s14-err', !(consec > 0) ? 'Escribe el primer consecutivo del comprobante 14.' : errores ? 'Hay cajas con soportes incompletos: ábrelas con “Ver” y usa “Corregir datos de los soportes”.' : '');
+    mostrarError('#s14-err', errores ? 'Hay cajas con soportes incompletos: ábrelas con “Ver” y usa “Corregir datos de los soportes”.' : '');
     $('#s14-go').disabled = !(consec > 0) || errores > 0;
     $('#s14-go').textContent = `Descargar archivo para Siigo (${arr.length} ${arr.length === 1 ? 'caja' : 'cajas'})`;
+    $('#s14-go').title = consec > 0 ? '' : 'Para descargar el Excel escribe el primer consecutivo';
+    botonSubir('#s14-subir', errores > 0 || !arr.length, `Subir a Siigo (${arr.length} ${arr.length === 1 ? 'caja' : 'cajas'})`);
   }
   $('#s14-consec').addEventListener('input', renderSiigo14);
   $('#s14-incluir').addEventListener('change', renderSiigo14);
@@ -2511,32 +2670,11 @@
     const arr = cajasParaSiigo();
     let consec = Number($('#s14-consec').value);
     if (!(consec > 0) || !arr.length) return;
-    const filas = [ENCABEZADO_SIIGO], asignados = {};
-    const vacio = () => new Array(ENCABEZADO_SIIGO.length).fill('');
-    for (const p of arr) {
-      const c = p.caja || {};
-      const fecha = ddmmaaaa(c.fecha || p.vence);
-      for (const s of p.soportes || []) {
-        const d = vacio();
-        d[0] = 14; d[1] = consec; d[2] = fecha; d[5] = Number(s.cuenta); d[6] = String(s.nit);
-        if (CUENTAS_CON_VENCIMIENTO.has(s.cuenta)) { d[12] = s.prefijo; d[13] = Number(s.numero); d[14] = 1; d[15] = ddmmaaaa(s.fecha || c.fecha); }
-        d[19] = String(s.descripcion || s.nota || `Soporte caja menor No. ${c.numero}`).slice(0, 100);
-        d[20] = s.cc || p.cc || ''; d[21] = Math.round(Number(s.valor) || 0);
-        d[23] = `Caja menor No. ${c.numero} ${c.responsable || ''} · ${s.tercero || ''} ${s.prefijo}-${s.numero}`.slice(0, 300);
-        filas.push(d);
-      }
-      // Crédito: 13300502 Caja menor a nombre del responsable (una línea por centro de costo)
-      const porCC = new Map();
-      for (const s of p.soportes || []) porCC.set(s.cc || p.cc || '', (porCC.get(s.cc || p.cc || '') || 0) + Math.round(Number(s.valor) || 0));
-      for (const [cc, valor] of porCC) {
-        const cr = vacio();
-        cr[0] = 14; cr[1] = consec; cr[2] = fecha; cr[5] = 13300502; cr[6] = String(c.cedula || p.nit);
-        cr[19] = `Legalización caja menor No. ${c.numero} – ${c.responsable || ''}`.slice(0, 100);
-        cr[20] = cc; cr[22] = valor; cr[23] = `Legalización caja menor No. ${c.numero} (${(p.soportes || []).length} soportes)`;
-        filas.push(cr);
-      }
-      asignados[p.id] = consec; consec++;
-    }
+    const comps = comprobantesCajas(arr, consec);
+    const asignados = {};
+    for (const c of comps) asignados[c.ids[0]] = c.consec;
+    consec += comps.length;
+    const filas = filasExcelSiigo(comps);
     const ws = XLSX.utils.aoa_to_sheet(filas);
     ws['!cols'] = ENCABEZADO_SIIGO.map((h) => ({ wch: Math.max(12, Math.min(28, h.length + 2)) }));
     const wb = XLSX.utils.book_new();
@@ -2564,7 +2702,7 @@
     else if (t.dataset.cjcancel) { CJ.editando = null; renderDetail(); }
     else if (t.dataset.cjguardar) guardarSoportes(t.dataset.cjguardar);
     else if (t.dataset.cjpdf) pdfRelacion(t.dataset.cjpdf);
-    else if (t.id === 'cj-siigo') { const u = S.siigo && Number(S.siigo.ultimo14); if (!$('#s14-consec').value && u > 0) $('#s14-consec').value = u + 1; renderSiigo14(); $('#dlg-siigo14').showModal(); }
+    else if (t.id === 'cj-siigo') { const u = S.siigo && Number(S.siigo.ultimo14); if (!$('#s14-consec').value && u > 0) $('#s14-consec').value = u + 1; renderSiigo14(); $('#dlg-siigo14').showModal(); abrirEnvios(); }
   });
 
   // ---------- usuarios y contraseñas ----------

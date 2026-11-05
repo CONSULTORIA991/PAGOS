@@ -81,6 +81,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .sd-item .preview { max-height: 360px; overflow: auto; }
 .sd-item .preview td.mal { color: var(--bad); font-weight: 600; }
 .sd-item .preview td.bien { color: var(--ok); }
+.sd-envios { display: grid; gap: 8px; }
+.sd-envios:empty { display: none; }
+.sd-envios ul { margin: 0; padding-left: 18px; font-size: .88rem; }
+.sd-ok { color: var(--ok); font-weight: 600; }
+.sd-mal { color: var(--bad); font-weight: 600; }
 
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid var(--line); background: var(--surface); padding: 8px 14px; border-radius: 8px; cursor: pointer; font-weight: 500; font-size: .92rem; white-space: nowrap; text-decoration: none; color: var(--ink); }
 .btn:hover { border-color: var(--muted); }
