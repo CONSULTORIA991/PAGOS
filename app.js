@@ -2168,8 +2168,24 @@
   function renderCajas() {
     if (S.view !== 'cajas') return;
     const todas = cajasDe();
-    $('#cj-tabs').innerHTML = CJ_TABS.map(([k, l]) => `<button class="tab" role="tab" type="button" data-cjtab="${k}" aria-selected="${CJ.tab === k}">${l}<span class="c">${todas.filter((p) => k === 'todos' || p.estado === k).length}</span></button>`).join('');
-    $('#cj-siigo').hidden = !isAdmin || !window.XLSX;
+    const resp = (conf && conf.cajas && conf.cajas.responsables) || [];
+    if (CJ.tab === 'resp' && !isAdmin) CJ.tab = 'revisar';
+    const tabs = isAdmin ? [...CJ_TABS, ['resp', 'Responsables']] : CJ_TABS;
+    $('#cj-tabs').innerHTML = tabs.map(([k, l]) => `<button class="tab" role="tab" type="button" data-cjtab="${k}" aria-selected="${CJ.tab === k}">${l}<span class="c">${k === 'resp' ? resp.filter((r) => r.activo !== false).length : todas.filter((p) => k === 'todos' || p.estado === k).length}</span></button>`).join('');
+    // Responsables: solo en su propia pestaña (administradora)
+    const verResp = CJ.tab === 'resp';
+    $('#cj-resp').hidden = !verResp;
+    $('#cj-list').hidden = verResp;
+    $('#cj-siigo').hidden = verResp || !isAdmin || !window.XLSX;
+    if (verResp) {
+      $('#cc-lista').innerHTML = siigoConf().centros.map((c) => `<option value="${esc(c.codigo + ' · ' + c.nombre)}"></option>`).join('');
+      $('#cj-resp-lista').innerHTML = resp.length ? resp.map((r) => {
+        const n = todas.filter((p) => p.caja && p.caja.responsableId === r.id).length;
+        return `<li><span class="who"><b>${esc(r.nombre)}</b><small>C.C. ${esc(r.cedula)}${r.cc ? ' · ' + esc(ccTexto(r.cc)) : ''} · ${n} ${n === 1 ? 'caja enviada' : 'cajas enviadas'}${r.activo === false ? ' · enlace desactivado' : ''}</small></span>
+        <span class="decide" style="flex:none">${r.activo === false ? `<button class="btn sm" type="button" data-cjact="${r.id}">Reactivar</button>` : `<button class="btn sm" type="button" data-cjcopiar="${r.id}">Copiar enlace</button><a class="btn sm" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(`Hola ${r.nombre.split(' ')[0]}. Este es tu enlace para enviar la caja menor a ODESA desde el celular (toma una foto de cada soporte y envía la relación): ${enlaceCaja(r)}`)}">WhatsApp</a><button class="btn sm danger" type="button" data-cjdes="${r.id}">Desactivar</button>`}</span></li>`;
+      }).join('') : '<li><span class="who"><small>Aún no hay responsables. Agrégalos abajo.</small></span></li>';
+      return;
+    }
     const arr = todas.filter((p) => CJ.tab === 'todos' || p.estado === CJ.tab).sort((a, b) => String(b.creado || '').localeCompare(String(a.creado || '')));
     $('#cj-list').innerHTML = arr.length ? arr.map((p) => {
       const st = ESTADOS[p.estado] ? p.estado : 'revisar';
@@ -2182,16 +2198,6 @@
         <div class="r-act"><span class="pill st-${st}">${st === 'pagado' ? 'Reembolsada' : ESTADOS[st].label}</span></div>
       </article>`;
     }).join('') : `<div class="empty"><h3>No hay cajas en este estado</h3><p>${isAdmin ? 'Cuando un responsable envíe su relación desde su enlace, aparecerá aquí con sus soportes leídos.' : 'Aquí aparecen las relaciones de caja menor para aprobar.'}</p></div>`;
-    // Responsables (solo administradora)
-    $('#cj-resp').hidden = !isAdmin;
-    if (!isAdmin) return;
-    $('#cc-lista').innerHTML = siigoConf().centros.map((c) => `<option value="${esc(c.codigo + ' · ' + c.nombre)}"></option>`).join('');
-    const resp = (conf.cajas && conf.cajas.responsables) || [];
-    $('#cj-resp-lista').innerHTML = resp.length ? resp.map((r) => {
-      const n = todas.filter((p) => p.caja && p.caja.responsableId === r.id).length;
-      return `<li><span class="who"><b>${esc(r.nombre)}</b><small>C.C. ${esc(r.cedula)}${r.cc ? ' · ' + esc(ccTexto(r.cc)) : ''} · ${n} ${n === 1 ? 'caja enviada' : 'cajas enviadas'}${r.activo === false ? ' · enlace desactivado' : ''}</small></span>
-        <span class="decide" style="flex:none">${r.activo === false ? `<button class="btn sm" type="button" data-cjact="${r.id}">Reactivar</button>` : `<button class="btn sm" type="button" data-cjcopiar="${r.id}">Copiar enlace</button><a class="btn sm" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(`Hola ${r.nombre.split(' ')[0]}. Este es tu enlace para enviar la caja menor a ODESA desde el celular (toma una foto de cada soporte y envía la relación): ${enlaceCaja(r)}`)}">WhatsApp</a><button class="btn sm danger" type="button" data-cjdes="${r.id}">Desactivar</button>`}</span></li>`;
-    }).join('') : '<li><span class="who"><small>Aún no hay responsables. Agrégalos abajo.</small></span></li>';
   }
   function enlaceCaja(r) {
     const t = Cripto.b64(Cripto.enc.encode(JSON.stringify({ i: r.id, n: r.nombre, s: r.secreto }))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
