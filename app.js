@@ -2155,6 +2155,36 @@
     catch (e) { conf.avisos = antes; mostrarError('#av-err', msgGitHub(e)); }
   });
 
+  // ---------- credenciales API de Siigo (las usa la tarea del PC) ----------
+  function renderSiigoApi() {
+    const a = conf.siigoApi;
+    mostrarError('#sa-err', '');
+    $('#sa-llave').value = '';
+    $('#sa-usuario').value = a ? a.usuario : '';
+    $('#sa-partner').value = a ? a.partner : '';
+    $('#sa-quitar').hidden = !a;
+    $('#sa-estado').textContent = a ? `✓ Credenciales guardadas${a.verificado ? ' y verificadas el ' + fmtDate(String(a.verificado).slice(0, 10)) : ' (pendiente de verificar la conexión)'}.` : '';
+  }
+  $('#sa-form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const usuario = $('#sa-usuario').value.trim(), partner = $('#sa-partner').value.trim().replace(/\s+/g, ''), llave = $('#sa-llave').value.trim();
+    const antes = conf.siigoApi;
+    if (!usuario || !partner) return mostrarError('#sa-err', 'Escribe el usuario API y el Partner-ID.');
+    if (!llave && !antes) return mostrarError('#sa-err', 'Pega la access key.');
+    try {
+      conf.siigoApi = { usuario, partner, llave: llave || antes.llave, guardado: new Date().toISOString() };
+      await guardarConfig(); renderSiigoApi(); toast('Credenciales de Siigo guardadas.');
+    } catch (e) { conf.siigoApi = antes; mostrarError('#sa-err', msgGitHub(e)); }
+  });
+  $('#sa-quitar').addEventListener('click', async () => {
+    const b = $('#sa-quitar');
+    if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = '¿Seguro? Toca de nuevo'; return; }
+    delete b.dataset.sure; b.textContent = 'Quitar';
+    const antes = conf.siigoApi;
+    try { delete conf.siigoApi; await guardarConfig(); renderSiigoApi(); toast('Credenciales de Siigo quitadas.'); }
+    catch (e) { conf.siigoApi = antes; mostrarError('#sa-err', msgGitHub(e)); }
+  });
+
   // ---------- cajas menores ----------
   // Cada relación llega del enlace del responsable, la tarea del PC lee los soportes y la deja como un pago
   // tipoDoc "caja" (Por revisar) con sus soportes. Se aprueba completa; el reembolso es el pago (13300502 vs banco)
@@ -2447,7 +2477,7 @@
     $('#c-estado').textContent = conf.claudeKey ? '✓ Lectura con Claude activada.' : 'Lectura con Claude desactivada (se usa el lector propio).';
     $('#c-quitar').hidden = !conf.claudeKey;
   }
-  function openUsuarios() { renderUsuarios(); renderClaude(); renderSiigoConf(); renderCobrosConf(); renderRobot(); renderAvisos(); mostrarError('#user-err', ''); mostrarError('#token-err', ''); mostrarError('#claude-err', ''); $('#user-form').reset(); $('#t-token').value = ''; $('#c-clave').value = ''; $('#dlg-users').showModal(); }
+  function openUsuarios() { renderUsuarios(); renderClaude(); renderSiigoConf(); renderCobrosConf(); renderRobot(); renderAvisos(); renderSiigoApi(); mostrarError('#user-err', ''); mostrarError('#token-err', ''); mostrarError('#claude-err', ''); $('#user-form').reset(); $('#t-token').value = ''; $('#c-clave').value = ''; $('#dlg-users').showModal(); }
 
   $('#claude-form').addEventListener('submit', async (ev) => {
     ev.preventDefault();

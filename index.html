@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="estilos.css?v=16">
+<link rel="stylesheet" href="estilos.css?v=17">
 </head>
 <body>
 
@@ -456,6 +456,18 @@
       <div class="err" id="token-err" hidden></div>
     </div>
     <div class="admin-box">
+      <span class="section-lbl">Conexión con Siigo (API)</span>
+      <p style="margin:0;color:var(--muted);font-size:.9rem">Datos de Siigo Nube → Alianzas → Mi credencial API. Se guardan cifrados; solo los usa la tarea del computador para crear los comprobantes en Siigo.</p>
+      <p id="sa-estado" style="margin:0;font-size:.9rem"></p>
+      <form id="sa-form" class="grid" novalidate autocomplete="off">
+        <div class="field"><label for="sa-usuario">Usuario API</label><input id="sa-usuario" autocomplete="off" placeholder="usuario@odesa.com.co"></div>
+        <div class="field"><label for="sa-partner">Partner-ID</label><input id="sa-partner" autocomplete="off" placeholder="Ej. odesaPagos"></div>
+        <div class="field full"><label for="sa-llave">Access key (llave de acceso)</label><input id="sa-llave" type="password" autocomplete="new-password" placeholder="Pega aquí la llave"></div>
+        <div class="err full" id="sa-err" hidden></div>
+        <div class="form-actions full" style="justify-content:flex-start"><button class="btn sm primary" type="submit">Guardar credenciales</button><button class="btn sm danger" type="button" id="sa-quitar" hidden>Quitar</button></div>
+      </form>
+    </div>
+    <div class="admin-box">
       <span class="section-lbl">Avisos al celular de tus jefes</span>
       <div id="av-off">
         <p style="margin:0;color:var(--muted);font-size:.9rem">Cuando cargues pagos para revisar, tus jefes reciben una notificación en el celular (“3 pagos nuevos por revisar”) que abre la app al tocarla. Usa la app gratuita <b>ntfy</b> y un canal privado de ODESA. El aviso no incluye proveedores ni valores.</p>
@@ -529,9 +541,9 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="cripto.js?v=16"></script>
-<script src="github.js?v=16"></script>
-<script src="lector.js?v=16"></script>
-<script src="app.js?v=16"></script>
+<script src="cripto.js?v=17"></script>
+<script src="github.js?v=17"></script>
+<script src="lector.js?v=17"></script>
+<script src="app.js?v=17"></script>
 </body>
 </html>
