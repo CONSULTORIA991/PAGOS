@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="estilos.css?v=18">
+<link rel="stylesheet" href="estilos.css?v=19">
 </head>
 <body>
 
@@ -435,6 +435,33 @@
   </div>
 </dialog>
 
+<!-- Diagnóstico de la conexión con Siigo -->
+<dialog class="sheet" id="dlg-sdiag">
+  <div class="dlg">
+    <div class="dlg-head"><h2>Diagnóstico Siigo</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
+    <p id="sd-estado" class="siigo-luz-txt" style="margin:0;font-size:.9rem"></p>
+    <p style="margin:0;color:var(--muted);font-size:.88rem">Consultas de solo lectura: no crean ni cambian nada en Siigo. Siigo no permite conectarse desde el navegador, así que la consulta la hace el computador de la oficina (encendido y con Claude abierto) y la respuesta aparece aquí sola.</p>
+    <form class="grid" id="sd-form" novalidate>
+      <div class="field"><label for="sd-tipo">Consulta</label>
+        <select id="sd-tipo">
+          <option value="conexion">Probar conexión</option>
+          <option value="verificarTerceros">Terceros de la app que no existen en Siigo</option>
+          <option value="verificarCentros">Centros de costo de la app vs Siigo</option>
+          <option value="tercero">Buscar un tercero por NIT o cédula</option>
+          <option value="movimientos">Comprobantes contables creados desde una fecha</option>
+          <option value="comprobantes">Tipos de comprobante (consecutivos)</option>
+          <option value="centros">Centros de costo de Siigo</option>
+          <option value="impuestos">Impuestos y retenciones</option>
+          <option value="formasPago">Formas de pago</option>
+        </select></div>
+      <div class="field" id="sd-param-box" hidden><label for="sd-param" id="sd-param-lbl">Dato</label><input id="sd-param" autocomplete="off"></div>
+      <div class="err full" id="sd-err" hidden></div>
+      <div class="form-actions full" style="justify-content:flex-start"><button class="btn primary" type="submit">Consultar</button><button class="btn sm" type="button" id="sd-refrescar">Actualizar</button><button class="btn sm ghost" type="button" id="sd-cred">Credenciales</button></div>
+    </form>
+    <div id="sd-lista" style="display:grid;gap:12px"></div>
+  </div>
+</dialog>
+
 <!-- Usuarios -->
 <dialog class="sheet" id="dlg-users">
   <div class="dlg">
@@ -464,7 +491,7 @@
         <div class="field"><label for="sa-partner">Partner-ID</label><input id="sa-partner" autocomplete="off" placeholder="Ej. odesaPagos"></div>
         <div class="field full"><label for="sa-llave">Access key (llave de acceso)</label><input id="sa-llave" type="password" autocomplete="new-password" placeholder="Pega aquí la llave"></div>
         <div class="err full" id="sa-err" hidden></div>
-        <div class="form-actions full" style="justify-content:flex-start"><button class="btn sm primary" type="submit">Guardar credenciales</button><button class="btn sm danger" type="button" id="sa-quitar" hidden>Quitar</button></div>
+        <div class="form-actions full" style="justify-content:flex-start"><button class="btn sm primary" type="submit">Guardar credenciales</button><button class="btn sm danger" type="button" id="sa-quitar" hidden>Quitar</button><button class="btn sm" type="button" id="sa-diag">Diagnóstico Siigo</button></div>
       </form>
     </div>
     <div class="admin-box">
@@ -541,9 +568,9 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="cripto.js?v=18"></script>
-<script src="github.js?v=18"></script>
-<script src="lector.js?v=18"></script>
-<script src="app.js?v=18"></script>
+<script src="cripto.js?v=19"></script>
+<script src="github.js?v=19"></script>
+<script src="lector.js?v=19"></script>
+<script src="app.js?v=19"></script>
 </body>
 </html>

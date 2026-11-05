@@ -2182,7 +2182,93 @@
   async function refrescarSiigo() {
     try { const f = await GH.leer(R_CONFIG); if (!f) return; const c = await Cripto.descifrarJSON(maestra, f.bytes); conf.siigoApi = c.siigoApi; pintarSiigo(); } catch (e) { /* se reintenta luego */ }
   }
-  $('#siigo-luz').addEventListener('click', () => { openUsuarios(); setTimeout(() => $('#sa-form').scrollIntoView({ block: 'center', behavior: 'smooth' }), 80); });
+  $('#siigo-luz').addEventListener('click', () => openDiag());
+
+  // ---------- Diagnóstico Siigo ----------
+  // La app deja la consulta en datos/siigo-diag.enc (cifrado); la tarea del PC (siigo-api.js atender) la responde ahí mismo.
+  const R_DIAG = 'datos/siigo-diag.enc';
+  const SD_PARAM = {
+    tercero: ['NIT o cédula (sin dígito de verificación)', 'Ej. 890102010', true],
+    movimientos: ['Desde (fecha)', 'AAAA-MM-DD · vacío = últimos 7 días', false],
+    comprobantes: ['Tipo de documento', 'CC (contables), FV, RC, FC · vacío = CC', false],
+    centros: ['Filtrar por nombre o código', 'Ej. SUMMUS · vacío = todos', false],
+    formasPago: ['Tipo de documento', 'RC, FV, FC · vacío = RC', false],
+  };
+  const SD_NOMBRE = { conexion: 'Probar conexión', verificarTerceros: 'Terceros de la app vs Siigo', verificarCentros: 'Centros de costo de la app vs Siigo', tercero: 'Buscar tercero', movimientos: 'Comprobantes creados', comprobantes: 'Tipos de comprobante', centros: 'Centros de costo de Siigo', impuestos: 'Impuestos', formasPago: 'Formas de pago' };
+  const SD = { datos: { solicitudes: [] }, sha: null, timer: null };
+  async function leerDiag() {
+    const f = await GH.leer(R_DIAG);
+    SD.sha = f ? f.sha : null;
+    SD.datos = f ? await Cripto.descifrarJSON(maestra, f.bytes) : { solicitudes: [] };
+    SD.datos.solicitudes = SD.datos.solicitudes || [];
+  }
+  async function mutarDiag(fn) {
+    for (let i = 0; i < 4; i++) {
+      await leerDiag();
+      fn(SD.datos);
+      try { SD.sha = await GH.escribir(R_DIAG, await Cripto.cifrarJSON(maestra, SD.datos), SD.sha); return; }
+      catch (e) { if (i === 3) throw e; await new Promise((ok) => setTimeout(ok, 800)); }
+    }
+  }
+  function tablaDiag(r) {
+    const malo = /^(NO EXISTE|Inactivo|No)$/;
+    return `<div class="preview"><table><thead><tr>${r.columnas.map((c) => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${r.filas.map((f) => `<tr>${f.map((v) => `<td class="${malo.test(String(v)) ? 'mal' : /^(Sí|Conectado ✓)$/.test(String(v)) ? 'bien' : ''}">${esc(v)}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="${r.columnas.length}">Sin resultados.</td></tr>`}</tbody></table></div>`;
+  }
+  function renderDiag() {
+    const e = estadoSiigo();
+    const t = $('#sd-estado'); t.dataset.nivel = e.nivel; t.innerHTML = `<i aria-hidden="true"></i><span>${esc(e.largo)}</span>`;
+    const tipo = $('#sd-tipo').value, p = SD_PARAM[tipo];
+    $('#sd-param-box').hidden = !p;
+    if (p) { $('#sd-param-lbl').textContent = p[0]; $('#sd-param').placeholder = p[1]; }
+    const lista = [...SD.datos.solicitudes].sort((a, b) => String(b.pedido).localeCompare(String(a.pedido)));
+    $('#sd-lista').innerHTML = lista.length ? lista.map((s) => {
+      const quien = s.porNombre ? ` · ${esc(s.porNombre)}` : '';
+      const cab = `<header><b>${esc(SD_NOMBRE[s.tipo] || s.tipo)}${s.param ? ': ' + esc(s.param) : ''}</b><small>Pedida ${esc(fechaHora(s.pedido))}${quien}${s.atendido ? ' · respondida ' + esc(fechaHora(s.atendido)) : ''}</small></header>`;
+      if (s.estado === 'pendiente') return `<div class="sd-item">${cab}<span class="pill st-pendiente" style="justify-self:start">Esperando al computador de la oficina…</span><div><button class="btn sm ghost" type="button" data-sdquitar="${esc(s.id)}">Cancelar</button></div></div>`;
+      if (s.estado === 'error') return `<div class="sd-item">${cab}<div class="err">${esc(s.error || 'Error')}</div><div><button class="btn sm ghost" type="button" data-sdquitar="${esc(s.id)}">Quitar</button></div></div>`;
+      const r = s.resultado || { columnas: [], filas: [] };
+      return `<div class="sd-item">${cab}<span>${esc(r.titulo || '')}${r.nota ? ` · <small>${esc(r.nota)}</small>` : ''}</span>${tablaDiag(r)}<div><button class="btn sm ghost" type="button" data-sdquitar="${esc(s.id)}">Quitar</button></div></div>`;
+    }).join('') : '<p class="rep-note">Aún no hay consultas. Elige una arriba y toca Consultar.</p>';
+  }
+  async function refrescarDiag() {
+    try { await leerDiag(); } catch (e) { mostrarError('#sd-err', msgGitHub(e)); }
+    await refrescarSiigo();
+    renderDiag();
+  }
+  async function openDiag() {
+    if (!isAdmin) return;
+    mostrarError('#sd-err', '');
+    renderDiag();
+    $('#dlg-sdiag').showModal();
+    await refrescarDiag();
+    clearInterval(SD.timer);
+    SD.timer = setInterval(() => { if ($('#dlg-sdiag').open) { if (SD.datos.solicitudes.some((s) => s.estado === 'pendiente')) refrescarDiag(); } else clearInterval(SD.timer); }, 20000);
+  }
+  $('#sd-tipo').addEventListener('change', () => { $('#sd-param').value = ''; renderDiag(); });
+  $('#sd-refrescar').addEventListener('click', () => refrescarDiag());
+  $('#sd-cred').addEventListener('click', () => { $('#dlg-sdiag').close(); openUsuarios(); setTimeout(() => $('#sa-form').scrollIntoView({ block: 'center', behavior: 'smooth' }), 80); });
+  $('#sa-diag').addEventListener('click', () => { $('#dlg-users').close(); openDiag(); });
+  $('#sd-form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    mostrarError('#sd-err', '');
+    if (!conf.siigoApi) return mostrarError('#sd-err', 'Primero guarda las credenciales de Siigo (botón Credenciales).');
+    const tipo = $('#sd-tipo').value, p = SD_PARAM[tipo], param = p ? $('#sd-param').value.trim() : '';
+    if (p && p[2] && !param) return mostrarError('#sd-err', 'Escribe el dato: ' + p[0] + '.');
+    if (tipo === 'movimientos' && param && !/^\d{4}-\d{2}-\d{2}$/.test(param)) return mostrarError('#sd-err', 'Escribe la fecha como AAAA-MM-DD (ej. 2026-11-01).');
+    const yo = conf.usuarios && conf.usuarios[uid];
+    const s = { id: nuevoId(), tipo, param, estado: 'pendiente', pedido: new Date().toISOString(), porNombre: yo ? (yo.nombre || yo.usuario) : '' };
+    try {
+      // Se guardan solo las últimas 15 consultas
+      await mutarDiag((d) => { d.solicitudes = [...d.solicitudes, s].sort((a, b) => String(b.pedido).localeCompare(String(a.pedido))).slice(0, 15); });
+      renderDiag(); toast('Consulta enviada. El computador de la oficina la responderá.');
+    } catch (e) { mostrarError('#sd-err', msgGitHub(e)); }
+  });
+  document.addEventListener('click', async (ev) => {
+    const b = ev.target.closest('[data-sdquitar]');
+    if (!b) return;
+    try { await mutarDiag((d) => { d.solicitudes = d.solicitudes.filter((x) => x.id !== b.dataset.sdquitar); }); renderDiag(); }
+    catch (e) { mostrarError('#sd-err', msgGitHub(e)); }
+  });
   function renderSiigoApi() {
     const a = conf.siigoApi;
     mostrarError('#sa-err', '');
