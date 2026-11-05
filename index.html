@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="estilos.css?v=22">
+<link rel="stylesheet" href="estilos.css?v=23">
 </head>
 <body>
 
@@ -438,6 +438,43 @@
   </div>
 </dialog>
 
+<!-- Retenciones y documento soporte (cuentas de cobro de contratistas) -->
+<dialog class="sheet" id="dlg-ds">
+  <div class="dlg">
+    <div class="dlg-head"><h2>Retenciones y documento soporte</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
+    <p id="ds-quien" style="margin:0"></p>
+    <form class="grid" id="ds-form" novalidate>
+      <div class="field"><label for="ds-valor">Valor de la cuenta de cobro</label><input id="ds-valor" inputmode="numeric" autocomplete="off"></div>
+      <div class="field"><label for="ds-fecha">Fecha del documento soporte</label><input type="date" id="ds-fecha"></div>
+      <div class="field full"><label for="ds-desc">Descripción del trabajo</label><input id="ds-desc" autocomplete="off" maxlength="300"></div>
+      <div class="field"><label for="ds-cuenta">Cuenta del costo o gasto</label><input id="ds-cuenta" list="ds-cuentas" autocomplete="off" placeholder="Ej. 61301001 · Contratistas"><datalist id="ds-cuentas"></datalist></div>
+      <div class="field"><label for="ds-cc">Centro de costo</label><input id="ds-cc" list="cc-lista" autocomplete="off"></div>
+      <div class="field"><label for="ds-rete">Retención en la fuente</label>
+        <select id="ds-rete">
+          <option value="">Sin retención en la fuente</option>
+          <option value="9430|Retefuente 2% Obra|2">Retefuente 2% Obra</option>
+          <option value="6150|Retefuente 4% Servicios|4">Retefuente 4% Servicios</option>
+          <option value="6149|Retefuente 6%|6">Retefuente 6%</option>
+          <option value="6148|Retefuente 10%|10">Retefuente 10%</option>
+          <option value="6147|Retefuente 11%|11">Retefuente 11%</option>
+        </select></div>
+      <div class="field"><label for="ds-otra">Otra retención (opcional)</label>
+        <select id="ds-otra">
+          <option value="">Ninguna</option>
+          <option value="6151|Retefuente 2.5%|2.5">Retefuente 2.5%</option>
+          <option value="14406|Retefuente 3,5% Compras|3.5">Retefuente 3,5% Compras</option>
+          <option value="9275|Retefuente 1% Transporte|1">Retefuente 1% Transporte</option>
+          <option value="34503|Retefuente 3.5% Arriendo inmueble|3.5">Retefuente 3.5% Arriendo inmueble</option>
+        </select></div>
+      <div class="full" id="ds-anticipos"></div>
+      <div class="full" id="ds-resumen"></div>
+      <div class="err full" id="ds-err" hidden></div>
+      <div class="form-actions full"><button class="btn primary" type="submit" id="ds-enviar">Enviar documento soporte a Siigo</button></div>
+    </form>
+    <div class="sd-envios" id="ds-estado"></div>
+  </div>
+</dialog>
+
 <!-- Diagnóstico de la conexión con Siigo -->
 <dialog class="sheet" id="dlg-sdiag">
   <div class="dlg">
@@ -571,9 +608,9 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="cripto.js?v=22"></script>
-<script src="github.js?v=22"></script>
-<script src="lector.js?v=22"></script>
-<script src="app.js?v=22"></script>
+<script src="cripto.js?v=23"></script>
+<script src="github.js?v=23"></script>
+<script src="lector.js?v=23"></script>
+<script src="app.js?v=23"></script>
 </body>
 </html>

@@ -318,7 +318,7 @@
       if (S.confirm === 'delete') cf = `<div class="confirm"><span>¿Eliminar este pago? No se puede deshacer.</span><span class="decide" style="flex:none"><button class="btn sm" type="button" data-confirm="cancel">Cancelar</button><button class="btn sm danger solid" type="button" data-confirm="delete">Eliminar</button></span></div>`;
       if (S.confirm === 'pay') cf = `<div class="confirm pay"><span class="pay-date"><label for="d-fpago">Fecha de pago</label><input type="date" id="d-fpago" value="${esc(S.payDate || todayISO())}" max="${todayISO()}"></span><span>Marcar como pagado${saldo != null ? ` y descontar <b class="num">${fmt(p.valor)}</b> del saldo en banco` : ''}.</span><span class="decide" style="flex:none"><button class="btn sm" type="button" data-confirm="cancel">Cancelar</button>${saldo != null ? '<button class="btn sm" type="button" data-confirm="pay-only">Solo marcar pagado</button>' : ''}<button class="btn sm primary" type="button" data-confirm="pay">${saldo != null ? 'Pagado y descontar' : 'Marcar pagado'}</button></span></div>`;
       adminBox = `<div class="admin-box"><span class="section-lbl">Administración</span>
-        <div class="decide">${st === 'aprobado' ? '<button class="btn primary sm" type="button" data-admin="pay">Marcar como pagado</button>' : ''}${st !== 'revisar' ? '<button class="btn sm" type="button" data-act="revisar" data-id="' + p.id + '">Volver a “Por revisar”</button>' : ''}<button class="btn sm" type="button" data-admin="edit">Editar</button><button class="btn sm danger" type="button" data-admin="delete">Eliminar</button></div>${cf}</div>`;
+        <div class="decide">${p.tipoDoc === 'cobro' && st === 'aprobado' && !p.ds ? (p.siigoEnvioDS ? '<span class="pill st-pendiente">Enviando documento soporte a Siigo…</span><button class="btn sm" type="button" data-admin="ds">Ver estado</button>' : '<button class="btn primary sm" type="button" data-admin="ds">Retenciones y documento soporte</button>') : ''}${st === 'aprobado' ? '<button class="btn primary sm" type="button" data-admin="pay">Marcar como pagado</button>' : ''}${st !== 'revisar' ? '<button class="btn sm" type="button" data-act="revisar" data-id="' + p.id + '">Volver a “Por revisar”</button>' : ''}<button class="btn sm" type="button" data-admin="edit">Editar</button><button class="btn sm danger" type="button" data-admin="delete">Eliminar</button></div>${cf}</div>`;
     }
 
     box.innerHTML = `
@@ -333,6 +333,7 @@
         ${p.contratista ? `<div><dt>Contratista</dt><dd>C.C. ${esc(p.nit)} · cel. ${esc(p.contratista.celular)}</dd></div>` : ''}
         ${isAdmin && p.contratista ? `<div><dt>Consignar a</dt><dd>${esc(p.contratista.banco)} · ${esc(p.contratista.tipoCuenta)} · ${esc(p.contratista.numeroCuenta)}</dd></div>` : ''}
         ${isAdmin && (p.nit || p.cc) ? `<div><dt>NIT · Centro de costo</dt><dd>${esc(p.nit || 'Sin NIT')} · ${esc(p.cc ? ccTexto(p.cc) : 'Sin centro de costo')}</dd></div>` : ''}
+        ${p.ds ? `<div><dt>Documento soporte</dt><dd>${esc(p.ds.nombre)} · valor ${fmt(p.ds.valorBruto)}${(p.ds.retenciones || []).length ? ' · ' + p.ds.retenciones.map((r) => `${esc(r.nombre)} ${fmt(r.valor)}`).join(' · ') : ' · sin retenciones'}${(p.ds.cruces || []).length ? ` · anticipos cruzados ${fmt(p.ds.cruces.reduce((s, c) => s + (Number(c.valor) || 0), 0))} (${esc(p.ds.cruce)})` : ''} · <b>por pagar ${fmt(p.valor)}</b></dd></div>` : ''}
         ${isAdmin && p.siigo ? `<div><dt>Siigo</dt><dd>Exportado en comprobante ${esc(p.siigo.tipo)}-${esc(p.siigo.comprobante)}</dd></div>` : ''}
         ${aprobacion(p) && (st === 'aprobado' || st === 'pagado') ? `<div><dt>Aprobado por</dt><dd>${esc(personName(aprobacion(p).por))}, ${esc(dtFmt.format(new Date(aprobacion(p).en)))}</dd></div>` : ''}
         ${p.decididoPor && p.decididoEn ? `<div><dt>Última decisión</dt><dd>${esc(personName(p.decididoPor))}, ${esc(dtFmt.format(new Date(p.decididoEn)))}</dd></div>` : ''}
@@ -2621,6 +2622,139 @@
     try { await leerEnvios(); } catch (e) {} renderEnvios();
   });
 
+  // ---------- Retenciones y documento soporte (cuentas de cobro de trabajos de contratistas) ----------
+  // La app arma el DS (valor, retenciones, cuenta, centro de costo y anticipos a cruzar) y lo deja en la cola
+  // datos/siigo-envios.enc (marca "ds"); el computador lo crea en Siigo (/v1/purchases) y, si hay anticipos,
+  // un comprobante 20 que cruza 22050501 (DS) contra 13300501 (anticipo). Luego la cuenta queda por el neto.
+  const DSV = { id: null };
+  const numeroDe = (v) => Number(String(v || '').replace(/[^\d]/g, '')) || 0;
+  const reteDe = (v) => { if (!v) return null; const [id, nombre, pct] = v.split('|'); return { id: Number(id), nombre, pct: Number(pct) }; };
+  function anticiposDe(p) {
+    const nit = String(p.nit || '').replace(/\D/g, '');
+    if (!nit) return [];
+    return S.pagos.filter((a) => a.tipoDoc === 'anticipo' && a.estado === 'pagado' && String(a.nit || '').replace(/\D/g, '') === nit)
+      .map((a) => { const cruzado = (a.cruces || []).reduce((s, c) => s + (Number(c.valor) || 0), 0); const { prefijo, numero } = partirFactura(a.factura); return { a, saldo: Math.max(0, Math.round(Number(a.valor) || 0) - cruzado), prefijo, numero }; })
+      .filter((x) => x.saldo > 0);
+  }
+  function calcDS() {
+    const valor = numeroDe($('#ds-valor').value);
+    const rets = [reteDe($('#ds-rete').value), reteDe($('#ds-otra').value)].filter(Boolean).map((r) => ({ ...r, valor: Math.round(valor * r.pct / 100) }));
+    const totalRet = rets.reduce((s, r) => s + r.valor, 0);
+    const neto = valor - totalRet;
+    const cruces = [...document.querySelectorAll('[data-dsant]')].filter((c) => c.checked).map((c) => {
+      const x = anticiposDe(S.pagos.find((y) => y.id === DSV.id)).find((y) => y.a.id === c.dataset.dsant);
+      const inp = document.querySelector(`[data-dsantv="${c.dataset.dsant}"]`);
+      return x ? { anticipoId: x.a.id, prefijo: x.prefijo, numero: x.numero, vence: x.a.vence || fechaPagoDe(x.a) || '', valor: Math.min(numeroDe(inp && inp.value), x.saldo), saldo: x.saldo, factura: x.a.factura } : null;
+    }).filter(Boolean);
+    const totalCruces = cruces.reduce((s, c) => s + c.valor, 0);
+    return { valor, rets, totalRet, neto, cruces, totalCruces, porPagar: neto - totalCruces };
+  }
+  function renderResumenDS() {
+    const c = calcDS();
+    $('#ds-resumen').innerHTML = `<div class="preview"><table><tbody>
+      <tr><td>Valor de la cuenta de cobro</td><td class="n">${fmt(c.valor)}</td></tr>
+      ${c.rets.map((r) => `<tr><td>− ${esc(r.nombre)}</td><td class="n">${fmt(r.valor)}</td></tr>`).join('')}
+      <tr><td><b>Neto del documento soporte</b></td><td class="n"><b>${fmt(c.neto)}</b></td></tr>
+      ${c.cruces.map((x) => `<tr><td>− Anticipo ${esc(x.factura || '')} cruzado</td><td class="n">${fmt(x.valor)}</td></tr>`).join('')}
+      <tr><td><b>Queda por pagar al contratista</b></td><td class="n"><b>${fmt(c.porPagar)}</b></td></tr>
+    </tbody></table></div>`;
+    const b = $('#ds-enviar'); delete b.dataset.sure; b.textContent = 'Enviar documento soporte a Siigo';
+  }
+  async function estadoDS(p) {
+    try { await leerEnvios(); } catch (e) { return; }
+    const e = SE.datos.envios.filter((x) => x.marca === 'ds' && x.ds && x.ds.pagoId === p.id)[0];
+    if (!e) { $('#ds-estado').innerHTML = ''; return; }
+    const hechos = (e.hechos || []).map((h) => h.nombre).filter(Boolean);
+    const cab = `<header><b>Envío a Siigo</b><small>Pedido ${esc(fechaHora(e.pedido))}${e.porNombre ? ' · ' + esc(e.porNombre) : ''}</small></header>`;
+    let cuerpo;
+    if (e.estado === 'pendiente') cuerpo = '<span class="pill st-pendiente" style="justify-self:start">Esperando al computador de la oficina…</span>';
+    else if (e.estado === 'enviando') cuerpo = '<span class="pill st-pendiente" style="justify-self:start">Creando en Siigo…</span>';
+    else if (e.estado === 'listo') cuerpo = `<span class="sd-ok">✓ Creado en Siigo: ${esc(hechos.join(' y '))}</span>`;
+    else cuerpo = `<span class="sd-mal">✗ No se completó${hechos.length ? ` (sí se creó: ${esc(hechos.join(', '))})` : ''}.</span><ul>${(e.problemas || []).map((x) => `<li>${esc(x)}</li>`).join('')}${e.error ? `<li>${esc(e.error)}</li>` : ''}</ul>`;
+    $('#ds-estado').innerHTML = `<div class="sd-item">${cab}${cuerpo}</div>`;
+  }
+  async function openDS(id) {
+    const p = S.pagos.find((x) => x.id === id);
+    if (!p || !isAdmin) return;
+    DSV.id = id;
+    mostrarError('#ds-err', '');
+    // Lista de cuentas del PUC (la carga la tarea del computador en la configuración)
+    try { const f = await GH.leer(R_CONFIG); if (f) { const c = await Cripto.descifrarJSON(maestra, f.bytes); if (c.siigo && c.siigo.cuentasCosto) conf.siigo = { ...(conf.siigo || {}), cuentasCosto: c.siigo.cuentasCosto }; } } catch (e) {}
+    const cuentas = (conf.siigo && conf.siigo.cuentasCosto) || [];
+    $('#ds-cuentas').innerHTML = cuentas.map(([c, n]) => `<option value="${esc(c + ' · ' + n)}"></option>`).join('');
+    $('#cc-lista').innerHTML = siigoConf().centros.map((c) => `<option value="${esc(c.codigo + ' · ' + c.nombre)}"></option>`).join('');
+    const { prefijo, numero } = partirFactura(p.factura);
+    $('#ds-quien').innerHTML = `<b>${esc(p.proveedor || '')}</b> · C.C./NIT ${esc(p.nit || 'sin número')} · cuenta de cobro ${esc(p.factura || '—')}${p.contratista ? '' : ''}`;
+    $('#ds-valor').value = Math.round(Number(p.valor) || 0).toLocaleString('es-CO');
+    $('#ds-fecha').value = todayISO();
+    $('#ds-desc').value = (p.concepto || '').slice(0, 300);
+    const ult = conf.siigo && conf.siigo.ultimaCuentaDS;
+    const sug = ult || (cuentas.find(([c]) => c === '61301001') ? '61301001' : '');
+    const cu = cuentas.find(([c]) => c === sug);
+    $('#ds-cuenta').value = cu ? `${cu[0]} · ${cu[1]}` : sug;
+    $('#ds-cc').value = p.cc ? ccTexto(p.cc) : '';
+    $('#ds-rete').value = ''; $('#ds-otra').value = '';
+    const ants = anticiposDe(p);
+    $('#ds-anticipos').innerHTML = ants.length ? `<span class="section-lbl">Anticipos de este contratista por cruzar</span>${ants.map((x) => `<label class="check" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input type="checkbox" data-dsant="${esc(x.a.id)}"> ${esc(x.a.factura || 'Anticipo')} · pagado ${esc(fmtDate(fechaPagoDe(x.a) || ''))} · saldo ${fmt(x.saldo)}${x.prefijo && x.numero ? '' : ' <span class="sd-mal">(sin prefijo/número: no se puede cruzar)</span>'} <span>Cruzar</span><input data-dsantv="${esc(x.a.id)}" inputmode="numeric" style="width:130px" value="${esc(x.saldo.toLocaleString('es-CO'))}"></label>`).join('')}` : '<p class="sync" style="margin:0">Este contratista no tiene anticipos pagados pendientes por cruzar.</p>';
+    renderResumenDS();
+    $('#ds-estado').innerHTML = '';
+    $('#dlg-ds').showModal();
+    estadoDS(p);
+    clearInterval(DSV.timer);
+    DSV.timer = setInterval(async () => {
+      if (!$('#dlg-ds').open) { clearInterval(DSV.timer); return; }
+      const q = S.pagos.find((x) => x.id === DSV.id);
+      if (q && q.siigoEnvioDS) { await estadoDS(q); try { await sincronizar(); } catch (e) {} }
+    }, 15000);
+  }
+  ['#ds-valor', '#ds-rete', '#ds-otra'].forEach((s) => $(s).addEventListener('input', renderResumenDS));
+  $('#ds-anticipos').addEventListener('input', renderResumenDS);
+  $('#ds-anticipos').addEventListener('change', renderResumenDS);
+  $('#ds-form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    mostrarError('#ds-err', '');
+    const p = S.pagos.find((x) => x.id === DSV.id);
+    if (!p) return;
+    if (!conf.siigoApi) return mostrarError('#ds-err', 'Primero guarda las credenciales de Siigo (Usuarios → Conexión con Siigo).');
+    if (p.ds) return mostrarError('#ds-err', `Esta cuenta de cobro ya tiene documento soporte (${p.ds.nombre}).`);
+    if (p.siigoEnvioDS) return mostrarError('#ds-err', 'Ya se está enviando el documento soporte de esta cuenta de cobro.');
+    const c = calcDS();
+    const cuenta = ($('#ds-cuenta').value.match(/^\s*(\d{8})/) || [])[1];
+    const cc = $('#ds-cc').value.split('·')[0].trim();
+    const fecha = $('#ds-fecha').value;
+    if (!(c.valor > 0)) return mostrarError('#ds-err', 'Escribe el valor de la cuenta de cobro.');
+    if (!cuenta) return mostrarError('#ds-err', 'Elige la cuenta del costo o gasto (8 dígitos).');
+    if (!fecha) return mostrarError('#ds-err', 'Escribe la fecha del documento soporte.');
+    if (!p.nit) return mostrarError('#ds-err', 'La cuenta de cobro no tiene la cédula del contratista: agrégala con Editar.');
+    if (!$('#ds-desc').value.trim()) return mostrarError('#ds-err', 'Escribe la descripción del trabajo.');
+    if (c.cruces.some((x) => !x.prefijo || !x.numero)) return mostrarError('#ds-err', 'Uno de los anticipos marcados no tiene prefijo y número; corrígelo en ese anticipo con Editar.');
+    if (c.cruces.some((x) => !(x.valor > 0))) return mostrarError('#ds-err', 'Escribe cuánto cruzar de cada anticipo marcado.');
+    if (c.porPagar < 0) return mostrarError('#ds-err', 'Los anticipos a cruzar suman más que el neto del documento soporte.');
+    const b = $('#ds-enviar');
+    if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = `¿Crear el documento soporte en Siigo (va a la DIAN)? Toca de nuevo`; setTimeout(() => { if (b.dataset.sure) { delete b.dataset.sure; b.textContent = 'Enviar documento soporte a Siigo'; } }, 7000); return; }
+    delete b.dataset.sure;
+    b.disabled = true; b.textContent = 'Enviando a la cola…';
+    const id = nuevoId(), ahora = new Date().toISOString();
+    const { prefijo, numero } = partirFactura(p.factura);
+    const yo = conf.usuarios && conf.usuarios[uid];
+    const envio = { id, estado: 'pendiente', pedido: ahora, porNombre: yo ? (yo.nombre || yo.usuario) : '', marca: 'ds', tipo: 'DS', comprobantes: [], hechos: [],
+      ds: { pagoId: p.id, fecha, vence: p.vence && p.vence >= fecha ? p.vence : fecha, nit: String(p.nit).replace(/\D/g, ''), nombre: p.proveedor || '', cuenta, cc, descripcion: $('#ds-desc').value.trim(),
+        valor: c.valor, prefijo, numero, retenciones: c.rets.map((r) => ({ id: r.id, nombre: r.nombre, pct: r.pct, valor: r.valor })), neto: c.neto },
+      cruces: c.cruces.map((x) => ({ anticipoId: x.anticipoId, prefijo: x.prefijo, numero: x.numero, vence: x.vence, valor: x.valor })) };
+    try {
+      let ocupado = false;
+      await mutar((d) => { const x = d.pagos.find((y) => y.id === p.id); ocupado = !x || !!x.ds || !!x.siigoEnvioDS; if (ocupado) return false; x.siigoEnvioDS = { id, en: ahora }; });
+      if (ocupado) throw new Error('Esta cuenta de cobro ya tiene o está enviando su documento soporte.');
+      try { await mutarEnvios((d) => { d.envios = [envio, ...d.envios].slice(0, 30); }); }
+      catch (e) { try { await mutar((d) => { const x = d.pagos.find((y) => y.id === p.id); if (x && x.siigoEnvioDS && x.siigoEnvioDS.id === id) delete x.siigoEnvioDS; }); } catch (e2) {} throw e; }
+      // Recordar la última cuenta usada como sugerencia
+      if (!conf.siigo || conf.siigo.ultimaCuentaDS !== cuenta) { conf.siigo = { ...(conf.siigo || {}), ultimaCuentaDS: cuenta }; guardarConfig().catch(() => {}); }
+      toast('Documento soporte en cola: el computador de la oficina lo crea en Siigo en 1–2 minutos.');
+      render(); estadoDS(p);
+    } catch (e) { mostrarError('#ds-err', e.message && !e.status ? e.message : msgGitHub(e)); }
+    b.disabled = false; b.textContent = 'Enviar documento soporte a Siigo';
+  });
+
   // Un comprobante 14 por caja: un débito por soporte y el crédito a 13300502 a nombre del responsable (uno por centro de costo)
   function comprobantesCajas(arr, inicial) {
     return arr.map((p, i) => {
@@ -2716,6 +2850,17 @@
   }
   async function guardarConfig() {
     const f = await GH.leer(R_CONFIG);
+    // Conservar lo que escribe la tarea del computador (lista de cuentas del PUC, verificación de Siigo)
+    if (f) {
+      try {
+        const fresco = await Cripto.descifrarJSON(maestra, f.bytes);
+        if (fresco.siigo && fresco.siigo.cuentasCosto && !(conf.siigo && conf.siigo.cuentasCosto)) conf.siigo = { ...(conf.siigo || {}), cuentasCosto: fresco.siigo.cuentasCosto };
+        if (fresco.siigoApi && conf.siigoApi && fresco.siigoApi.llave === conf.siigoApi.llave) {
+          if (String(fresco.siigoApi.verificado || '') > String(conf.siigoApi.verificado || '')) conf.siigoApi.verificado = fresco.siigoApi.verificado;
+          if (fresco.siigoApi.error && String(fresco.siigoApi.error.en || '') > String((conf.siigoApi.error || {}).en || '')) conf.siigoApi.error = fresco.siigoApi.error;
+        }
+      } catch (e) { /* se guarda lo que hay en memoria */ }
+    }
     await GH.escribir(R_CONFIG, await Cripto.cifrarJSON(maestra, conf), f && f.sha);
   }
   function renderUsuarios() {
@@ -2922,6 +3067,7 @@
     if (t.dataset.open === 'add') { openForm(); return; }
     if (t.dataset.open === 'import') { openImport(); return; }
     if (t.dataset.admin === 'edit') { openForm(S.openId); return; }
+    if (t.dataset.admin === 'ds') { openDS(S.openId); return; }
     if (t.dataset.admin === 'delete') { S.confirm = 'delete'; renderDetail(); return; }
     if (t.dataset.admin === 'pay') { S.confirm = 'pay'; S.payDate = todayISO(); renderDetail(); return; }
     if (t.dataset.confirm === 'cancel') { S.confirm = null; renderDetail(); return; }
