@@ -151,10 +151,13 @@
   // Pagos → comprobante 11 (p.siigo); cajas → comprobante 14 (p.siigo14); cuentas de cobro → documento soporte (p.ds)
   const enSiigo = (p) => (p.tipoDoc === 'caja' ? p.siigo14 : p.siigo);
   const subiendoSiigo = (p) => (p.tipoDoc === 'caja' ? p.siigoEnvio14 : p.siigoEnvio);
+  // La tarea del computador revisa en Siigo lo marcado como subido y deja p.siigoRev
+  const alertaSiigo = (p) => !!(p.siigoRev && p.siigoRev.estado === 'mal' && (enSiigo(p) || p.ds));
   const necesitaDS = (p) => p.tipoDoc === 'cobro' && (p.estado === 'aprobado' || p.estado === 'pagado') && !p.ds;
   function chipsSiigo(p) {
     if (!isAdmin) return '';
     const out = [];
+    if (alertaSiigo(p)) out.push(`<span class="chip sg-mal" title="${esc(p.siigoRev.nota)}">⚠ No cuadra con Siigo</span>`);
     if (p.ds) out.push(`<span class="chip sg-ok" title="Documento soporte creado en Siigo">✓ ${esc(p.ds.nombre)}</span>`);
     else if (p.siigoEnvioDS) out.push('<span class="chip sg-va">Enviando documento soporte…</span>');
     else if (necesitaDS(p)) out.push('<span class="chip sg-no">Sin documento soporte</span>');
@@ -258,6 +261,7 @@
       if (S.siigoVer === 'dsEnv') return !!p.ds || !!p.siigoEnvioDS;
       if (S.siigoVer === 'sinSiigo') return p.estado === 'pagado' && !enSiigo(p) && !subiendoSiigo(p);
       if (S.siigoVer === 'enSiigo') return !!enSiigo(p) || !!p.ds;
+      if (S.siigoVer === 'alerta') return alertaSiigo(p);
       return true;
     });
     const byVence = (a, b) => (a.vence || '9999') < (b.vence || '9999') ? -1 : (a.vence || '9999') > (b.vence || '9999') ? 1 : 0;
@@ -387,6 +391,7 @@
         ${isAdmin && (p.nit || p.cc) ? `<div><dt>NIT · Centro de costo</dt><dd>${esc(p.nit || 'Sin NIT')} · ${esc(p.cc ? ccTexto(p.cc) : 'Sin centro de costo')}</dd></div>` : ''}
         ${p.anticipoManual && p.anticipoManual.valor > 0 ? `<div><dt>Anticipo</dt><dd>${fmt(p.anticipoManual.valor)} · documento ${esc(p.anticipoManual.documento)}${p.ds ? '' : ` · valor de la cuenta de cobro ${fmt(p.valorBruto)}, se descontó del valor a pagar`}</dd></div>` : ''}
         ${p.ds ? `<div><dt>Documento soporte</dt><dd>${esc(p.ds.nombre)} · valor ${fmt(p.ds.valorBruto)}${(p.ds.retenciones || []).length ? ' · ' + p.ds.retenciones.map((r) => `${esc(r.nombre)} ${fmt(r.valor)}`).join(' · ') : ' · sin retenciones'}${(p.ds.cruces || []).length ? ` · anticipos cruzados ${fmt(p.ds.cruces.reduce((s, c) => s + (Number(c.valor) || 0), 0))} (${esc(p.ds.cruce)})` : ''} · <b>${p.ds.yaPagado || st === 'pagado' ? 'neto ' + fmt(p.ds.neto) : 'por pagar ' + fmt(p.valor)}</b></dd></div>` : ''}
+        ${isAdmin && alertaSiigo(p) ? `<div><dt>Revisión en Siigo</dt><dd><span class="chip sg-mal">⚠ No cuadra</span> ${esc(p.siigoRev.nota)} <small>(revisado ${esc(dtFmt.format(new Date(p.siigoRev.en)))}; si ya lo corregiste en Siigo, el computador lo vuelve a revisar solo en unas horas)</small></dd></div>` : ''}
         ${isAdmin && enSiigo(p) ? `<div><dt>Siigo</dt><dd><span class="chip sg-ok">✓ Ya está en Siigo</span> comprobante ${esc(p.tipoDoc === 'caja' ? '14' : (enSiigo(p).tipo || '11'))}-${esc(enSiigo(p).comprobante)}${enSiigo(p).api ? ' · subido desde la app' : ' · exportado en Excel'}${enSiigo(p).en ? ' el ' + esc(dtFmt.format(new Date(enSiigo(p).en))) : ''}. No hay que volver a enviarlo.</dd></div>`
           : isAdmin && subiendoSiigo(p) ? '<div><dt>Siigo</dt><dd><span class="chip sg-va">Subiendo a Siigo…</span></dd></div>'
           : isAdmin && (st === 'pagado' || (p.tipoDoc === 'caja' && st === 'aprobado')) ? '<div><dt>Siigo</dt><dd><span class="chip sg-no">Sin enviar a Siigo</span></dd></div>' : ''}
@@ -418,7 +423,7 @@
   function render() {
     $('#hoy').textContent = dayFmt.format(new Date());
     renderAprobadores();
-    renderLedger(); renderTabs(); renderList(); renderReport(); renderSelBar();
+    renderLedger(); renderTabs(); renderList(); renderReport(); renderSelBar(); renderInicio();
     if (S.openId) renderDetail();
     renderCartResumen(); renderCartera();
     renderInicio(); renderConsultaProv(); renderConsultaCli(); renderCajas();
@@ -719,9 +724,16 @@
   });
 
   // ---------- carga masiva de facturas ----------
-  let masivaActiva = false;
-  function openMasiva() {
+  let masivaActiva = false, masivaModo = '';
+  function openMasiva(modo) {
     if (masivaActiva) { $('#dlg-masiva').showModal(); return; }
+    masivaModo = modo === 'cobro' ? 'cobro' : '';
+    const cobro = masivaModo === 'cobro';
+    $('#m-titulo').textContent = cobro ? 'Subir varias cuentas de cobro' : 'Subir varias facturas';
+    $('#m-zona-txt').textContent = cobro ? 'Arrastra aquí las cuentas de cobro' : 'Arrastra aquí las facturas';
+    $('#m-intro').innerHTML = cobro
+      ? 'Selecciona o arrastra las cuentas de cobro de los contratistas (PDF o imagen). Cada una se lee, se guarda cifrada y queda como cuenta de cobro <b>Por revisar</b>. Después ábrelas con Editar para revisar la cédula, el número (ej. CC-15) y, si se le dio anticipo, marcarlo.'
+      : 'Selecciona o arrastra las facturas (PDF o imagen). Cada una se lee, se guarda cifrada y queda como pago <b>Por revisar</b>. Las que ya están cargadas (mismo archivo o mismo número de factura y proveedor) se omiten.';
     $('#m-lista').innerHTML = ''; $('#m-files').value = ''; mostrarError('#m-err', '');
     $('#m-modo').textContent = conf && conf.claudeKey ? 'Lectura con Claude activada.' : 'Lectura con el lector propio de la app (facturas electrónicas en PDF). Para escaneadas o fotos, configura Claude en Usuarios.';
     $('#dlg-masiva').showModal();
@@ -758,12 +770,14 @@
         const adj = await subirFactura(f);
         const now = new Date().toISOString();
         const leido = d.proveedor || d.valor;
+        const cobro = masivaModo === 'cobro';
         nuevos.push({
           id: nuevoId(), proveedor: d.proveedor || f.name.replace(/\.[^.]+$/, ''), concepto: d.concepto, factura: d.factura,
           valor: d.valor || 0, vence: d.vence, estado: 'revisar', nota: '', fechaPago: '', ...adj,
           nit: d.nit || '', cuenta: siigoConf().cuentaProv, cc: matchCentro((r.texto || '') + ' ' + f.name),
+          ...(cobro ? { tipoDoc: 'cobro', valorBruto: d.valor || 0 } : {}),
           creado: now, creadoPor: uid,
-          historial: [{ estado: 'revisar', por: uid, en: now, nota: 'Cargada en lote' + (r.faltan.length ? ' · faltó: ' + r.faltan.join(', ') : '') }],
+          historial: [{ estado: 'revisar', por: uid, en: now, nota: (cobro ? 'Cuenta de cobro cargada en lote' : 'Cargada en lote') + (r.faltan.length ? ' · faltó: ' + r.faltan.join(', ') : '') }],
         });
         nombresExistentes.add(f.name); if (d.factura) clavesExistentes.add(clave);
         const det = [d.proveedor, d.factura && 'Fact. ' + d.factura, d.valor ? fmt(d.valor) : '', d.vence && 'vence ' + fmtDate(d.vence)].filter(Boolean).join(' · ');
@@ -1043,7 +1057,31 @@
     $('#i-queda').classList.toggle('ok', !(q != null && q < 0));
     $('#i-prov-dato').textContent = S.loaded ? (t.nRevisar ? `${t.nRevisar} por revisar · ${millones(t.revisar)}` : 'Nada por revisar') : '';
     $('#i-cli-dato').textContent = C.loaded && C.items.length ? `Por cobrar · ${millones(totalesCartera().total)}` : '';
+    renderAvisos();
   }
+  // Avisos al entrar (solo administradora): lo que falta por enviar a Siigo o no cuadra
+  function renderAvisos() {
+    const box = $('#i-avisos');
+    if (!isAdmin || !S.loaded) { box.hidden = true; return; }
+    const sinDS = S.pagos.filter((p) => necesitaDS(p) && !p.siigoEnvioDS).length;
+    const pagosSin = S.pagos.filter((p) => p.tipoDoc !== 'caja' && p.estado === 'pagado' && !enSiigo(p) && !subiendoSiigo(p)).length;
+    const cajasSin = S.pagos.filter((p) => p.tipoDoc === 'caja' && (p.estado === 'aprobado' || p.estado === 'pagado') && !enSiigo(p) && !subiendoSiigo(p)).length;
+    const malos = S.pagos.filter(alertaSiigo).length;
+    const fila = (n, txt, clase, accion) => (n ? `<div class="aviso ${clase}"><span><b>${n}</b> ${txt}</span><button class="btn sm" type="button" data-aviso="${accion}">Ver</button></div>` : '');
+    const html = fila(malos, malos === 1 ? 'registro no cuadra con Siigo' : 'registros no cuadran con Siigo', 'mal', 'alerta')
+      + fila(sinDS, sinDS === 1 ? 'cuenta de cobro aprobada sin documento soporte' : 'cuentas de cobro aprobadas sin documento soporte', 'pend', 'dsPend')
+      + fila(pagosSin, pagosSin === 1 ? 'pago pagado sin subir a Siigo' : 'pagos pagados sin subir a Siigo', 'pend', 'sinSiigo')
+      + fila(cajasSin, cajasSin === 1 ? 'caja menor sin subir a Siigo' : 'cajas menores sin subir a Siigo', 'pend', 'cajas');
+    box.innerHTML = html ? `<span class="section-lbl">Pendientes con Siigo</span>${html}` : '<span class="section-lbl">Pendientes con Siigo</span><div class="aviso"><span>✓ Todo está al día con Siigo.</span></div>';
+    box.hidden = false;
+  }
+  $('#i-avisos').addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-aviso]');
+    if (!b) return;
+    if (b.dataset.aviso === 'cajas') { setView('cajas'); return; }
+    S.siigoVer = b.dataset.aviso; $('#f-siigo').value = S.siigoVer; S.tab = 'todos';
+    setView('aprob'); renderTabs(); renderList();
+  });
 
   // ---------- consultas por proveedor y por cliente ----------
   function rangoConsulta(r) {
@@ -1245,6 +1283,71 @@
     const name = S.rDesde === S.rHasta ? `Pagos realizados ${S.rDesde}.xlsx` : `Pagos realizados ${S.rDesde || 'inicio'} a ${S.rHasta || 'hoy'}.xlsx`;
     XLSX.writeFile(wb, name, { cellDates: true });
   }
+
+  // ---------- reporte mensual: pagado, por proveedor, por centro de costo y retenciones ----------
+  function datosMes(mes) {
+    const enMes = (f) => String(f || '').slice(0, 7) === mes;
+    const pagos = S.pagos.filter((p) => p.estado === 'pagado' && enMes(fechaPagoDe(p)));
+    const agrupar = (arr, clave, valor) => {
+      const m = new Map();
+      for (const p of arr) { const k = clave(p); const x = m.get(k) || { nombre: k, n: 0, total: 0 }; x.n++; x.total += valor(p); m.set(k, x); }
+      return [...m.values()].sort((a, b) => b.total - a.total);
+    };
+    const val = (p) => Number(p.valor) || 0;
+    const porProv = agrupar(pagos, (p) => String(p.proveedor || 'Sin proveedor').trim().toUpperCase(), val);
+    const porCC = agrupar(pagos, (p) => (p.cc ? ccTexto(p.cc) : 'Sin centro de costo'), val);
+    const porTipo = agrupar(pagos, (p) => TIPO_DOC[p.tipoDoc] || 'Factura de proveedor', val);
+    // Retenciones: documentos soporte con fecha en el mes
+    const ds = S.pagos.filter((p) => p.ds && enMes(p.ds.fecha));
+    const ret = new Map();
+    for (const p of ds) for (const r of p.ds.retenciones || []) { const x = ret.get(r.nombre) || { nombre: r.nombre, n: 0, base: 0, total: 0 }; x.n++; x.base += Number(p.ds.valorBruto) || 0; x.total += Number(r.valor) || 0; ret.set(r.nombre, x); }
+    const contratistas = ds.map((p) => { const t = (p.ds.retenciones || []).reduce((s, r) => s + (Number(r.valor) || 0), 0); return { nombre: p.proveedor || '', nit: p.nit || '', ds: p.ds.nombre, bruto: Number(p.ds.valorBruto) || 0, ret: t, neto: (Number(p.ds.valorBruto) || 0) - t, cc: p.ds.cc ? ccTexto(p.ds.cc) : '' }; });
+    return { pagos, total: pagos.reduce((s, p) => s + val(p), 0), porProv, porCC, porTipo, retenciones: [...ret.values()], contratistas, totalRet: contratistas.reduce((s, c) => s + c.ret, 0) };
+  }
+  function nombreMes(mes) { const [y, m] = mes.split('-').map(Number); const s = new Intl.DateTimeFormat('es-CO', { month: 'long', year: 'numeric' }).format(new Date(y, m - 1, 15)); return s.charAt(0).toUpperCase() + s.slice(1); }
+  function renderMensual() {
+    const mes = $('#rm-mes').value;
+    if (!mes) return;
+    const d = datosMes(mes);
+    const tabla = (titulo, cab, filas) => `<section><span class="section-lbl">${titulo}</span><table><thead><tr>${cab.map((c, i) => `<th${i ? ' class="n"' : ''}>${c}</th>`).join('')}</tr></thead><tbody>${filas || `<tr><td colspan="${cab.length}">Sin datos</td></tr>`}</tbody></table></section>`;
+    $('#rm-res').innerHTML = `
+      <section class="rep-sum">
+        <div class="tile main"><span class="lbl">Total pagado</span><span class="val">${fmt(d.total)}</span><span>${esc(nombreMes(mes))}</span></div>
+        <div class="tile"><span class="lbl">Pagos</span><span class="val">${d.pagos.length}</span></div>
+        <div class="tile"><span class="lbl">Retenido</span><span class="val">${fmt(d.totalRet)}</span></div>
+      </section>
+      ${tabla('Por tipo', ['Tipo', 'Pagos', 'Total'], d.porTipo.map((x) => `<tr><td>${esc(x.nombre)}</td><td class="n">${x.n}</td><td class="n">${fmt(x.total)}</td></tr>`).join(''))}
+      ${tabla('A quién se le pagó', ['Proveedor o contratista', 'Pagos', 'Total'], d.porProv.map((x) => `<tr><td>${esc(x.nombre)}</td><td class="n">${x.n}</td><td class="n">${fmt(x.total)}</td></tr>`).join(''))}
+      ${tabla('Por centro de costo', ['Centro de costo', 'Pagos', 'Total'], d.porCC.map((x) => `<tr><td>${esc(x.nombre)}</td><td class="n">${x.n}</td><td class="n">${fmt(x.total)}</td></tr>`).join(''))}
+      ${tabla('Retenciones (documentos soporte del mes)', ['Retención', 'Documentos', 'Base', 'Retenido'], d.retenciones.map((x) => `<tr><td>${esc(x.nombre)}</td><td class="n">${x.n}</td><td class="n">${fmt(x.base)}</td><td class="n">${fmt(x.total)}</td></tr>`).join(''))}
+      ${tabla('Retenciones por contratista', ['Contratista', 'Documento soporte', 'Valor', 'Retenido', 'Neto'], d.contratistas.map((x) => `<tr><td>${esc(x.nombre)}${x.nit ? ' · ' + esc(x.nit) : ''}</td><td class="n">${esc(x.ds)}</td><td class="n">${fmt(x.bruto)}</td><td class="n">${fmt(x.ret)}</td><td class="n">${fmt(x.neto)}</td></tr>`).join(''))}
+      <p class="rep-note">Lo pagado sale de los pagos marcados como pagados con fecha en el mes. Las retenciones salen de los documentos soporte hechos desde la app.</p>`;
+    $('#rm-dl').hidden = !window.XLSX;
+  }
+  function descargarMensual() {
+    const mes = $('#rm-mes').value;
+    if (!mes || !window.XLSX) return;
+    const d = datosMes(mes), wb = XLSX.utils.book_new();
+    const hoja = (nombre, filas, anchos, colsPesos) => {
+      const ws = XLSX.utils.aoa_to_sheet(filas, { cellDates: true, dateNF: 'dd/mm/yyyy' });
+      ws['!cols'] = anchos.map((w) => ({ wch: w }));
+      for (let r = 1; r < filas.length; r++) for (const c of colsPesos) { const x = ws[XLSX.utils.encode_cell({ r, c })]; if (x && typeof x.v === 'number') x.z = '"$"#,##0'; }
+      XLSX.utils.book_append_sheet(wb, ws, nombre);
+    };
+    hoja('Resumen', [['Mes', nombreMes(mes)], ['Total pagado', d.total], ['Número de pagos', d.pagos.length], ['Total retenido', d.totalRet], [], ['Tipo', 'Pagos', 'Total'], ...d.porTipo.map((x) => [x.nombre, x.n, x.total])], [28, 18, 16], [1, 2]);
+    hoja('Proveedores', [['Proveedor o contratista', 'Pagos', 'Total'], ...d.porProv.map((x) => [x.nombre, x.n, x.total])], [44, 8, 16], [2]);
+    hoja('Centros de costo', [['Centro de costo', 'Pagos', 'Total'], ...d.porCC.map((x) => [x.nombre, x.n, x.total])], [44, 8, 16], [2]);
+    hoja('Retenciones', [['Retención', 'Documentos', 'Base', 'Retenido'], ...d.retenciones.map((x) => [x.nombre, x.n, x.base, x.total]), [], ['Contratista', 'Cédula', 'Documento soporte', 'Centro de costo', 'Valor', 'Retenido', 'Neto'], ...d.contratistas.map((x) => [x.nombre, x.nit, x.ds, x.cc, x.bruto, x.ret, x.neto])], [34, 14, 16, 30, 14, 14, 14], [2, 3, 4, 5, 6]);
+    hoja('Detalle de pagos', [['Fecha de pago', 'Tipo', 'Proveedor', 'NIT', 'Concepto', 'Documento', 'Centro de costo', 'Valor pagado'], ...d.pagos.map((p) => { const [y, m, dd] = fechaPagoDe(p).split('-').map(Number); return [new Date(y, m - 1, dd), TIPO_DOC[p.tipoDoc] || 'Factura', p.proveedor || '', p.nit || '', p.concepto || '', p.factura || '', p.cc ? ccTexto(p.cc) : '', Number(p.valor) || 0]; })], [12, 16, 34, 14, 40, 14, 30, 16], [7]);
+    XLSX.writeFile(wb, `Reporte mensual ${mes}.xlsx`, { cellDates: true });
+  }
+  $('#r-mensual').addEventListener('click', () => {
+    const d = new Date(); if (!$('#rm-mes').value) $('#rm-mes').value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    $('#rm-mes').max = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    renderMensual(); $('#dlg-mensual').showModal();
+  });
+  $('#rm-mes').addEventListener('change', renderMensual);
+  $('#rm-dl').addEventListener('click', descargarMensual);
 
   // ---------- exportación a Siigo (modelo de importación de comprobantes contables) ----------
   const ENCABEZADO_SIIGO = ['Tipo de comprobante', 'Consecutivo comprobante', 'Fecha de elaboración ', 'Sigla moneda', 'Tasa de cambio', 'Código cuenta contable', 'Identificación tercero', 'Sucursal', 'Código producto', 'Código de bodega', 'Acción', 'Cantidad producto', 'Prefijo', 'Consecutivo', 'No. cuota', 'Fecha vencimiento', 'Código impuesto', 'Código grupo activo fijo', 'Código activo fijo', 'Descripción', 'Código centro/subcentro de costos', 'Débito', 'Crédito', 'Observaciones', 'Base gravable libro compras/ventas  ', 'Base exenta libro compras/ventas', 'Mes de cierre'];
@@ -3214,6 +3317,7 @@
   $('#dlg-detail').addEventListener('close', () => { S.openId = null; S.confirm = null; });
   $('#btn-add').addEventListener('click', () => openForm());
   $('#btn-cobro').addEventListener('click', () => openForm(null, 'cobro'));
+  $('#btn-masiva-cobro').addEventListener('click', () => openMasiva('cobro'));
   $('#btn-import').addEventListener('click', openImport);
   $('#btn-masiva').addEventListener('click', openMasiva);
   $('#btn-saldo').addEventListener('click', openSaldo);

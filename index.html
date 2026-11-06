@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="estilos.css?v=25">
+<link rel="stylesheet" href="estilos.css?v=26">
 </head>
 <body>
 
@@ -78,6 +78,7 @@
       <span id="admin-actions" class="top-actions" hidden>
         <button class="btn" id="btn-import" type="button">Importar desde Excel</button>
         <button class="btn" id="btn-masiva" type="button">Subir varias facturas</button>
+        <button class="btn" id="btn-masiva-cobro" type="button">Subir varias cuentas de cobro</button>
         <button class="btn" id="btn-cobro" type="button">+ Subir cuenta de cobro</button>
         <button class="btn primary" id="btn-add" type="button">+ Agregar pago</button>
       </span>
@@ -110,6 +111,7 @@
       <div><span class="lbl">Aprobado por pagar</span><span class="v" id="i-aprob">—</span></div>
       <div><span class="lbl">Quedaría</span><span class="v ok" id="i-queda">—</span></div>
     </section>
+    <section class="avisos" id="i-avisos" aria-label="Pendientes con Siigo" hidden></section>
     <div class="puertas">
       <button class="puerta prov" type="button" data-view="aprob">
         <span class="txt">
@@ -223,6 +225,7 @@
           <option value="dsEnv">Documentos soporte enviados</option>
           <option value="sinSiigo">Pagados sin enviar a Siigo</option>
           <option value="enSiigo">Ya enviados a Siigo</option>
+          <option value="alerta">⚠ No cuadran con Siigo</option>
         </select>
         <select id="sort" aria-label="Ordenar">
           <option value="vence">Vencimiento más cercano</option>
@@ -271,6 +274,7 @@
         <div class="field"><label for="r-desde">Desde</label><input type="date" id="r-desde"></div>
         <div class="field"><label for="r-hasta">Hasta</label><input type="date" id="r-hasta"></div>
         <button class="btn" type="button" id="r-dl" hidden>Descargar Excel</button>
+        <button class="btn" type="button" id="r-mensual">Reporte mensual</button>
         <button class="btn primary" type="button" id="r-siigo" hidden>Exportar a Siigo</button>
       </div>
       <div class="quick" id="r-quick">
@@ -344,6 +348,15 @@
 <!-- Detalle de un pago -->
 <dialog class="sheet" id="dlg-detail"><div class="dlg" id="detail"></div></dialog>
 
+<!-- Reporte mensual -->
+<dialog class="sheet" id="dlg-mensual">
+  <div class="dlg">
+    <div class="dlg-head"><h2>Reporte mensual</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
+    <div class="rep-dates"><div class="field"><label for="rm-mes">Mes</label><input type="month" id="rm-mes"></div><button class="btn" type="button" id="rm-dl">Descargar Excel</button></div>
+    <div class="rm-grid" id="rm-res"></div>
+  </div>
+</dialog>
+
 <!-- Agregar / editar pago -->
 <dialog id="dlg-form">
   <div class="dlg">
@@ -410,11 +423,11 @@
 <!-- Carga masiva de facturas -->
 <dialog class="sheet" id="dlg-masiva">
   <div class="dlg">
-    <div class="dlg-head"><h2>Subir varias facturas</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
-    <p style="margin:0;color:var(--muted)">Selecciona o arrastra las facturas (PDF o imagen). Cada una se lee, se guarda cifrada y queda como pago <b>Por revisar</b>. Las que ya están cargadas (mismo archivo o mismo número de factura y proveedor) se omiten.</p>
+    <div class="dlg-head"><h2 id="m-titulo">Subir varias facturas</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
+    <p style="margin:0;color:var(--muted)" id="m-intro">Selecciona o arrastra las facturas (PDF o imagen). Cada una se lee, se guarda cifrada y queda como pago <b>Por revisar</b>. Las que ya están cargadas (mismo archivo o mismo número de factura y proveedor) se omiten.</p>
     <label class="drop-zone" id="m-zona" for="m-files">
       <input id="m-files" type="file" multiple accept="application/pdf,image/png,image/jpeg,image/webp">
-      <b>Arrastra aquí las facturas</b><span>o toca para elegirlas</span>
+      <b id="m-zona-txt">Arrastra aquí las facturas</b><span>o toca para elegirlas</span>
     </label>
     <div class="sync" id="m-modo"></div>
     <ul class="bulk" id="m-lista"></ul>
@@ -627,9 +640,9 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="cripto.js?v=25"></script>
-<script src="github.js?v=25"></script>
-<script src="lector.js?v=25"></script>
-<script src="app.js?v=25"></script>
+<script src="cripto.js?v=26"></script>
+<script src="github.js?v=26"></script>
+<script src="lector.js?v=26"></script>
+<script src="app.js?v=26"></script>
 </body>
 </html>

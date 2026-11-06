@@ -169,6 +169,18 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .chip.sg-ok { background: var(--ok-soft); color: var(--ok); white-space: nowrap; }
 .chip.sg-va { background: var(--info-soft); color: var(--info); white-space: nowrap; }
 .chip.sg-no { background: var(--warn-soft); color: var(--warn); white-space: nowrap; }
+.chip.sg-mal { background: var(--bad-soft); color: var(--bad); white-space: nowrap; }
+/* Avisos al entrar */
+.avisos { display: grid; gap: 8px; padding: 14px 16px; border: 1px solid var(--line, #ddd); border-radius: 12px; background: var(--surface, transparent); margin: 12px 0; }
+.avisos .aviso { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.avisos .aviso b { font-variant-numeric: tabular-nums; }
+.avisos .aviso.mal b { color: var(--bad); }
+.avisos .aviso.pend b { color: var(--warn); }
+/* Reporte mensual */
+.rm-grid { display: grid; gap: 14px; }
+.rm-grid table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.rm-grid th, .rm-grid td { text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--line, #e5e5e5); }
+.rm-grid td.n, .rm-grid th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .clip { font-size: .8rem; color: var(--accent); font-weight: 500; }
 .list-foot { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; color: var(--muted); font-size: .9rem; padding: 4px 4px 0; }
 .list-foot strong { color: var(--ink); }
