@@ -1021,10 +1021,11 @@
   $('#r-desde').addEventListener('change', onDateInput);
   $('#r-hasta').addEventListener('change', onDateInput);
   // Secciones: Inicio · Proveedores (aprob, rep, prov) · Clientes (cart, cli)
-  const VISTAS = ['inicio', 'aprob', 'cajas', 'rep', 'prov', 'cart', 'cli'];
+  const VISTAS = ['inicio', 'aprob', 'cajas', 'rep', 'prov', 'cart', 'cli', 'rrhh'];
   function setView(v) {
     S.view = VISTAS.includes(v) ? v : 'inicio';
-    const grupo = ['aprob', 'cajas', 'rep', 'prov'].includes(S.view) ? 'prov' : ['cart', 'cli'].includes(S.view) ? 'cli' : 'inicio';
+    const grupo = ['aprob', 'cajas', 'rep', 'prov'].includes(S.view) ? 'prov' : ['cart', 'cli'].includes(S.view) ? 'cli' : S.view;
+    if (S.view === 'rrhh' && window.RRHH) window.RRHH.abrir();
     document.querySelectorAll('.vbtn[data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === S.view)));
     for (const x of VISTAS) $('#view-' + x).hidden = S.view !== x;
     $('#nav-prov').hidden = grupo !== 'prov';
@@ -3385,5 +3386,10 @@
     pantalla('#pantalla-login');
     $('#l-usuario').focus();
   }
+  // Herramientas que usa el módulo de Recursos humanos (rrhh.js)
+  window.ODESA = {
+    get maestra() { return maestra; }, get uid() { return uid; }, get conf() { return conf; }, get isAdmin() { return isAdmin; },
+    $, esc, fmt, fmtDate, dtFmt, toast, mostrarError, msgGitHub, nuevoId, personName, parseMonto, todayISO, localISO, setView,
+  };
   iniciar();
 })();

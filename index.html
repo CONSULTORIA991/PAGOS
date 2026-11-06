@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="estilos.css?v=27">
+<link rel="stylesheet" href="estilos.css?v=28">
 </head>
 <body>
 
@@ -153,7 +153,35 @@
           </svg>
         </span>
       </button>
+      <button class="puerta rh" type="button" data-view="rrhh">
+        <span class="txt">
+          <span><span class="ptit">Recursos humanos</span><span class="pdesc">Empleados activos, nómina quincenal, novedades y planilla de seguridad social.</span></span>
+          <span class="pdato" id="i-rh-dato"></span>
+          <span class="ir">Entrar →</span>
+        </span>
+        <span class="ilus" aria-hidden="true">
+          <svg viewBox="0 0 140 150">
+            <rect x="0" y="112" width="140" height="38" fill="#e6dcef"/>
+            <circle cx="46" cy="58" r="16" fill="#7a5aa6"/><rect x="24" y="78" width="44" height="40" rx="14" fill="#7a5aa6"/>
+            <circle cx="94" cy="52" r="18" fill="#3f2d63"/><rect x="70" y="74" width="48" height="44" rx="15" fill="#3f2d63"/>
+            <rect x="80" y="86" width="28" height="18" rx="3" fill="#fff"/><rect x="84" y="90" width="20" height="3" fill="#c9b8e0"/><rect x="84" y="96" width="14" height="3" fill="#c9b8e0"/>
+          </svg>
+        </span>
+      </button>
     </div>
+  </div>
+
+  <!-- Recursos humanos -->
+  <div class="view" id="view-rrhh" hidden>
+    <nav class="views" aria-label="Recursos humanos">
+      <button class="vbtn volver" type="button" data-view="inicio">← Inicio</button>
+      <button class="vbtn" type="button" data-rh-tab="emp" aria-pressed="true">Empleados</button>
+      <button class="vbtn" type="button" data-rh-tab="nom" aria-pressed="false">Nómina quincenal</button>
+      <button class="vbtn" type="button" data-rh-tab="pla" aria-pressed="false">Novedades y planilla</button>
+      <button class="vbtn" type="button" data-rh-tab="log" aria-pressed="false">Cambios</button>
+    </nav>
+    <div class="notice" id="rh-aviso" hidden></div>
+    <div id="rh-cuerpo"><div class="empty"><h3>Cargando…</h3></div></div>
   </div>
 
   <!-- Consultar proveedor -->
@@ -347,6 +375,45 @@
 
 <!-- Detalle de un pago -->
 <dialog class="sheet" id="dlg-detail"><div class="dlg" id="detail"></div></dialog>
+
+<!-- Empleado: agregar / editar -->
+<dialog id="dlg-emp">
+  <div class="dlg">
+    <div class="dlg-head"><h2 id="emp-titulo">Empleado</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
+    <form class="grid" id="emp-form" novalidate>
+      <div class="field full"><label for="emp-nombre">Nombre completo</label><input id="emp-nombre" autocomplete="off" required></div>
+      <div class="field"><label for="emp-cedula">Cédula</label><input id="emp-cedula" inputmode="numeric" autocomplete="off" required></div>
+      <div class="field"><label for="emp-empresa">Empresa</label><input id="emp-empresa" list="emp-empresas" autocomplete="off" placeholder="ODESA CARIBE S.A.S."><datalist id="emp-empresas"></datalist></div>
+      <div class="field"><label for="emp-cargo">Cargo</label><input id="emp-cargo" autocomplete="off"></div>
+      <div class="field"><label for="emp-contrato">Tipo de contrato</label><select id="emp-contrato"><option value="">—</option><option>Término indefinido</option><option>Término fijo</option><option>Obra o labor</option><option>Aprendizaje</option></select></div>
+      <div class="field"><label for="emp-salario">Salario mensual (COP)</label><input id="emp-salario" inputmode="decimal" autocomplete="off" required></div>
+      <div class="field"><label for="emp-riesgo">Riesgo ARL</label><select id="emp-riesgo"><option value="1">I · Administrativo</option><option value="2">II</option><option value="3">III</option><option value="4">IV</option><option value="5">V · Obra</option></select></div>
+      <div class="field full"><label class="check"><input type="checkbox" id="emp-aux" checked> Recibe auxilio de transporte (si gana hasta 2 salarios mínimos)</label></div>
+      <div class="field"><label for="emp-ingreso">Fecha de ingreso</label><input type="date" id="emp-ingreso"></div>
+      <div class="field"><label for="emp-cc">Centro de costo</label><input id="emp-cc" list="cc-lista" autocomplete="off"></div>
+      <div class="field"><label for="emp-eps">EPS</label><input id="emp-eps" autocomplete="off"></div>
+      <div class="field"><label for="emp-afp">Fondo de pensiones</label><input id="emp-afp" autocomplete="off"></div>
+      <div class="field full"><span class="section-lbl">Retiro</span></div>
+      <div class="field"><label for="emp-retiro">Fecha de retiro</label><input type="date" id="emp-retiro"><span class="hint">Déjala vacía si sigue activo.</span></div>
+      <div class="field"><label for="emp-motivo">Motivo del retiro</label><input id="emp-motivo" autocomplete="off" placeholder="Renuncia, terminación de obra…"></div>
+      <div class="field full"><label for="emp-nota">Motivo del cambio (queda en el registro)</label><input id="emp-nota" autocomplete="off" placeholder="Ej. Aumento de salario aprobado por gerencia"></div>
+      <div class="err full" id="emp-err" hidden></div>
+      <div class="form-actions full"><button class="btn" type="button" data-close>Cancelar</button><button class="btn primary" type="submit" id="emp-guardar">Guardar</button></div>
+    </form>
+  </div>
+</dialog>
+
+<!-- Importar empleados desde el Excel de nómina -->
+<dialog id="dlg-emp-import">
+  <div class="dlg">
+    <div class="dlg-head"><h2>Importar empleados</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
+    <p style="margin:0;color:var(--muted)">Elige el Excel de nómina (el de las hojas por quincena y la planilla). Se toman los empleados de la última quincena de cada empresa, con su salario, cargo y riesgo ARL de la planilla. Los que ya existen (misma cédula) se actualizan.</p>
+    <div class="field"><input type="file" id="emp-imp-file" accept=".xlsx,.xls"></div>
+    <div id="emp-imp-res"></div>
+    <div class="err" id="emp-imp-err" hidden></div>
+    <div class="form-actions"><button class="btn" type="button" data-close>Cancelar</button><button class="btn primary" type="button" id="emp-imp-go" disabled>Importar</button></div>
+  </div>
+</dialog>
 
 <!-- Reporte mensual -->
 <dialog class="sheet" id="dlg-mensual">
@@ -640,9 +707,10 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="cripto.js?v=27"></script>
-<script src="github.js?v=27"></script>
-<script src="lector.js?v=27"></script>
-<script src="app.js?v=27"></script>
+<script src="cripto.js?v=28"></script>
+<script src="github.js?v=28"></script>
+<script src="lector.js?v=28"></script>
+<script src="app.js?v=28"></script>
+<script src="rrhh.js?v=28"></script>
 </body>
 </html>
