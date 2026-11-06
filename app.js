@@ -1057,10 +1057,10 @@
     $('#i-queda').classList.toggle('ok', !(q != null && q < 0));
     $('#i-prov-dato').textContent = S.loaded ? (t.nRevisar ? `${t.nRevisar} por revisar · ${millones(t.revisar)}` : 'Nada por revisar') : '';
     $('#i-cli-dato').textContent = C.loaded && C.items.length ? `Por cobrar · ${millones(totalesCartera().total)}` : '';
-    renderAvisos();
+    renderPendSiigo();
   }
   // Avisos al entrar (solo administradora): lo que falta por enviar a Siigo o no cuadra
-  function renderAvisos() {
+  function renderPendSiigo() {
     const box = $('#i-avisos');
     if (!isAdmin || !S.loaded) { box.hidden = true; return; }
     const sinDS = S.pagos.filter((p) => necesitaDS(p) && !p.siigoEnvioDS).length;
