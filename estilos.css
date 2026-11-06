@@ -165,6 +165,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .chip.late { background: var(--bad-soft); color: var(--bad); }
 .chip.soon { background: var(--warn-soft); color: var(--warn); }
 .chip.ok { background: var(--surface-2); color: var(--muted); }
+/* Estado en Siigo: ya está / en camino / falta enviar */
+.chip.sg-ok { background: var(--ok-soft); color: var(--ok); white-space: nowrap; }
+.chip.sg-va { background: var(--info-soft); color: var(--info); white-space: nowrap; }
+.chip.sg-no { background: var(--warn-soft); color: var(--warn); white-space: nowrap; }
 .clip { font-size: .8rem; color: var(--accent); font-weight: 500; }
 .list-foot { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; color: var(--muted); font-size: .9rem; padding: 4px 4px 0; }
 .list-foot strong { color: var(--ink); }

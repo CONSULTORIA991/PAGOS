@@ -25,7 +25,7 @@
   const TABS = [['revisar', 'Por revisar'], ['aprobado', 'Aprobados'], ['pendiente', 'Pendientes'], ['pagado', 'Pagados'], ['rechazado', 'Rechazados'], ['todos', 'Todos']];
   const TIPO_DOC = { cobro: 'Cuenta de cobro', anticipo: 'Anticipo', caja: 'Caja menor' };
 
-  const S = { pagos: [], banco: null, loaded: false, tab: 'revisar', q: '', sort: 'vence', openId: null, confirm: null, view: 'aprob', rDesde: '', rHasta: '', rRange: 'mes', payDate: '', sel: new Set() };
+  const S = { pagos: [], banco: null, loaded: false, tab: 'revisar', q: '', siigoVer: '', sort: 'vence', openId: null, confirm: null, view: 'aprob', rDesde: '', rHasta: '', rRange: 'mes', payDate: '', sel: new Set() };
   // Sesión: llave maestra, identidad y configuración descifrada.
   let maestra = null, rawMaestra = null, uid = null, conf = null;
   let isAdmin = false;
@@ -110,15 +110,59 @@
     return mejor && !empate ? mejor.codigo : '';
   }
   function centroNombre(codigo) { const c = siigoConf().centros.find((x) => x.codigo === codigo); return c ? c.nombre : ''; }
+  // Convierte lo que se escriba (código, solo el número, o el nombre de la obra) en el código de Siigo.
+  // Regla de ODESA: los centros terminan en "-1" → "100067" o "100067-3" pasan a "100067-1" si existe;
+  // por nombre se prefiere el que termina en -1 cuando hay varios.
   function ccDeInput(v) {
     v = String(v || '').trim();
     if (!v) return '';
     const centros = siigoConf().centros;
-    const code = v.split('·')[0].trim().replace(/\s+/g, '');
-    if (centros.some((x) => x.codigo === code)) return code;
-    const porNombre = centros.filter((x) => normTxt(x.nombre).includes(normTxt(v)));
-    if (porNombre.length === 1) return porNombre[0].codigo;
-    return code;
+    const code = v.split('·')[0].trim().replace(/\s+/g, '').toUpperCase();
+    const buscar = (k) => centros.find((x) => String(x.codigo).toUpperCase() === k);
+    if (buscar(code)) return buscar(code).codigo;
+    const base = code.replace(/-\d+$/, '');
+    if (base && buscar(base + '-1')) return buscar(base + '-1').codigo;
+    const t = normTxt(v.includes('·') ? v.split('·').slice(1).join(' ') : v);
+    if (t) {
+      const exacto = centros.filter((x) => normTxt(x.nombre) === t);
+      const pref = (arr) => (arr.length > 1 && arr.filter((x) => /-1$/.test(x.codigo)).length === 1 ? arr.filter((x) => /-1$/.test(x.codigo)) : arr);
+      if (pref(exacto).length === 1) return pref(exacto)[0].codigo;
+      const porNombre = pref(centros.filter((x) => normTxt(x.nombre).includes(t)));
+      if (porNombre.length === 1) return porNombre[0].codigo;
+      const porTexto = matchCentro(v);
+      if (porTexto) return porTexto;
+    }
+    return /^\d+$/.test(code) ? code + '-1' : code;
+  }
+  // Al salir del campo se muestra el centro ya corregido ("summus" → "100067-1 · SUMMUS")
+  function autocorregirCC(sel, hint) {
+    const inp = document.querySelector(sel);
+    if (!inp) return;
+    inp.addEventListener('change', () => {
+      if (!inp.value.trim() || !siigoConf().centros.length) return;
+      const c = ccDeInput(inp.value);
+      const ok = siigoConf().centros.some((x) => x.codigo === c);
+      if (ok) inp.value = ccTexto(c);
+      const h = hint && document.querySelector(hint);
+      if (h) h.textContent = ok ? '' : 'No encontré ese centro de costo: escribe el nombre de la obra o el código y elígelo de la lista.';
+    });
+  }
+  // ---------- estado en Siigo de cada registro ----------
+  // Pagos → comprobante 11 (p.siigo); cajas → comprobante 14 (p.siigo14); cuentas de cobro → documento soporte (p.ds)
+  const enSiigo = (p) => (p.tipoDoc === 'caja' ? p.siigo14 : p.siigo);
+  const subiendoSiigo = (p) => (p.tipoDoc === 'caja' ? p.siigoEnvio14 : p.siigoEnvio);
+  const necesitaDS = (p) => p.tipoDoc === 'cobro' && (p.estado === 'aprobado' || p.estado === 'pagado') && !p.ds;
+  function chipsSiigo(p) {
+    if (!isAdmin) return '';
+    const out = [];
+    if (p.ds) out.push(`<span class="chip sg-ok" title="Documento soporte creado en Siigo">✓ ${esc(p.ds.nombre)}</span>`);
+    else if (p.siigoEnvioDS) out.push('<span class="chip sg-va">Enviando documento soporte…</span>');
+    else if (necesitaDS(p)) out.push('<span class="chip sg-no">Sin documento soporte</span>');
+    const s = enSiigo(p);
+    if (s) out.push(`<span class="chip sg-ok" title="${s.api ? 'Subido a Siigo desde la app' : 'Exportado a Siigo'}">✓ Siigo ${esc(p.tipoDoc === 'caja' ? '14' : (s.tipo || '11'))}-${esc(s.comprobante)}</span>`);
+    else if (subiendoSiigo(p)) out.push('<span class="chip sg-va">Subiendo a Siigo…</span>');
+    else if (p.estado === 'pagado' || (p.tipoDoc === 'caja' && p.estado === 'aprobado')) out.push('<span class="chip sg-no">Sin enviar a Siigo</span>');
+    return out.length ? ' ' + out.join(' ') : '';
   }
   const ccTexto = (codigo) => (codigo ? codigo + (centroNombre(codigo) ? ' · ' + centroNombre(codigo) : '') : '');
 
@@ -209,6 +253,13 @@
     let arr = S.pagos.filter((p) => (S.tab === 'todos' || p.estado === S.tab));
     if (S.aprobador) arr = arr.filter((p) => { const a = aprobacion(p); return a && a.por === S.aprobador && (p.estado === 'aprobado' || p.estado === 'pagado'); });
     if (q) arr = arr.filter((p) => [p.proveedor, p.concepto, p.factura].some((x) => String(x || '').toLowerCase().includes(q)));
+    if (isAdmin && S.siigoVer) arr = arr.filter((p) => {
+      if (S.siigoVer === 'dsPend') return necesitaDS(p);
+      if (S.siigoVer === 'dsEnv') return !!p.ds || !!p.siigoEnvioDS;
+      if (S.siigoVer === 'sinSiigo') return p.estado === 'pagado' && !enSiigo(p) && !subiendoSiigo(p);
+      if (S.siigoVer === 'enSiigo') return !!enSiigo(p) || !!p.ds;
+      return true;
+    });
     const byVence = (a, b) => (a.vence || '9999') < (b.vence || '9999') ? -1 : (a.vence || '9999') > (b.vence || '9999') ? 1 : 0;
     if (S.sort === 'valor') arr.sort((a, b) => (b.valor || 0) - (a.valor || 0));
     else if (S.sort === 'prov') arr.sort((a, b) => String(a.proveedor || '').localeCompare(String(b.proveedor || ''), 'es'));
@@ -239,6 +290,7 @@
     }
     if (!arr.length) {
       const lbl = (TABS.find((t) => t[0] === S.tab) || [, ''])[1].toLowerCase();
+      if (S.siigoVer) { list.innerHTML = `<div class="empty"><h3>Nada aquí</h3><p>${esc($('#f-siigo').selectedOptions[0].textContent)}: no hay registros${S.q ? ' que coincidan con la búsqueda' : ''}.</p></div>`; foot.innerHTML = ''; return; }
       list.innerHTML = `<div class="empty"><h3>${S.q ? 'Sin resultados' : 'Nada en ' + esc(lbl)}</h3><p>${S.q ? 'Ningún pago coincide con la búsqueda.' : S.tab === 'revisar' ? 'Todos los pagos ya tienen una decisión.' : 'No hay pagos en este estado.'}</p></div>`;
       foot.innerHTML = '';
       return;
@@ -247,7 +299,7 @@
       const st = ESTADOS[p.estado] ? p.estado : 'revisar';
       const sub = [p.concepto, p.factura ? 'Fact. ' + p.factura : ''].filter(Boolean).map(esc).join(' · ');
       return `<article class="row s-${st}" data-row="${p.id}" tabindex="0">
-        <div class="r-main"><div class="r-prov">${isAdmin && st === 'aprobado' ? `<input type="checkbox" class="sel" data-sel="${p.id}"${S.sel.has(p.id) ? ' checked' : ''} aria-label="Seleccionar para pagar junto con otras"> ` : ''}${TIPO_DOC[p.tipoDoc] ? `<span class="chip doc">${TIPO_DOC[p.tipoDoc]}</span> ` : ''}${esc(p.proveedor || 'Sin proveedor')}</div><div class="r-sub">${sub || '&nbsp;'}${p.archivo ? ` · <span class="clip">${p.tipoDoc ? 'Documento adjunto' : 'Factura adjunta'}</span>` : ''}</div></div>
+        <div class="r-main"><div class="r-prov">${isAdmin && st === 'aprobado' ? `<input type="checkbox" class="sel" data-sel="${p.id}"${S.sel.has(p.id) ? ' checked' : ''} aria-label="Seleccionar para pagar junto con otras"> ` : ''}${TIPO_DOC[p.tipoDoc] ? `<span class="chip doc">${TIPO_DOC[p.tipoDoc]}</span> ` : ''}${esc(p.proveedor || 'Sin proveedor')}</div><div class="r-sub">${sub || '&nbsp;'}${p.archivo ? ` · <span class="clip">${p.tipoDoc ? 'Documento adjunto' : 'Factura adjunta'}</span>` : ''}${chipsSiigo(p)}</div></div>
         <div class="r-due">${st === 'pagado'
           ? `<span>${fechaPagoDe(p) ? 'Pagado el ' + esc(fmtDate(fechaPagoDe(p))) : 'Pagado (sin fecha)'}</span>`
           : `${dueChip(p)}<span>${p.vence ? 'Vence ' + esc(fmtDate(p.vence)) : 'Sin fecha'}</span>`}</div>
@@ -318,7 +370,7 @@
       if (S.confirm === 'delete') cf = `<div class="confirm"><span>¿Eliminar este pago? No se puede deshacer.</span><span class="decide" style="flex:none"><button class="btn sm" type="button" data-confirm="cancel">Cancelar</button><button class="btn sm danger solid" type="button" data-confirm="delete">Eliminar</button></span></div>`;
       if (S.confirm === 'pay') cf = `<div class="confirm pay"><span class="pay-date"><label for="d-fpago">Fecha de pago</label><input type="date" id="d-fpago" value="${esc(S.payDate || todayISO())}" max="${todayISO()}"></span><span>Marcar como pagado${saldo != null ? ` y descontar <b class="num">${fmt(p.valor)}</b> del saldo en banco` : ''}.</span><span class="decide" style="flex:none"><button class="btn sm" type="button" data-confirm="cancel">Cancelar</button>${saldo != null ? '<button class="btn sm" type="button" data-confirm="pay-only">Solo marcar pagado</button>' : ''}<button class="btn sm primary" type="button" data-confirm="pay">${saldo != null ? 'Pagado y descontar' : 'Marcar pagado'}</button></span></div>`;
       adminBox = `<div class="admin-box"><span class="section-lbl">Administración</span>
-        <div class="decide">${p.tipoDoc === 'cobro' && st === 'aprobado' && !p.ds ? (p.siigoEnvioDS ? '<span class="pill st-pendiente">Enviando documento soporte a Siigo…</span><button class="btn sm" type="button" data-admin="ds">Ver estado</button>' : '<button class="btn primary sm" type="button" data-admin="ds">Retenciones y documento soporte</button>') : ''}${st === 'aprobado' ? '<button class="btn primary sm" type="button" data-admin="pay">Marcar como pagado</button>' : ''}${st !== 'revisar' ? '<button class="btn sm" type="button" data-act="revisar" data-id="' + p.id + '">Volver a “Por revisar”</button>' : ''}<button class="btn sm" type="button" data-admin="edit">Editar</button><button class="btn sm danger" type="button" data-admin="delete">Eliminar</button></div>${cf}</div>`;
+        <div class="decide">${necesitaDS(p) ? (p.siigoEnvioDS ? '<span class="pill st-pendiente">Enviando documento soporte a Siigo…</span><button class="btn sm" type="button" data-admin="ds">Ver estado</button>' : '<button class="btn primary sm" type="button" data-admin="ds">Retenciones y documento soporte</button>') : ''}${st === 'aprobado' ? '<button class="btn primary sm" type="button" data-admin="pay">Marcar como pagado</button>' : ''}${st !== 'revisar' ? '<button class="btn sm" type="button" data-act="revisar" data-id="' + p.id + '">Volver a “Por revisar”</button>' : ''}<button class="btn sm" type="button" data-admin="edit">Editar</button><button class="btn sm danger" type="button" data-admin="delete">Eliminar</button></div>${cf}</div>`;
     }
 
     box.innerHTML = `
@@ -333,8 +385,10 @@
         ${p.contratista ? `<div><dt>Contratista</dt><dd>C.C. ${esc(p.nit)} · cel. ${esc(p.contratista.celular)}</dd></div>` : ''}
         ${isAdmin && p.contratista ? `<div><dt>Consignar a</dt><dd>${esc(p.contratista.banco)} · ${esc(p.contratista.tipoCuenta)} · ${esc(p.contratista.numeroCuenta)}</dd></div>` : ''}
         ${isAdmin && (p.nit || p.cc) ? `<div><dt>NIT · Centro de costo</dt><dd>${esc(p.nit || 'Sin NIT')} · ${esc(p.cc ? ccTexto(p.cc) : 'Sin centro de costo')}</dd></div>` : ''}
-        ${p.ds ? `<div><dt>Documento soporte</dt><dd>${esc(p.ds.nombre)} · valor ${fmt(p.ds.valorBruto)}${(p.ds.retenciones || []).length ? ' · ' + p.ds.retenciones.map((r) => `${esc(r.nombre)} ${fmt(r.valor)}`).join(' · ') : ' · sin retenciones'}${(p.ds.cruces || []).length ? ` · anticipos cruzados ${fmt(p.ds.cruces.reduce((s, c) => s + (Number(c.valor) || 0), 0))} (${esc(p.ds.cruce)})` : ''} · <b>por pagar ${fmt(p.valor)}</b></dd></div>` : ''}
-        ${isAdmin && p.siigo ? `<div><dt>Siigo</dt><dd>Exportado en comprobante ${esc(p.siigo.tipo)}-${esc(p.siigo.comprobante)}</dd></div>` : ''}
+        ${p.ds ? `<div><dt>Documento soporte</dt><dd>${esc(p.ds.nombre)} · valor ${fmt(p.ds.valorBruto)}${(p.ds.retenciones || []).length ? ' · ' + p.ds.retenciones.map((r) => `${esc(r.nombre)} ${fmt(r.valor)}`).join(' · ') : ' · sin retenciones'}${(p.ds.cruces || []).length ? ` · anticipos cruzados ${fmt(p.ds.cruces.reduce((s, c) => s + (Number(c.valor) || 0), 0))} (${esc(p.ds.cruce)})` : ''} · <b>${p.ds.yaPagado || st === 'pagado' ? 'neto ' + fmt(p.ds.neto) : 'por pagar ' + fmt(p.valor)}</b></dd></div>` : ''}
+        ${isAdmin && enSiigo(p) ? `<div><dt>Siigo</dt><dd><span class="chip sg-ok">✓ Ya está en Siigo</span> comprobante ${esc(p.tipoDoc === 'caja' ? '14' : (enSiigo(p).tipo || '11'))}-${esc(enSiigo(p).comprobante)}${enSiigo(p).api ? ' · subido desde la app' : ' · exportado en Excel'}${enSiigo(p).en ? ' el ' + esc(dtFmt.format(new Date(enSiigo(p).en))) : ''}. No hay que volver a enviarlo.</dd></div>`
+          : isAdmin && subiendoSiigo(p) ? '<div><dt>Siigo</dt><dd><span class="chip sg-va">Subiendo a Siigo…</span></dd></div>'
+          : isAdmin && (st === 'pagado' || (p.tipoDoc === 'caja' && st === 'aprobado')) ? '<div><dt>Siigo</dt><dd><span class="chip sg-no">Sin enviar a Siigo</span></dd></div>' : ''}
         ${aprobacion(p) && (st === 'aprobado' || st === 'pagado') ? `<div><dt>Aprobado por</dt><dd>${esc(personName(aprobacion(p).por))}, ${esc(dtFmt.format(new Date(aprobacion(p).en)))}</dd></div>` : ''}
         ${p.decididoPor && p.decididoEn ? `<div><dt>Última decisión</dt><dd>${esc(personName(p.decididoPor))}, ${esc(dtFmt.format(new Date(p.decididoEn)))}</dd></div>` : ''}
       </dl>
@@ -2353,7 +2407,7 @@
       const c = p.caja || {};
       const malos = (p.soportes || []).filter((s) => s.revisar).length;
       return `<article class="row s-${st}" data-row="${p.id}" tabindex="0">
-        <div class="r-main"><div class="r-prov">Caja No. ${esc(c.numero || '')} · ${esc(c.responsable || p.proveedor)}</div><div class="r-sub">${(p.soportes || []).length} soportes · enviada el ${esc(fmtDate(c.fecha || p.vence))}${malos ? ` · <span class="warn" style="color:var(--warn)">${malos} por revisar datos</span>` : ''}${p.siigo14 ? ` · Siigo 14-${esc(p.siigo14.comprobante)}` : ''}</div></div>
+        <div class="r-main"><div class="r-prov">Caja No. ${esc(c.numero || '')} · ${esc(c.responsable || p.proveedor)}</div><div class="r-sub">${(p.soportes || []).length} soportes · enviada el ${esc(fmtDate(c.fecha || p.vence))}${malos ? ` · <span class="warn" style="color:var(--warn)">${malos} por revisar datos</span>` : ''}${chipsSiigo(p)}</div></div>
         <div class="r-due"><span>${etiquetaDecision(p) ? esc(etiquetaDecision(p)) : ''}</span></div>
         <div class="r-amt">${fmt(p.valor)}</div>
         <div class="r-act"><span class="pill st-${st}">${st === 'pagado' ? 'Reembolsada' : ESTADOS[st].label}</span></div>
@@ -2685,7 +2739,7 @@
     $('#cc-lista').innerHTML = siigoConf().centros.map((c) => `<option value="${esc(c.codigo + ' · ' + c.nombre)}"></option>`).join('');
     const { prefijo, numero } = partirFactura(p.factura);
     $('#ds-quien').innerHTML = `<b>${esc(p.proveedor || '')}</b> · C.C./NIT ${esc(p.nit || 'sin número')} · cuenta de cobro ${esc(p.factura || '—')}${p.contratista ? '' : ''}`;
-    $('#ds-valor').value = Math.round(Number(p.valor) || 0).toLocaleString('es-CO');
+    $('#ds-valor').value = Math.round(Number(p.valorBruto || p.valor) || 0).toLocaleString('es-CO');
     $('#ds-fecha').value = todayISO();
     $('#ds-desc').value = (p.concepto || '').slice(0, 300);
     const ult = conf.siigo && conf.siigo.ultimaCuentaDS;
@@ -2694,8 +2748,9 @@
     $('#ds-cuenta').value = cu ? `${cu[0]} · ${cu[1]}` : sug;
     $('#ds-cc').value = p.cc ? ccTexto(p.cc) : '';
     $('#ds-rete').value = ''; $('#ds-otra').value = '';
-    const ants = anticiposDe(p);
-    $('#ds-anticipos').innerHTML = ants.length ? `<span class="section-lbl">Anticipos de este contratista por cruzar</span>${ants.map((x) => `<label class="check" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input type="checkbox" data-dsant="${esc(x.a.id)}"> ${esc(x.a.factura || 'Anticipo')} · pagado ${esc(fmtDate(fechaPagoDe(x.a) || ''))} · saldo ${fmt(x.saldo)}${x.prefijo && x.numero ? '' : ' <span class="sd-mal">(sin prefijo/número: no se puede cruzar)</span>'} <span>Cruzar</span><input data-dsantv="${esc(x.a.id)}" inputmode="numeric" style="width:130px" value="${esc(x.saldo.toLocaleString('es-CO'))}"></label>`).join('')}` : '<p class="sync" style="margin:0">Este contratista no tiene anticipos pagados pendientes por cruzar.</p>';
+    // Si la cuenta de cobro ya se pagó, no se cruzan anticipos: el pago ya salió del banco
+    const ants = p.estado === 'pagado' ? [] : anticiposDe(p);
+    $('#ds-anticipos').innerHTML = p.estado === 'pagado' ? `<p class="sync" style="margin:0">Esta cuenta de cobro ya está <b>pagada</b>${fechaPagoDe(p) ? ' (' + esc(fmtDate(fechaPagoDe(p))) + ')' : ''}: solo se crea el documento soporte, sin cruzar anticipos, y el valor pagado en la app no cambia.</p>` : ants.length ? `<span class="section-lbl">Anticipos de este contratista por cruzar</span>${ants.map((x) => `<label class="check" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input type="checkbox" data-dsant="${esc(x.a.id)}"> ${esc(x.a.factura || 'Anticipo')} · pagado ${esc(fmtDate(fechaPagoDe(x.a) || ''))} · saldo ${fmt(x.saldo)}${x.prefijo && x.numero ? '' : ' <span class="sd-mal">(sin prefijo/número: no se puede cruzar)</span>'} <span>Cruzar</span><input data-dsantv="${esc(x.a.id)}" inputmode="numeric" style="width:130px" value="${esc(x.saldo.toLocaleString('es-CO'))}"></label>`).join('')}` : '<p class="sync" style="margin:0">Este contratista no tiene anticipos pagados pendientes por cruzar.</p>';
     renderResumenDS();
     $('#ds-estado').innerHTML = '';
     $('#dlg-ds').showModal();
@@ -2720,8 +2775,9 @@
     if (p.siigoEnvioDS) return mostrarError('#ds-err', 'Ya se está enviando el documento soporte de esta cuenta de cobro.');
     const c = calcDS();
     const cuenta = ($('#ds-cuenta').value.match(/^\s*(\d{8})/) || [])[1];
-    const cc = $('#ds-cc').value.split('·')[0].trim();
+    const cc = ccDeInput($('#ds-cc').value);
     const fecha = $('#ds-fecha').value;
+    if (cc && siigoConf().centros.length && !siigoConf().centros.some((x) => x.codigo === cc)) return mostrarError('#ds-err', `No encontré el centro de costo "${$('#ds-cc').value}". Escribe el nombre de la obra o el código y elígelo de la lista.`);
     if (!(c.valor > 0)) return mostrarError('#ds-err', 'Escribe el valor de la cuenta de cobro.');
     if (!cuenta) return mostrarError('#ds-err', 'Elige la cuenta del costo o gasto (8 dígitos).');
     if (!fecha) return mostrarError('#ds-err', 'Escribe la fecha del documento soporte.');
@@ -2739,7 +2795,7 @@
     const yo = conf.usuarios && conf.usuarios[uid];
     const envio = { id, estado: 'pendiente', pedido: ahora, porNombre: yo ? (yo.nombre || yo.usuario) : '', marca: 'ds', tipo: 'DS', comprobantes: [], hechos: [],
       ds: { pagoId: p.id, fecha, vence: p.vence && p.vence >= fecha ? p.vence : fecha, nit: String(p.nit).replace(/\D/g, ''), nombre: p.proveedor || '', cuenta, cc, descripcion: $('#ds-desc').value.trim(),
-        valor: c.valor, prefijo, numero, retenciones: c.rets.map((r) => ({ id: r.id, nombre: r.nombre, pct: r.pct, valor: r.valor })), neto: c.neto },
+        valor: c.valor, prefijo, numero, yaPagado: p.estado === 'pagado', retenciones: c.rets.map((r) => ({ id: r.id, nombre: r.nombre, pct: r.pct, valor: r.valor })), neto: c.neto },
       cruces: c.cruces.map((x) => ({ anticipoId: x.anticipoId, prefijo: x.prefijo, numero: x.numero, vence: x.vence, valor: x.valor })) };
     try {
       let ocupado = false;
@@ -2978,6 +3034,7 @@
     $('#role').textContent = isAdmin ? 'Administras los pagos' : 'Puedes aprobar pagos';
     $('#who').textContent = yo.nombre || yo.usuario;
     $('#btn-users').hidden = !isAdmin;
+    $('#f-siigo').hidden = !isAdmin;
     setView(S.view);
     $('#btn-saldo').hidden = !isAdmin;
     pantalla('#app');
@@ -3101,6 +3158,13 @@
   $('#f-aprobador').addEventListener('change', (e) => {
     S.aprobador = e.target.value;
     if (S.aprobador && S.tab !== 'aprobado' && S.tab !== 'pagado' && S.tab !== 'todos') { S.tab = 'todos'; renderTabs(); }
+    renderList();
+  });
+  autocorregirCC('#f-cc', '#f-cc-hint'); autocorregirCC('#ds-cc'); autocorregirCC('#cj-cc');
+  // Filtro por estado en Siigo: mira todos los estados (aprobados y pagados a la vez)
+  $('#f-siigo').addEventListener('change', (e) => {
+    S.siigoVer = e.target.value;
+    if (S.siigoVer && S.tab !== 'todos') { S.tab = 'todos'; renderTabs(); }
     renderList();
   });
 
