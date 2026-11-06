@@ -385,6 +385,7 @@
         ${p.contratista ? `<div><dt>Contratista</dt><dd>C.C. ${esc(p.nit)} · cel. ${esc(p.contratista.celular)}</dd></div>` : ''}
         ${isAdmin && p.contratista ? `<div><dt>Consignar a</dt><dd>${esc(p.contratista.banco)} · ${esc(p.contratista.tipoCuenta)} · ${esc(p.contratista.numeroCuenta)}</dd></div>` : ''}
         ${isAdmin && (p.nit || p.cc) ? `<div><dt>NIT · Centro de costo</dt><dd>${esc(p.nit || 'Sin NIT')} · ${esc(p.cc ? ccTexto(p.cc) : 'Sin centro de costo')}</dd></div>` : ''}
+        ${p.anticipoManual && p.anticipoManual.valor > 0 ? `<div><dt>Anticipo</dt><dd>${fmt(p.anticipoManual.valor)} · documento ${esc(p.anticipoManual.documento)}${p.ds ? '' : ` · valor de la cuenta de cobro ${fmt(p.valorBruto)}, se descontó del valor a pagar`}</dd></div>` : ''}
         ${p.ds ? `<div><dt>Documento soporte</dt><dd>${esc(p.ds.nombre)} · valor ${fmt(p.ds.valorBruto)}${(p.ds.retenciones || []).length ? ' · ' + p.ds.retenciones.map((r) => `${esc(r.nombre)} ${fmt(r.valor)}`).join(' · ') : ' · sin retenciones'}${(p.ds.cruces || []).length ? ` · anticipos cruzados ${fmt(p.ds.cruces.reduce((s, c) => s + (Number(c.valor) || 0), 0))} (${esc(p.ds.cruce)})` : ''} · <b>${p.ds.yaPagado || st === 'pagado' ? 'neto ' + fmt(p.ds.neto) : 'por pagar ' + fmt(p.valor)}</b></dd></div>` : ''}
         ${isAdmin && enSiigo(p) ? `<div><dt>Siigo</dt><dd><span class="chip sg-ok">✓ Ya está en Siigo</span> comprobante ${esc(p.tipoDoc === 'caja' ? '14' : (enSiigo(p).tipo || '11'))}-${esc(enSiigo(p).comprobante)}${enSiigo(p).api ? ' · subido desde la app' : ' · exportado en Excel'}${enSiigo(p).en ? ' el ' + esc(dtFmt.format(new Date(enSiigo(p).en))) : ''}. No hay que volver a enviarlo.</dd></div>`
           : isAdmin && subiendoSiigo(p) ? '<div><dt>Siigo</dt><dd><span class="chip sg-va">Subiendo a Siigo…</span></dd></div>'
@@ -594,14 +595,52 @@
 
   // ---------- formulario de pago ----------
   let editingId = null;
-  function openForm(id) {
+  // Cuenta de cobro subida a mano: el valor que se escribe es el de la cuenta de cobro y, si se le dio
+  // anticipo, se descuenta para el valor a pagar (el anticipo se cruza luego en el documento soporte).
+  function aplicarTipoForm() {
+    const p = editingId ? S.pagos.find((x) => x.id === editingId) : null;
+    const cobro = $('#f-tipo').value === 'cobro';
+    $('#f-archivo-lbl').textContent = cobro ? 'Cuenta de cobro (PDF o imagen)' : 'Factura (PDF o imagen)';
+    $('#f-factura-lbl').textContent = cobro ? 'N.º de la cuenta de cobro' : 'N.º de factura';
+    $('#f-factura').placeholder = cobro ? 'CC-15' : 'BMB-503';
+    $('#f-valor-lbl').textContent = cobro ? 'Valor de la cuenta de cobro (COP)' : 'Valor a pagar (COP)';
+    $('label[for="f-nit"]').textContent = cobro ? 'Cédula del contratista' : 'NIT del proveedor (sin DV)';
+    $('label[for="f-prov"]').textContent = cobro ? 'Contratista' : 'Proveedor o beneficiario';
+    $('#f-ant-wrap').hidden = !cobro;
+    $('#f-ant-datos').hidden = !cobro || !$('#f-ant').checked;
+    // Con documento soporte ya hecho, el valor y el anticipo quedan como se enviaron a Siigo
+    const bloqueado = !!(p && p.ds);
+    ['#f-valor', '#f-ant', '#f-ant-valor', '#f-ant-doc'].forEach((s) => { $(s).disabled = bloqueado; });
+    totalAnticipoForm();
+  }
+  function totalAnticipoForm() {
+    const p = editingId ? S.pagos.find((x) => x.id === editingId) : null;
+    const el = $('#f-ant-total');
+    if (p && p.ds) { el.textContent = `Ya tiene documento soporte ${p.ds.nombre}: el valor y el anticipo no se pueden cambiar aquí.`; return; }
+    if ($('#f-tipo').value !== 'cobro' || !$('#f-ant').checked) { el.textContent = ''; return; }
+    const v = parseMonto($('#f-valor').value), a = parseMonto($('#f-ant-valor').value);
+    el.innerHTML = isFinite(v) && v > 0 && isFinite(a) && a > 0 ? `Valor a pagar: ${fmt(v)} − anticipo ${fmt(a)} = <b>${fmt(v - a)}</b> (las retenciones se descuentan en el documento soporte).` : '';
+  }
+  $('#f-tipo').addEventListener('change', aplicarTipoForm);
+  $('#f-ant').addEventListener('change', aplicarTipoForm);
+  ['#f-valor', '#f-ant-valor'].forEach((s) => $(s).addEventListener('input', totalAnticipoForm));
+
+  function openForm(id, tipo) {
     editingId = id || null;
     const p = id ? S.pagos.find((x) => x.id === id) : null;
-    $('#form-title').textContent = p ? 'Editar pago' : 'Agregar pago';
+    const otroTipo = p && p.tipoDoc && p.tipoDoc !== 'cobro'; // cajas y anticipos conservan su tipo
+    $('#f-tipo').closest('.field').hidden = !!otroTipo;
+    $('#f-tipo').value = p ? (p.tipoDoc === 'cobro' ? 'cobro' : '') : (tipo || '');
+    const am = p && p.anticipoManual;
+    $('#f-ant').checked = !!am;
+    $('#f-ant-valor').value = am ? new Intl.NumberFormat('es-CO').format(am.valor) : '';
+    $('#f-ant-doc').value = am ? am.documento || '' : '';
+    $('#form-title').textContent = p ? (p.tipoDoc === 'cobro' ? 'Editar cuenta de cobro' : 'Editar pago') : (tipo === 'cobro' ? 'Subir cuenta de cobro' : 'Agregar pago');
     $('#f-prov').value = p ? p.proveedor || '' : '';
     $('#f-concepto').value = p ? p.concepto || '' : '';
     $('#f-factura').value = p ? p.factura || '' : '';
-    $('#f-valor').value = p ? new Intl.NumberFormat('es-CO').format(p.valor || 0) : '';
+    // En cuentas de cobro con anticipo se muestra el valor de la cuenta de cobro (antes de descontarlo)
+    $('#f-valor').value = p ? new Intl.NumberFormat('es-CO').format((p.tipoDoc === 'cobro' && !p.ds && p.anticipoManual ? p.valorBruto : p.valor) || 0) : '';
     $('#f-vence').value = p ? p.vence || '' : '';
     $('#f-estado').value = p ? p.estado || 'revisar' : 'revisar';
     $('#f-fpago').value = p ? fechaPagoDe(p) : '';
@@ -621,6 +660,7 @@
     document.querySelectorAll('#pago-form .ai-filled').forEach((el) => el.classList.remove('ai-filled'));
     $('#f-ai').hidden = true;
     mostrarError('#form-err', '');
+    aplicarTipoForm();
     if ($('#dlg-detail').open) $('#dlg-detail').close();
     $('#dlg-form').showModal();
     (p ? $('#f-prov') : $('#f-archivo')).focus();
@@ -758,6 +798,24 @@
     if (!isFinite(valor) || valor <= 0) return mostrarError('#form-err', 'Escribe un valor mayor que cero, por ejemplo 1.250.000.');
     const file = $('#f-archivo').files[0];
     if (file && file.size > 25 * 1024 * 1024) return mostrarError('#form-err', 'La factura pesa más de 25 MB. Comprímela e inténtalo de nuevo.');
+    const previo = editingId ? S.pagos.find((x) => x.id === editingId) : null;
+    const tipoVisible = !$('#f-tipo').closest('.field').hidden;
+    const cobro = tipoVisible && $('#f-tipo').value === 'cobro';
+    const conDS = !!(previo && previo.ds);
+    let anticipo = null;
+    if (cobro && !conDS) {
+      if (!$('#f-nit').value.replace(/\D/g, '')) return mostrarError('#form-err', 'Escribe la cédula del contratista: se necesita para el documento soporte.');
+      if (!partirFactura($('#f-factura').value).prefijo) return mostrarError('#form-err', 'Escribe el número de la cuenta de cobro con prefijo, por ejemplo CC-15.');
+      if ($('#f-ant').checked) {
+        const av = parseMonto($('#f-ant-valor').value);
+        const doc = $('#f-ant-doc').value.trim().toUpperCase();
+        const { prefijo, numero } = partirFactura(doc);
+        if (!isFinite(av) || av <= 0) return mostrarError('#form-err', 'Escribe el valor del anticipo.');
+        if (av >= valor) return mostrarError('#form-err', 'El anticipo no puede ser igual o mayor que el valor de la cuenta de cobro.');
+        if (!prefijo || !numero) return mostrarError('#form-err', 'Escribe el documento del anticipo en Siigo con prefijo y número, por ejemplo CC-2200.');
+        anticipo = { valor: Math.round(av), documento: doc, prefijo, numero };
+      }
+    }
     const btn = $('#form-save'); btn.disabled = true; btn.textContent = 'Guardando…';
     try {
       const estado = $('#f-estado').value;
@@ -767,6 +825,13 @@
         fechaPago: estado === 'pagado' ? ($('#f-fpago').value || todayISO()) : '',
         nit: $('#f-nit').value.replace(/\D/g, ''), cuenta: $('#f-cuenta').value, cc: ccDeInput($('#f-cc').value),
       };
+      if (tipoVisible) data.tipoDoc = cobro ? 'cobro' : '';
+      if (conDS) delete data.valor; // ya está en Siigo con su documento soporte
+      else if (cobro) {
+        data.valorBruto = Math.round(valor);
+        data.anticipoManual = anticipo;
+        data.valor = Math.round(valor) - (anticipo ? anticipo.valor : 0);
+      } else if (previo && previo.tipoDoc === 'cobro') { data.anticipoManual = null; data.valorBruto = null; }
       if (file) { btn.textContent = 'Cifrando y subiendo factura…'; Object.assign(data, await subirFactura(file)); btn.textContent = 'Guardando…'; }
       const now = new Date().toISOString();
       let archivoViejo = null;
@@ -2685,10 +2750,13 @@
   const reteDe = (v) => { if (!v) return null; const [id, nombre, pct] = v.split('|'); return { id: Number(id), nombre, pct: Number(pct) }; };
   function anticiposDe(p) {
     const nit = String(p.nit || '').replace(/\D/g, '');
-    if (!nit) return [];
-    return S.pagos.filter((a) => a.tipoDoc === 'anticipo' && a.estado === 'pagado' && String(a.nit || '').replace(/\D/g, '') === nit)
+    // Anticipo escrito a mano al subir la cuenta de cobro (no está en la app como pago)
+    const am = p.anticipoManual && p.anticipoManual.valor > 0
+      ? [{ a: { id: 'man-' + p.id, factura: p.anticipoManual.documento, vence: '' }, saldo: Math.round(p.anticipoManual.valor), prefijo: p.anticipoManual.prefijo, numero: p.anticipoManual.numero, manual: true }] : [];
+    if (!nit) return am;
+    return am.concat(S.pagos.filter((a) => a.tipoDoc === 'anticipo' && a.estado === 'pagado' && String(a.nit || '').replace(/\D/g, '') === nit)
       .map((a) => { const cruzado = (a.cruces || []).reduce((s, c) => s + (Number(c.valor) || 0), 0); const { prefijo, numero } = partirFactura(a.factura); return { a, saldo: Math.max(0, Math.round(Number(a.valor) || 0) - cruzado), prefijo, numero }; })
-      .filter((x) => x.saldo > 0);
+      .filter((x) => x.saldo > 0));
   }
   function calcDS() {
     const valor = numeroDe($('#ds-valor').value);
@@ -2748,9 +2816,9 @@
     $('#ds-cuenta').value = cu ? `${cu[0]} · ${cu[1]}` : sug;
     $('#ds-cc').value = p.cc ? ccTexto(p.cc) : '';
     $('#ds-rete').value = ''; $('#ds-otra').value = '';
-    // Si la cuenta de cobro ya se pagó, no se cruzan anticipos: el pago ya salió del banco
-    const ants = p.estado === 'pagado' ? [] : anticiposDe(p);
-    $('#ds-anticipos').innerHTML = p.estado === 'pagado' ? `<p class="sync" style="margin:0">Esta cuenta de cobro ya está <b>pagada</b>${fechaPagoDe(p) ? ' (' + esc(fmtDate(fechaPagoDe(p))) + ')' : ''}: solo se crea el documento soporte, sin cruzar anticipos, y el valor pagado en la app no cambia.</p>` : ants.length ? `<span class="section-lbl">Anticipos de este contratista por cruzar</span>${ants.map((x) => `<label class="check" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input type="checkbox" data-dsant="${esc(x.a.id)}"> ${esc(x.a.factura || 'Anticipo')} · pagado ${esc(fmtDate(fechaPagoDe(x.a) || ''))} · saldo ${fmt(x.saldo)}${x.prefijo && x.numero ? '' : ' <span class="sd-mal">(sin prefijo/número: no se puede cruzar)</span>'} <span>Cruzar</span><input data-dsantv="${esc(x.a.id)}" inputmode="numeric" style="width:130px" value="${esc(x.saldo.toLocaleString('es-CO'))}"></label>`).join('')}` : '<p class="sync" style="margin:0">Este contratista no tiene anticipos pagados pendientes por cruzar.</p>';
+    // Ya pagada: solo se cruza el anticipo escrito en la cuenta de cobro (se descontó al pagar); el valor pagado no cambia
+    const ants = p.estado === 'pagado' ? anticiposDe(p).filter((x) => x.manual) : anticiposDe(p);
+    $('#ds-anticipos').innerHTML = p.estado === 'pagado' && !ants.length ? `<p class="sync" style="margin:0">Esta cuenta de cobro ya está <b>pagada</b>${fechaPagoDe(p) ? ' (' + esc(fmtDate(fechaPagoDe(p))) + ')' : ''}: solo se crea el documento soporte, sin cruzar anticipos, y el valor pagado en la app no cambia.</p>` : ants.length ? `<span class="section-lbl">Anticipos de este contratista por cruzar</span>${ants.map((x) => `<label class="check" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input type="checkbox" data-dsant="${esc(x.a.id)}"${x.manual ? ' checked' : ''}> ${esc(x.a.factura || 'Anticipo')} · ${x.manual ? 'anticipo escrito en la cuenta de cobro (ya descontado del valor a pagar)' : 'pagado ' + esc(fmtDate(fechaPagoDe(x.a) || ''))} · saldo ${fmt(x.saldo)}${x.prefijo && x.numero ? '' : ' <span class="sd-mal">(sin prefijo/número: no se puede cruzar)</span>'} <span>Cruzar</span><input data-dsantv="${esc(x.a.id)}" inputmode="numeric" style="width:130px" value="${esc(x.saldo.toLocaleString('es-CO'))}"></label>`).join('')}` : '<p class="sync" style="margin:0">Este contratista no tiene anticipos pagados pendientes por cruzar.</p>';
     renderResumenDS();
     $('#ds-estado').innerHTML = '';
     $('#dlg-ds').showModal();
@@ -3145,6 +3213,7 @@
   document.addEventListener('input', (ev) => { if (ev.target.id === 'd-fpago') S.payDate = ev.target.value; });
   $('#dlg-detail').addEventListener('close', () => { S.openId = null; S.confirm = null; });
   $('#btn-add').addEventListener('click', () => openForm());
+  $('#btn-cobro').addEventListener('click', () => openForm(null, 'cobro'));
   $('#btn-import').addEventListener('click', openImport);
   $('#btn-masiva').addEventListener('click', openMasiva);
   $('#btn-saldo').addEventListener('click', openSaldo);

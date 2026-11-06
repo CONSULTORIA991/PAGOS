@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="estilos.css?v=24">
+<link rel="stylesheet" href="estilos.css?v=25">
 </head>
 <body>
 
@@ -78,6 +78,7 @@
       <span id="admin-actions" class="top-actions" hidden>
         <button class="btn" id="btn-import" type="button">Importar desde Excel</button>
         <button class="btn" id="btn-masiva" type="button">Subir varias facturas</button>
+        <button class="btn" id="btn-cobro" type="button">+ Subir cuenta de cobro</button>
         <button class="btn primary" id="btn-add" type="button">+ Agregar pago</button>
       </span>
       <button class="btn" id="btn-users" type="button" hidden>Usuarios</button>
@@ -348,11 +349,22 @@
   <div class="dlg">
     <div class="dlg-head"><h2 id="form-title">Agregar pago</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
     <form class="grid" id="pago-form" novalidate>
-      <div class="field full drop"><label for="f-archivo">Factura (PDF o imagen)</label><input id="f-archivo" type="file" accept="application/pdf,image/png,image/jpeg,image/webp"><span class="hint" id="f-archivo-hint">Adjúntala primero: la app lee la factura y llena los datos. Se guarda cifrada.</span><div class="ai-status" id="f-ai" hidden></div></div>
+      <div class="field full"><label for="f-tipo">Tipo de documento</label>
+        <select id="f-tipo"><option value="">Factura de proveedor</option><option value="cobro">Cuenta de cobro de contratista (trabajos)</option></select>
+      </div>
+      <div class="field full drop"><label for="f-archivo" id="f-archivo-lbl">Factura (PDF o imagen)</label><input id="f-archivo" type="file" accept="application/pdf,image/png,image/jpeg,image/webp"><span class="hint" id="f-archivo-hint">Adjúntala primero: la app lee la factura y llena los datos. Se guarda cifrada.</span><div class="ai-status" id="f-ai" hidden></div></div>
       <div class="field full"><label for="f-prov">Proveedor o beneficiario</label><input id="f-prov" required autocomplete="off"></div>
       <div class="field full"><label for="f-concepto">Concepto</label><input id="f-concepto" autocomplete="off" placeholder="Ej. Arriendo bodega octubre"></div>
-      <div class="field"><label for="f-factura">N.º de factura</label><input id="f-factura" autocomplete="off" placeholder="BMB-503"><span class="hint" id="f-factura-hint"></span></div>
-      <div class="field"><label for="f-valor">Valor a pagar (COP)</label><input id="f-valor" inputmode="decimal" autocomplete="off" placeholder="1.250.000" required></div>
+      <div class="field"><label for="f-factura" id="f-factura-lbl">N.º de factura</label><input id="f-factura" autocomplete="off" placeholder="BMB-503"><span class="hint" id="f-factura-hint"></span></div>
+      <div class="field"><label for="f-valor" id="f-valor-lbl">Valor a pagar (COP)</label><input id="f-valor" inputmode="decimal" autocomplete="off" placeholder="1.250.000" required></div>
+      <div class="field full" id="f-ant-wrap" hidden>
+        <label class="check" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="f-ant"> Se le dio anticipo a este contratista por este trabajo</label>
+        <div class="grid" id="f-ant-datos" hidden style="margin-top:8px">
+          <div class="field"><label for="f-ant-valor">Valor del anticipo (COP)</label><input id="f-ant-valor" inputmode="decimal" autocomplete="off" placeholder="500.000"></div>
+          <div class="field"><label for="f-ant-doc">Documento del anticipo en Siigo</label><input id="f-ant-doc" autocomplete="off" placeholder="Ej. CC-2200"><span class="hint">El prefijo y número con que quedó el anticipo (13300501) en Siigo, para cruzarlo en el documento soporte.</span></div>
+        </div>
+        <span class="hint" id="f-ant-total"></span>
+      </div>
       <div class="field"><label for="f-vence">Fecha de vencimiento</label><input id="f-vence" type="date"></div>
       <div class="field"><label for="f-estado">Estado</label>
         <select id="f-estado"><option value="revisar">Por revisar</option><option value="aprobado">Aprobado</option><option value="pendiente">Pendiente</option><option value="pagado">Pagado</option></select>
@@ -615,9 +627,9 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="cripto.js?v=24"></script>
-<script src="github.js?v=24"></script>
-<script src="lector.js?v=24"></script>
-<script src="app.js?v=24"></script>
+<script src="cripto.js?v=25"></script>
+<script src="github.js?v=25"></script>
+<script src="lector.js?v=25"></script>
+<script src="app.js?v=25"></script>
 </body>
 </html>
