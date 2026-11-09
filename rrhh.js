@@ -21,8 +21,33 @@
   const HORAS = [['hed', 'HE diur.'], ['hen', 'HE noct.'], ['rn', 'Rec. noct.'], ['rdf', 'Rec. dom/fest'], ['hedf', 'HE dom diur.'], ['henf', 'HE dom noct.']];
   const DINERO = [['otros', 'Otros pagos (no salariales)'], ['prestamos', 'Préstamos'], ['otrasDed', 'Otras deducciones']];
   const NOMBRE_CAMPO = Object.fromEntries([...DIAS, ...HORAS, ...DINERO, ['nota', 'Nota']]);
+  // Ayudas "?" de cada columna: [título, explicación, ejemplo]
+  const AYUDA = {
+    dias: ['Días quincena', 'Días que la persona estuvo vinculada en la quincena. Casi siempre 15. La app los calcula sola con la fecha de ingreso o de retiro.', 'No los bajes por vacaciones, incapacidad o licencias: cada una tiene su columna.'],
+    inc: ['Incapacidad', 'Días de incapacidad médica dentro de la quincena. Se pagan al 66,67 % (nunca menos del salario mínimo diario).', 'Ej.: incapacidad del 3 al 5 → pon 3 y escribe las fechas.'],
+    vac: ['Vacaciones', 'Días de vacaciones dentro de la quincena. Se pagan como un día normal y cotizan a seguridad social.', 'Ej.: Karen se tomó 1 día → pon 1 aquí y deja "Días quincena" en 15. Días trabajados queda en 14.'],
+    lr: ['Licencia remunerada', 'Permisos pagados: luto, calamidad, matrimonio, maternidad o paternidad. Se pagan como un día normal.', 'Ej.: 5 días de licencia de luto → pon 5 y escribe las fechas.'],
+    lnr: ['Licencia no remunerada', 'Permiso sin sueldo pedido por el trabajador. Esos días no se pagan y en la planilla salen como SLN.', 'Ej.: pidió 2 días sin sueldo → pon 2.'],
+    sus: ['Suspensión', 'Días de suspensión disciplinaria. No se pagan. La primera vez que la marcas, la app pide la fecha y hace el memorando para firmar.', 'Ej.: suspensión de 3 días → pon 3.'],
+    diasTrab: ['Días trabajados', 'Lo calcula la app: días de la quincena menos incapacidad, vacaciones, licencias y suspensión.', 'Ej.: 15 − 1 de vacaciones = 14.'],
+    horas: ['Horas extra y recargos', 'Número de horas (no pesos). La app calcula el valor con el salario: hora = salario ÷ 210.', 'Ej.: 4 horas extra diurnas → pon 4 en "HE diur.".'],
+    otros: ['Otros pagos (no salariales)', 'Bonificaciones u otros pagos que no son salario. No cotizan a seguridad social ni suman para prestaciones.', 'Escríbelo en pesos.'],
+    prestamos: ['Préstamos', 'Cuota de un préstamo de la empresa que se descuenta en esta quincena.', 'Escríbelo en pesos.'],
+    otrasDed: ['Otras deducciones', 'Otros descuentos autorizados por el trabajador (libranzas, embargos, etc.).', 'Escríbelo en pesos.'],
+    neto: ['Neto a pagar', 'Lo que se le consigna: devengado menos salud 4 %, pensión 4 % y las deducciones.', ''],
+    diasCot: ['Días cotizados', 'Días que se pagan a seguridad social en el mes (máximo 30). Las licencias no remuneradas y las suspensiones no cuentan para pensión y salud.', ''],
+    ibc: ['IBC (ingreso base de cotización)', 'Sobre este valor se calculan los aportes: salario de los días + vacaciones, licencias, incapacidades y horas extra. No incluye auxilio de transporte ni otros pagos.', ''],
+    pension: ['Pensión 16 %', '12 % lo paga la empresa y 4 % el trabajador (se le descuenta en la nómina).', ''],
+    salud: ['Salud', 'El trabajador paga 4 %. La empresa está exonerada del 8,5 % para quienes ganan menos de 10 salarios mínimos.', ''],
+    arl: ['ARL', 'Riesgos laborales. Lo paga toda la empresa; el porcentaje depende del riesgo del cargo (I = 0,522 %, V = 6,96 %).', ''],
+    ccf: ['Caja de compensación 4 %', 'Lo paga toda la empresa.', ''],
+    sena: ['SENA e ICBF', 'Exonerados para quienes ganan menos de 10 salarios mínimos.', ''],
+    descontado: ['Descontado', 'La parte del trabajador (salud 4 % + pensión 4 %) que ya se le descontó en la nómina.', ''],
+    empresa: ['Empresa', 'Lo que le cuesta a la empresa: total de la planilla menos lo descontado al trabajador.', ''],
+  };
+  const ayu = (k) => (AYUDA[k] ? `<button class="rh-ayuda" type="button" data-rh-ayuda="${k}" aria-label="¿Qué es ${esc(AYUDA[k][0])}?">?</button>` : '');
 
-  const R = { datos: null, sha: null, tab: 'emp', ver: 'activos', mes: '', q: 1, mesPla: '', cargando: false, empresa: '', leido: 0 };
+  const R = { datos: null, sha: null, tab: 'menu', ver: 'activos', mes: '', q: 1, mesPla: '', cargando: false, empresa: '', leido: 0 };
   // Filtro por empresa (ambas, ODESA CARIBE u OBS) para empleados, nómina, planilla y sus Excel
   const deEmpresa = (e) => !R.empresa || (e.empresa || EMPRESA_DEF) === R.empresa;
   function selEmpresa() {
@@ -116,7 +141,8 @@
       x.inc += Number(f.inc) || 0; x.vac += Number(f.vac) || 0; x.lr += Number(f.lr) || 0; x.lnr += Number(f.lnr) || 0; x.sus += Number(f.sus) || 0; x.he += c.he;
       // Fechas de las novedades de cada quincena (para la planilla de Aportes)
       x.fechas = x.fechas || {};
-      for (const k of ['inc', 'vac', 'lr', 'lnr']) if (Number(f[k]) > 0) { (x.fechas[k] = x.fechas[k] || []).push((f.fechas || {})[k] || null); }
+      for (const k of ['inc', 'vac', 'lr', 'lnr']) if (Number(f[k]) > 0) { const r = (f.fechas || {})[k]; (x.fechas[k] = x.fechas[k] || []).push(r ? { ...r, q } : { q, sin: true }); }
+      if (Number(f.sus) > 0 && !x.susQ) x.susQ = q;
       porEmp.set(e.cedula || e.id, x);
     }
     return [...porEmp.values()].map((x) => {
@@ -148,9 +174,13 @@
     R.cargando = false;
   }
   function render() {
-    document.querySelectorAll('[data-rh-tab]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.rhTab === R.tab)));
+    // Solo botones grandes: en el menú se ve "← Inicio"; dentro de cada sección, "← Volver al menú" y su título
+    const enMenu = R.tab === 'menu';
+    $('#rh-volver-inicio').hidden = !enMenu; $('#rh-volver-menu').hidden = enMenu;
+    $('#rh-titulo').textContent = { menu: 'Recursos humanos', emp: 'Empleados', nom: 'Nómina quincenal', pla: 'Planilla de aportes', doc: 'Contratos y documentos', log: 'Historial de cambios' }[R.tab] || 'Recursos humanos';
     if (!R.datos) return;
-    if (R.tab === 'emp') renderEmpleados();
+    if (R.tab === 'menu') renderMenu();
+    else if (R.tab === 'emp') renderEmpleados();
     else if (R.tab === 'nom') renderNomina();
     else if (R.tab === 'pla') renderPlanilla();
     else if (R.tab === 'doc') renderContratos();
@@ -159,6 +189,67 @@
   }
   function sinEmpleados() {
     return `<div class="empty"><h3>Aún no hay empleados</h3><p>${A.isAdmin ? 'Impórtalos desde el Excel de nómina o agrégalos uno por uno.' : 'Cuando la administradora cargue los empleados aparecerán aquí.'}</p>${A.isAdmin ? '<div class="top-actions"><button class="btn" type="button" data-rh="importar">Importar desde Excel</button><button class="btn primary" type="button" data-rh="nuevo">+ Agregar empleado</button></div>' : ''}</div>`;
+  }
+
+  // ---------- menú (pantalla de entrada, con botones grandes) ----------
+  const ICONO = {
+    emp: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 14.2c3 .2 5.5 2.6 5.5 5.8"/></svg>',
+    nom: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/><path d="M8 14h3M8 17h6"/></svg>',
+    pla: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/></svg>',
+    doc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/></svg>',
+    log: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+  };
+  const guia = (html) => `<p class="rh-guia">${html}</p>`;
+  const quincenaHoy = () => ({ mes: mesActual(), q: Number(hoy().slice(8)) <= 15 ? 1 : 2 });
+  const mesAnterior = (mes) => { const [y, m] = mes.split('-').map(Number); return `${m === 1 ? y - 1 : y}-${pad2(m === 1 ? 12 : m - 1)}`; };
+  // Lo que falta en una quincena: fechas de novedades y memorandos de suspensión
+  function pendientesQ(mes, q) {
+    const clave = claveQ(mes, q), out = [];
+    for (const e of empleadosDe(mes, q).filter(deEmpresa)) {
+      const f = filaDe(e, mes, q);
+      for (const k of Object.keys(NOV)) if (Number(f[k]) > 0 && !(f.fechas || {})[k]) out.push({ e, k, tipo: 'fechas', texto: `${e.nombre}: faltan las fechas de ${NOV[k].toLowerCase()}` });
+      if (Number(f.sus) > 0 && !(R.datos.suspensiones || []).some((s) => s.empId === e.id && s.docId && (s.periodos || []).includes(clave))) out.push({ e, k: 'sus', tipo: 'memo', texto: `${e.nombre}: suspensión sin memorando` });
+    }
+    return out;
+  }
+  function renderMenu() {
+    const d = R.datos;
+    if (!d.empleados.length) { $('#rh-cuerpo').innerHTML = sinEmpleados(); return; }
+    const todos = d.empleados.filter(deEmpresa), act = todos.filter(activo);
+    const { mes, q } = quincenaHoy(), pq = d.periodos[claveQ(mes, q)] || {}, pend = pendientesQ(mes, q);
+    const mesPla = mesAnterior(mes), pla = planillaMes(mesPla).filter((x) => deEmpresa(x.e)), totPla = pla.reduce((s, x) => s + x.total, 0);
+    const venc = vencimientos().filter((v) => deEmpresa(v.e) && v.estado !== 'notificado' && v.estado !== 'ok'), contratos = vencimientos().filter((v) => deEmpresa(v.e));
+    const ult = d.cambios[d.cambios.length - 1];
+    const b = (ir, txt, prim) => `<button class="btn${prim ? ' primary' : ''}" type="button" data-rh-ir="${ir}">${txt}</button>`;
+    const card = (cls, titulo, desc, dato, botones) => `<article class="rh-card ${cls}"><div class="rh-card-top"><span class="rh-ico" aria-hidden="true">${ICONO[cls]}</span><div><h3>${titulo}</h3><p>${desc}</p></div></div><p class="rh-card-dato">${dato}</p><div class="rh-card-acc">${botones}</div></article>`;
+    $('#rh-cuerpo').innerHTML = `
+      <div class="rh-barra"><div class="grupo">${selEmpresa()}</div></div>
+      <section class="rh-menu">
+        ${card('emp', 'Empleados', 'Datos personales, salario, afiliaciones (EPS, pensión, caja, ARL) y documentos de cada persona.',
+          `<b>${act.length}</b> ${act.length === 1 ? 'activo' : 'activos'} · <b>${todos.length - act.length}</b> ${todos.length - act.length === 1 ? 'retirado' : 'retirados'}`,
+          `${b('emp:activos', 'Activos', true)}${b('emp:retirados', 'Retirados')}${b('emp:todos', 'Todos')}${b('nuevo', '+ Agregar')}`)}
+        ${card('nom', 'Nómina quincenal', 'Días, vacaciones, incapacidades, licencias, horas extra y lo que se paga a cada uno.',
+          `Quincena del ${esc(nombreQ(mes, q))}: <b>${pq.estado === 'cerrado' ? 'cerrada' : 'abierta'}</b>${pend.length ? ` · <span class="rh-alerta">${pend.length} ${pend.length === 1 ? 'pendiente' : 'pendientes'}</span>` : ''}`,
+          `${b('nom:hoy', 'Abrir quincena', true)}${b('novedad', 'Registrar novedad')}`)}
+        ${card('pla', 'Planilla de aportes', 'Seguridad social del mes (pensión, salud, ARL, caja) y el archivo para subir a Aportes en Línea.',
+          `${esc(nombreMes(mesPla))}: <b>${fmt(totPla)}</b> · ${pla.length} cotizantes`,
+          `${b('pla:ant', 'Ver planilla', true)}${b('pla:archivo', 'Revisar y descargar archivo')}`)}
+        ${card('doc', 'Contratos y documentos', 'Fechas de vencimiento, preavisos, cartas de terminación, memorandos y certificados.',
+          venc.length ? `<span class="rh-alerta">🔔 ${venc.length} ${venc.length === 1 ? 'contrato por notificar' : 'contratos por notificar'}</span>` : `${contratos.length} ${contratos.length === 1 ? 'contrato' : 'contratos'} a término fijo · todo al día`,
+          b('doc', 'Ver contratos', true))}
+        ${card('log', 'Historial de cambios', 'Quién cambió qué y cuándo, en empleados y en la nómina.',
+          ult ? `Último: ${esc(quien(ult.por))}, ${esc(dtFmt.format(new Date(ult.en)))}` : 'Sin cambios todavía',
+          b('log', 'Ver historial', true))}
+      </section>
+      <section class="rh-como">
+        <h3>¿Cómo se hace cada mes?</h3>
+        <ol>
+          <li><b>Cada quincena, revisa los empleados.</b> Si alguien entró o salió, ponle la fecha de ingreso o retiro en su ficha. ${b('emp:activos', 'Ir a empleados')}</li>
+          <li><b>Registra las novedades</b> (vacaciones, incapacidades, licencias, suspensiones) con sus fechas. ${b('novedad', 'Registrar novedad')}</li>
+          <li><b>Revisa la nómina y ciérrala.</b> Los pasos de arriba de la nómina te dicen qué falta. ${b('nom:hoy', 'Abrir quincena')}</li>
+          <li><b>A comienzo de mes, la planilla del mes anterior:</b> revisa y descarga el archivo, y súbelo en Aportes en Línea → Liquidaciones → Transmisión de Planilla Integrada Excel. ${b('pla:archivo', 'Revisar y descargar')}</li>
+        </ol>
+      </section>`;
   }
 
   // Empleados
@@ -179,6 +270,7 @@
       <div class="rh-barra"><div class="grupo">${selEmpresa()}
         <div class="quick"><button class="qbtn" type="button" data-rh-ver="activos" aria-pressed="${R.ver === 'activos'}">Activos</button><button class="qbtn" type="button" data-rh-ver="retirados" aria-pressed="${R.ver === 'retirados'}">Retirados</button><button class="qbtn" type="button" data-rh-ver="todos" aria-pressed="${R.ver === 'todos'}">Todos</button></div>
       </div><div class="grupo">${A.isAdmin ? '<button class="btn" type="button" data-rh="importar">Importar desde Excel</button>' : ''}<button class="btn" type="button" data-rh="imp-pila">Importar planilla de Aportes</button><button class="btn" type="button" data-rh="xls-emp">Descargar Excel</button><button class="btn primary" type="button" data-rh="nuevo">+ Agregar empleado</button></div></div>
+      ${guia('💡 Toca el nombre de una persona para ver o cambiar sus datos. Con los botones <b>Activos</b>, <b>Retirados</b> y <b>Todos</b> escoges a quién ver. En <b>Documentos</b> están sus contratos, cartas y certificados.')}
       ${empresas.map((emp) => {
         const es = lista.filter((e) => (e.empresa || EMPRESA_DEF) === emp);
         return `<h3 class="rh-empresa">${esc(emp)} · ${es.length}</h3><div class="rh-tabla-wrap"><table class="rh-tabla"><thead><tr><th>Empleado</th><th>Cargo</th><th class="n">Salario</th><th>Riesgo ARL</th><th>Ingreso</th><th>EPS / Pensión</th><th>Estado</th><th></th></tr></thead><tbody>
@@ -225,8 +317,8 @@
       }).join('');
       granTotal.devengado += tot.devengado; granTotal.deducciones += tot.deducciones; granTotal.neto += tot.neto;
       return `<h3 class="rh-empresa">${esc(emp)} · ${es.length} ${es.length === 1 ? 'empleado' : 'empleados'}</h3><div class="rh-tabla-wrap"><table class="rh-tabla"><thead><tr><th>Empleado</th>
-        ${DIAS.map(([, l]) => `<th class="n">${l}</th>`).join('')}<th class="n">Días trab.</th>${HORAS.map(([, l]) => `<th class="n">${l}</th>`).join('')}<th class="n">Otros pagos</th>
-        <th class="n">Salario</th><th class="n">Vac/Lic/Inc</th><th class="n">Horas extra</th><th class="n">Aux. transp.</th><th class="n">Devengado</th><th class="n">Salud 4%</th><th class="n">Pensión 4%</th><th class="n">Préstamos</th><th class="n">Otras deduc.</th><th class="n">Neto a pagar</th><th>Nota</th></tr></thead><tbody>${filas}
+        ${DIAS.map(([k, l]) => `<th class="n">${l}${ayu(k)}</th>`).join('')}<th class="n">Días trab.${ayu('diasTrab')}</th>${HORAS.map(([, l], i) => `<th class="n">${l}${i === 0 ? ayu('horas') : ''}</th>`).join('')}<th class="n">Otros pagos${ayu('otros')}</th>
+        <th class="n">Salario</th><th class="n">Vac/Lic/Inc</th><th class="n">Horas extra</th><th class="n">Aux. transp.</th><th class="n">Devengado</th><th class="n">Salud 4%</th><th class="n">Pensión 4%</th><th class="n">Préstamos${ayu('prestamos')}</th><th class="n">Otras deduc.${ayu('otrasDed')}</th><th class="n">Neto a pagar${ayu('neto')}</th><th>Nota</th></tr></thead><tbody>${filas}
         <tr class="tot"><td>Total</td><td colspan="${DIAS.length + 1 + HORAS.length}"></td><td class="n">${fmt(tot.otros)}</td><td class="n">${fmt(tot.salario)}</td><td class="n">${fmt(tot.nov)}</td><td class="n">${fmt(tot.he)}</td><td class="n">${fmt(tot.aux)}</td><td class="n">${fmt(tot.devengado)}</td><td class="n">${fmt(tot.salud)}</td><td class="n">${fmt(tot.pension)}</td><td colspan="2"></td><td class="n">${fmt(tot.neto)}</td><td></td></tr>
         </tbody></table></div>`;
     }).join('');
@@ -235,8 +327,9 @@
         <div class="field"><label for="rh-mes">Mes</label><input type="month" id="rh-mes" value="${esc(R.mes)}"></div>
         <div class="quick"><button class="qbtn" type="button" data-rh-q="1" aria-pressed="${R.q === 1}">1 al 15</button><button class="qbtn" type="button" data-rh-q="2" aria-pressed="${R.q === 2}">16 al 30</button></div>
         <span class="rh-estado ${cerrado ? 'cerrado' : 'borrador'}">${cerrado ? `Cerrada${p.cerradoPor ? ' por ' + esc(quien(p.cerradoPor)) : ''}` : 'Borrador · se puede modificar'}</span>
-      </div><div class="grupo">${cerrado ? '' : '<button class="btn" type="button" data-rh="imp-q">Importar quincenas desde Excel</button>'}<button class="btn" type="button" data-rh="xls-nom">Descargar Excel</button>${A.isAdmin ? (cerrado ? '<button class="btn" type="button" data-rh="reabrir">Reabrir quincena</button>' : '<button class="btn primary" type="button" data-rh="cerrar">Cerrar quincena</button>') : ''}</div></div>
-      <p class="rep-note" style="margin-top:0">Quincena del ${esc(nombreQ(R.mes, R.q))}. Escribe los días, horas y valores en las casillas; cada cambio se guarda solo y queda en <b>Cambios</b> con tu nombre. Las casillas en amarillo fueron modificadas. Días trabajados = días de la quincena − incapacidad − vacaciones − licencias − suspensión. Al marcar días de <b>suspensión</b> la app te pide la fecha inicial y hace el memorando.</p>
+      </div><div class="grupo">${cerrado ? '' : '<button class="btn primary" type="button" data-rh-ir="novedad">+ Registrar novedad</button><button class="btn" type="button" data-rh="imp-q">Importar quincenas desde Excel</button>'}<button class="btn" type="button" data-rh="xls-nom">Descargar Excel</button>${A.isAdmin ? (cerrado ? '<button class="btn" type="button" data-rh="reabrir">Reabrir quincena</button>' : '<button class="btn" type="button" data-rh="cerrar">Cerrar quincena</button>') : ''}</div></div>
+      ${pasosNomina(emps, p, cerrado)}
+      ${guia(`💡 Para vacaciones, incapacidades, licencias o suspensiones usa <b>Registrar novedad</b>: preguntas sencillas y la app pone los días y las fechas. También puedes escribir directo en las casillas; cada cambio se guarda solo y queda en <b>Cambios</b> con tu nombre (las casillas en amarillo fueron modificadas). Toca los <b>?</b> para saber qué va en cada columna.`)}
       ${bloques || '<div class="empty"><p>No hay empleados con días en esta quincena.</p></div>'}
       <section class="rep-sum"><div class="tile main"><span class="lbl">Neto a pagar quincena</span><span class="val">${fmt(granTotal.neto)}</span><span>Devengado ${fmt(granTotal.devengado)} − deducciones ${fmt(granTotal.deducciones)}</span></div></section>`;
   }
@@ -254,6 +347,7 @@
       <div class="rh-barra"><div class="grupo">${selEmpresa()}<div class="field"><label for="rh-mespla">Mes</label><input type="month" id="rh-mespla" value="${esc(R.mesPla)}"></div>
         <span class="rh-estado ${qs[0] && qs[1] ? 'cerrado' : 'borrador'}">${qs[0] && qs[1] ? 'Las dos quincenas cerradas' : 'Borrador: falta cerrar ' + (qs[0] ? 'la 2.ª quincena' : qs[1] ? 'la 1.ª quincena' : 'las quincenas')}</span></div>
         <div class="grupo"><button class="btn" type="button" data-rh="xls-nov">Reporte de novedades</button><button class="btn" type="button" data-rh="xls-pla">Borrador de planilla</button><button class="btn primary" type="button" data-rh="aportes">Archivo para Aportes en Línea</button></div></div>
+      ${guia(`💡 Aquí está la seguridad social de <b>${esc(nombreMes(R.mesPla).toLowerCase())}</b> (suma de las dos quincenas). Pasos: <b>1.</b> cierra las dos quincenas del mes · <b>2.</b> toca <b>Archivo para Aportes en Línea</b>: la app revisa que no falte nada y lo descarga · <b>3.</b> súbelo en Aportes en Línea → Liquidaciones → Transmisión de Planilla Integrada Excel. Toca los <b>?</b> de la tabla para saber qué es cada columna.`)}
       <section class="rep-sum">
         <div class="tile main"><span class="lbl">Total planilla ${esc(nombreMes(R.mesPla).toLowerCase())}</span><span class="val">${fmt(sum(filas, 'total'))}</span><span>Descontado a empleados ${fmt(sum(filas, 'descontado'))}</span></div>
         <div class="tile"><span class="lbl">Costo empresa</span><span class="val">${fmt(sum(filas, 'empresa'))}</span></div>
@@ -261,7 +355,7 @@
       </section>
       ${empresas.map((emp) => {
         const fs = filas.filter((x) => (x.e.empresa || EMPRESA_DEF) === emp).sort((a, b) => String(a.e.nombre).localeCompare(String(b.e.nombre)));
-        return `<h3 class="rh-empresa">${esc(emp)}</h3><div class="rh-tabla-wrap"><table class="rh-tabla"><thead><tr><th>Empleado</th><th class="n">Riesgo</th><th class="n">Días Q1</th><th class="n">Días Q2</th><th class="n">Días cot.</th><th class="n">IBC mes</th><th class="n">Pensión 16%</th><th class="n">Salud</th><th class="n">ARL</th><th class="n">Caja 4%</th><th class="n">SENA/ICBF</th><th class="n">Total</th><th class="n">Descontado</th><th class="n">Empresa</th><th>Novedades</th></tr></thead><tbody>
+        return `<h3 class="rh-empresa">${esc(emp)}</h3><div class="rh-tabla-wrap"><table class="rh-tabla"><thead><tr><th>Empleado</th><th class="n">Riesgo</th><th class="n">Días Q1</th><th class="n">Días Q2</th><th class="n">Días cot.${ayu('diasCot')}</th><th class="n">IBC mes${ayu('ibc')}</th><th class="n">Pensión 16%${ayu('pension')}</th><th class="n">Salud${ayu('salud')}</th><th class="n">ARL${ayu('arl')}</th><th class="n">Caja 4%${ayu('ccf')}</th><th class="n">SENA/ICBF${ayu('sena')}</th><th class="n">Total</th><th class="n">Descontado${ayu('descontado')}</th><th class="n">Empresa${ayu('empresa')}</th><th>Novedades</th></tr></thead><tbody>
           ${fs.map((x) => `<tr><td><span class="emp">${esc(x.e.nombre)}</span><br><span class="sub">C.C. ${esc(x.e.cedula)}</span></td><td class="n">${['', 'I', 'II', 'III', 'IV', 'V'][x.e.riesgo || 1]}</td><td class="n">${x.diasQ1}</td><td class="n">${x.diasQ2}</td><td class="n">${x.dias}</td><td class="n">${fmt(x.ibc)}</td><td class="n">${fmt(x.pension)}</td><td class="n">${fmt(x.salud)}</td><td class="n">${fmt(x.arl)}</td><td class="n">${fmt(x.ccf)}</td><td class="n">${fmt(x.sena + x.icbf)}</td><td class="n"><b>${fmt(x.total)}</b></td><td class="n">${fmt(x.descontado)}</td><td class="n">${fmt(x.empresa)}</td><td>${esc(novedad(x)) || '—'}</td></tr>`).join('')}
           <tr class="tot"><td>Subtotal</td><td colspan="4"></td><td class="n">${fmt(sum(fs, 'ibc'))}</td><td class="n">${fmt(sum(fs, 'pension'))}</td><td class="n">${fmt(sum(fs, 'salud'))}</td><td class="n">${fmt(sum(fs, 'arl'))}</td><td class="n">${fmt(sum(fs, 'ccf'))}</td><td class="n">${fmt(sum(fs, 'sena') + sum(fs, 'icbf'))}</td><td class="n">${fmt(sum(fs, 'total'))}</td><td class="n">${fmt(sum(fs, 'descontado'))}</td><td class="n">${fmt(sum(fs, 'empresa'))}</td><td></td></tr>
         </tbody></table></div>`;
@@ -620,6 +714,165 @@
     const b = $('#docs-generar'); b.disabled = true;
     await generarDoc(e.id, tipo, extra);
     b.disabled = false; pintarDocs();
+  });
+
+  // ---------- pasos de la quincena ----------
+  function pasosNomina(emps, p, cerrado) {
+    const clave = claveQ(R.mes, R.q), ini = inicioQ(clave), fin = finQ(clave);
+    const ing = emps.filter((e) => e.ingreso && e.ingreso >= ini && e.ingreso <= fin).length;
+    const ret = emps.filter((e) => e.retiro && e.retiro >= ini && e.retiro <= fin).length;
+    const conNov = emps.filter((e) => { const f = filaDe(e, R.mes, R.q); return [...DIAS.slice(1), ...HORAS].some(([k]) => Number(f[k]) > 0); }).length;
+    const pend = pendientesQ(R.mes, R.q);
+    const neto = emps.reduce((s, e) => s + calcular(e, filaDe(e, R.mes, R.q)).neto, 0);
+    const paso = (n, estado, titulo, detalle, accion) => `<li class="${estado}"><span class="rh-num">${estado === 'ok' ? '✓' : estado === 'warn' ? '!' : n}</span><div><b>${titulo}</b><span>${detalle}</span>${accion || ''}</div></li>`;
+    const plural = (k, s, pl) => `${k} ${k === 1 ? s : pl}`;
+    return `<ol class="rh-pasos" aria-label="Pasos de la quincena">
+      ${paso(1, 'info', 'Ingresos y retiros', ing || ret ? `${[ing && plural(ing, 'ingreso', 'ingresos'), ret && plural(ret, 'retiro', 'retiros')].filter(Boolean).join(' y ')} en esta quincena` : 'Nadie entró ni salió', '<button class="rh-link" type="button" data-rh-ir="emp:activos">Ver empleados</button>')}
+      ${paso(2, 'info', 'Novedades', conNov ? `${plural(conNov, 'persona', 'personas')} con novedades u horas extra` : 'Sin novedades todavía', cerrado ? '' : '<button class="rh-link" type="button" data-rh-ir="novedad">Registrar novedad</button>')}
+      ${paso(3, pend.length ? 'warn' : 'ok', 'Fechas y memorandos', pend.length ? pend.slice(0, 3).map((x) => esc(x.texto)).join('<br>') + (pend.length > 3 ? `<br>y ${pend.length - 3} más` : '') : 'Todo completo', pend.length && !cerrado ? '<button class="rh-link" type="button" data-rh-pend="1">Completar ahora</button>' : '')}
+      ${paso(4, 'info', 'Revisar totales', `Neto a pagar: <b>${fmt(neto)}</b>`, '<button class="rh-link" type="button" data-rh="xls-nom">Descargar Excel</button>')}
+      ${paso(5, cerrado ? 'ok' : 'info', 'Cerrar quincena', cerrado ? 'Cerrada: ya no se puede modificar' : A.isAdmin ? 'Cuando todo esté bien, toca <b>Cerrar quincena</b>' : 'La cierra la administradora', '')}
+    </ol>`;
+  }
+  function completarPendiente() {
+    const x = pendientesQ(R.mes, R.q)[0]; if (!x) return;
+    const clave = claveQ(R.mes, R.q);
+    if (x.tipo === 'fechas') abrirFechas(x.e.id, x.k, clave);
+    else abrirSuspension(x.e.id, Number(filaDe(x.e, R.mes, R.q).sus) || 0, clave);
+  }
+
+  // ---------- asistente "Registrar novedad" ----------
+  const TIPO_AYUDA = {
+    vac: 'Escribe el primer y el último día de vacaciones. La app cuenta los días hábiles de lunes a viernes; si trabaja los sábados o hay un festivo, corrige el número abajo.',
+    'inc|ige': 'Las fechas están en la incapacidad que expide la EPS.',
+    'inc|irl': 'Para accidentes o enfermedades de trabajo; la paga la ARL.',
+    'lr|lr': 'Luto, calamidad doméstica, matrimonio u otro permiso pagado.',
+    'lr|lma': 'Las fechas están en la licencia que expide la EPS.',
+    lnr: 'Permiso sin sueldo que pidió el trabajador. Esos días no se pagan.',
+    sus: 'Después de guardar se abre el memorando de suspensión para escribir los hechos y generarlo.',
+  };
+  const NOMBRE_TIPO = { vac: 'Vacaciones', 'inc|ige': 'Incapacidad (enfermedad general)', 'inc|irl': 'Incapacidad (laboral, ARL)', 'lr|lr': 'Licencia remunerada', 'lr|lma': 'Licencia de maternidad o paternidad', lnr: 'Licencia no remunerada', sus: 'Suspensión' };
+  const PILA_TIPO = { vac: 'VAC', 'inc|ige': 'IGE', 'inc|irl': 'IRL', 'lr|lr': 'VAC-LR (licencia remunerada)', 'lr|lma': 'LMA', lnr: 'SLN', sus: 'SLN' };
+  const mesSiguiente = (mes) => { const [y, m] = mes.split('-').map(Number); return `${m === 12 ? y + 1 : y}-${pad2(m === 12 ? 1 : m + 1)}`; };
+  const corta = (x) => `${Number(x.slice(8))}/${Number(x.slice(5, 7))}`;
+  function habiles(a, b) {
+    let n = 0;
+    for (let t = Date.parse(a + 'T12:00:00Z'), fin = Date.parse(b + 'T12:00:00Z'); t <= fin; t += 864e5) { const d = new Date(t).getUTCDay(); if (d >= 1 && d <= 5) n++; }
+    return n;
+  }
+  // Reparte un rango de fechas en quincenas (mes comercial de 30 días)
+  function partesRango(k, ini, fin) {
+    const out = [];
+    let mes = ini.slice(0, 7), q = Number(ini.slice(8)) <= 15 ? 1 : 2;
+    for (let i = 0; i < 26; i++) {
+      const clave = claveQ(mes, q), a0 = inicioQ(clave), b0 = finQ(clave);
+      if (a0 > fin) break;
+      const a = ini > a0 ? ini : a0, b = fin < b0 ? fin : b0;
+      if (b >= a) {
+        let dias;
+        if (k === 'vac') dias = habiles(a, b);
+        else {
+          dias = diasRango(a, b) - (b.slice(8) === '31' ? 1 : 0);
+          if (q === 2 && b === b0 && diasMes(mes) < 30) dias += 30 - diasMes(mes); // febrero cuenta como 30
+        }
+        out.push({ mes, q, clave, a, b, dias: Math.max(0, Math.min(15, dias)) });
+      }
+      if (q === 1) q = 2; else { q = 1; mes = mesSiguiente(mes); }
+    }
+    return out;
+  }
+  let asis = null; // { edit: {clave: días}, partes: [], problemas: n, finTocado }
+  function abrirAsistente(empId) {
+    const ref = R.tab === 'nom' ? R.mes : mesActual();
+    const desde = `${mesAnterior(ref)}-01`;
+    const emps = R.datos.empleados.filter(deEmpresa).filter((e) => !e.retiro || e.retiro >= desde).sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
+    $('#asis-emp').innerHTML = '<option value="">Escoge una persona…</option>' + emps.map((e) => `<option value="${esc(e.id)}">${esc(e.nombre)}${R.empresa ? '' : ' · ' + esc((e.empresa || EMPRESA_DEF).replace(/ S\.A\.S\.?$/i, ''))}</option>`).join('');
+    $('#asis-emp').value = empId || '';
+    $('#asis-tipo').value = 'vac'; $('#asis-ini').value = ''; $('#asis-fin').value = '';
+    asis = { edit: {}, partes: [], problemas: 0, finTocado: false };
+    mostrarError('#asis-err', ''); pintarAsis(); $('#dlg-asis').showModal();
+  }
+  function pintarAsis() {
+    if (!asis) return;
+    const tipo = $('#asis-tipo').value, [k, clase] = tipo.split('|');
+    $('#asis-tipo-ayuda').textContent = TIPO_AYUDA[tipo] || '';
+    const e = R.datos.empleados.find((x) => x.id === $('#asis-emp').value);
+    const ini = $('#asis-ini').value, fin = $('#asis-fin').value;
+    const go = $('#asis-go');
+    asis.partes = []; asis.problemas = 0; go.disabled = true;
+    if (!e || !ini || !fin) { $('#asis-res').innerHTML = `<p class="rh-asis-falta">${!e ? 'Escoge a la persona.' : 'Escribe las fechas. Si es un solo día, pon la misma fecha en las dos casillas.'}</p>`; return; }
+    if (fin < ini) { $('#asis-res').innerHTML = '<p class="rh-asis-falta">La fecha final no puede ser antes de la inicial.</p>'; return; }
+    if (diasRango(ini, fin) > 180) { $('#asis-res').innerHTML = '<p class="rh-asis-falta">El rango tiene más de 180 días. Revisa las fechas.</p>'; return; }
+    const partes = partesRango(k, ini, fin);
+    const filas = partes.map((x) => {
+      const f = filaDe(e, x.mes, x.q), p = R.datos.periodos[x.clave] || {}, base = diasBase(e, x.mes, x.q);
+      if (asis.edit[x.clave] != null) x.dias = asis.edit[x.clave];
+      const antes = Number(f[k]) || 0, prev = (f.fechas || {})[k];
+      const mismo = !!(prev && prev.ini <= x.b && prev.fin >= x.a); // se cruza con lo ya registrado: se reemplaza
+      x.nuevo = mismo || !antes ? x.dias : antes + x.dias;
+      x.rango = mismo || !prev ? { ini: x.a, fin: x.b } : { ini: prev.ini < x.a ? prev.ini : x.a, fin: prev.fin > x.b ? prev.fin : x.b };
+      const otros = DIAS.filter(([kk]) => kk !== 'dias' && kk !== k).reduce((s, [kk]) => s + (Number(f[kk]) || 0), 0);
+      const problema = p.estado === 'cerrado' ? 'Esta quincena ya está cerrada.' : !base ? 'No tiene días en esta quincena (revisa ingreso o retiro).' : x.nuevo + otros > base ? `Pasa de los ${base} días de la quincena.` : '';
+      if (problema) asis.problemas++;
+      const queda = base - otros - x.nuevo;
+      return `<tr class="${problema ? 'mal' : ''}"><td>${esc(nombreQ(x.mes, x.q))}</td><td>${esc(x.a === x.b ? corta(x.a) : `${corta(x.a)} al ${corta(x.b)}`)}</td>
+        <td class="n"><input class="rh-in" data-asis-dias="${x.clave}" inputmode="numeric" value="${x.dias}" aria-label="Días en la quincena del ${esc(nombreQ(x.mes, x.q))}"></td>
+        <td>${problema ? `<b>${esc(problema)}</b>` : `Días trabajados: <b>${Math.max(0, queda)}</b>${antes && !mismo ? `<br><small>Ya tenía ${antes}; quedará en ${x.nuevo}</small>` : antes && mismo ? `<br><small>Reemplaza lo registrado (${antes})</small>` : ''}`}</td></tr>`;
+    }).join('');
+    asis.partes = partes;
+    const total = partes.reduce((s, x) => s + x.dias, 0);
+    $('#asis-res').innerHTML = `<div class="rh-asis-res">
+      <table class="rh-tabla"><thead><tr><th>Quincena</th><th>Fechas</th><th class="n">Días</th><th>Cómo queda</th></tr></thead><tbody>${filas}</tbody></table>
+      <p class="rh-asis-resumen">✔ <b>${esc(e.nombre)}</b>: ${esc(NOMBRE_TIPO[tipo].toLowerCase())} ${esc(rangoTxt({ ini, fin }))} → <b>${total} ${total === 1 ? 'día' : 'días'}</b>${partes.length > 1 ? ` repartidos en ${partes.length} quincenas` : ''}. En la planilla sale como <b>${esc(PILA_TIPO[tipo])}</b>.${k === 'vac' || k === 'lr' ? ' Se paga como un día normal.' : k === 'inc' ? ' Se paga al 66,67 % (mínimo un día de salario mínimo).' : ' Esos días no se pagan.'}</p></div>`;
+    go.disabled = !!asis.problemas || !total;
+  }
+  $('#dlg-asis').addEventListener('change', (ev) => {
+    if (!asis) return;
+    if (ev.target.dataset.asisDias) { const v = Math.max(0, Math.min(15, Math.round(Number(ev.target.value) || 0))); asis.edit[ev.target.dataset.asisDias] = v; }
+    if (ev.target.id === 'asis-tipo' || ev.target.id === 'asis-ini' || ev.target.id === 'asis-fin') asis.edit = {};
+    pintarAsis();
+  });
+  $('#dlg-asis').addEventListener('input', (ev) => {
+    if (!asis) return;
+    if (ev.target.id === 'asis-fin') asis.finTocado = !!ev.target.value;
+    // Al escribir el primer día se propone el mismo como último (se puede cambiar)
+    if (ev.target.id === 'asis-ini' && ev.target.value && (!asis.finTocado || $('#asis-fin').value < ev.target.value)) { $('#asis-fin').value = ev.target.value; asis.finTocado = false; }
+  });
+  $('#asis-form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    if (!asis || !asis.partes.length || asis.problemas) return;
+    const tipo = $('#asis-tipo').value, [k, clase] = tipo.split('|');
+    const empId = $('#asis-emp').value, ini = $('#asis-ini').value, fin = $('#asis-fin').value;
+    const partes = asis.partes.filter((x) => x.dias > 0 || x.nuevo !== x.dias);
+    if (!partes.length) return mostrarError('#asis-err', 'No hay días para guardar.');
+    const b = $('#asis-go'); b.disabled = true;
+    try {
+      let msg = '';
+      await mutar((d) => {
+        for (const x of partes) if ((d.periodos[x.clave] || {}).estado === 'cerrado') { msg = `La quincena del ${nombreQ(x.mes, x.q)} ya está cerrada.`; return false; }
+        for (const x of partes) {
+          const p = d.periodos[x.clave] = d.periodos[x.clave] || { estado: 'borrador', filas: {} };
+          p.filas = p.filas || {};
+          const fila = p.filas[empId] = { ...(p.filas[empId] || {}) };
+          const antes = Number(fila[k]) || 0;
+          fila[k] = x.nuevo;
+          if (antes !== x.nuevo) anotar(d, { tipo: 'nomina', periodo: x.clave, empId, campo: k, antes, despues: x.nuevo });
+          if (NOV[k]) {
+            fila.fechas = { ...(fila.fechas || {}), [k]: clase ? { ...x.rango, clase } : { ...x.rango } };
+            anotar(d, { tipo: 'fechas', periodo: x.clave, empId, texto: `${NOMBRE_TIPO[tipo]} ${rangoTxt(x.rango)} (Registrar novedad)` });
+          }
+        }
+      });
+      if (msg) { mostrarError('#asis-err', msg); b.disabled = false; return; }
+      asis = null; $('#dlg-asis').close();
+      R.tab = 'nom'; R.mes = partes[0].mes; R.q = partes[0].q; render();
+      toast('Novedad guardada.');
+      if (k === 'sus') {
+        abrirSuspension(empId, partes[0].nuevo, partes[0].clave);
+        if (!$('#susp-inicio').closest('.field').hidden) { $('#susp-inicio').value = ini; $('#susp-dias').value = String(diasRango(ini, fin)); pintarSusp(); }
+      }
+    } catch (err) { mostrarError('#asis-err', msgGitHub(err)); }
+    b.disabled = false;
   });
 
   // ---------- suspensión ----------
@@ -1327,87 +1580,148 @@
   // Archivo para subir a Aportes en Línea: la plantilla oficial (hoja "Liquidaciones") llena, un archivo por empresa
   let plantillaBuf = null;
   const NOMBRE_PLANTILLA = 'PlantillaXLSX_Excel_2007.xlsx';
+  // Prepara el archivo de Aportes: revisa a cada cotizante (semáforo) y luego descarga
+  let aportesListo = null; // { blobArgs, resumen }
   async function archivoAportes() {
     if (!window.XLSX) return toast('No cargó el generador de Excel. Recarga la página.');
     const mes = R.mesPla, P = R.datos.param;
     const filas = planillaMes(mes).filter((x) => deEmpresa(x.e));
     if (!filas.length) return toast('No hay cotizantes en ese mes.');
+    const empresas = [...new Set(filas.map((x) => x.e.empresa || EMPRESA_DEF))];
+    if (empresas.length > 1) {
+      // Aportes en Línea solo acepta el nombre original de la plantilla: una empresa a la vez
+      aportesListo = null;
+      $('#rev-titulo').textContent = '¿De cuál empresa?';
+      $('#rev-res').innerHTML = `${guia(`Aportes en Línea recibe un archivo por empresa, siempre con el mismo nombre (<b>${NOMBRE_PLANTILLA}</b>). Escoge la empresa, súbelo y luego haz el de la otra.`)}
+        <div class="rh-elegir">${empresas.map((x) => `<button class="btn primary" type="button" data-rev-emp="${esc(x)}">${esc(x)}</button>`).join('')}</div>`;
+      $('#rev-go').hidden = true; $('#dlg-rev').showModal(); return;
+    }
     try { if (!plantillaBuf) { const r = await fetch('plantilla-aportes.xlsx?v=30'); if (!r.ok) throw new Error(); plantillaBuf = await r.arrayBuffer(); } }
     catch (err) { return toast('No pude cargar la plantilla de Aportes en Línea. Revisa el internet.'); }
     const [y, m] = mes.split('-').map(Number), mesSalud = `${m === 12 ? y + 1 : y}-${pad2(m === 12 ? 1 : m + 1)}`;
-    const avisos = [];
-    const empresas = [...new Set(filas.map((x) => x.e.empresa || EMPRESA_DEF))];
-    if (empresas.length > 1) return mostrarInfo('Escoge una empresa', ['Aportes en Línea solo acepta el archivo con el nombre original de la plantilla (PlantillaXLSX_Excel_2007.xlsx), así que se descarga una empresa a la vez.', 'Arriba toca ODESA CARIBE u OBS y vuelve a tocar "Archivo para Aportes en Línea". Sube ese archivo antes de descargar el de la otra empresa.']);
-    try { await cargarJSZip(); } catch (err) { return toast(err.message); }
-    for (const emp of empresas) {
-      const cfg = (P.pila || {})[emp] || {};
-      const fs = filas.filter((x) => (x.e.empresa || EMPRESA_DEF) === emp).sort((a, b) => partesDe(a.e).ap1.localeCompare(partesDe(b.e).ap1));
-      const arlEmp = cfg.arl || fs.map((x) => x.e.arl).find(Boolean) || '';
-      const cabecera = { A: mes, C: mesSalud, D: 'E - Planilla Empleados Empresas', H: cfg.sucursal || 'UNICA', I: 'EMPLEADOR', K: oficial('arl', arlEmp) || 'NINGUNA' };
-      if (!cfg.arl) avisos.push(`${emp}: no hay planilla de Aportes importada; revisa en el archivo la sucursal y la ARL de la empresa (fila 10).`);
-      const renglones = [];
-      fs.forEach((x, i) => {
-        const e = x.e, f = 19 + i, n = partesDe(e), sal = Number(e.salario) || 0, r = e.riesgo || 1;
-        const exon = P.exonerado && sal < 10 * P.smmlv;
-        const fsp = sal >= 4 * P.smmlv ? arriba100(x.ibc * 0.01) : 0;
-        const afp = oficial('afp', e.afp), eps = oficial('eps', e.eps), ccf = oficial('ccf', e.ccf || cfg.ccf), arl = oficial('arl', e.arl || arlEmp);
-        const falta = [!n.ap1 && 'primer apellido', !n.n1 && 'primer nombre', !enLista('afp', afp) && 'fondo de pensiones', !enLista('eps', eps) && 'EPS', !enLista('ccf', ccf) && 'caja', !enLista('arl', arl) && 'ARL'].filter(Boolean);
-        if (falta.length) avisos.push(`${e.nombre}: falta o no coincide con la lista de Aportes: ${falta.join(', ')}.`);
-        // Fechas de novedades: se recortan al mes; si hay varios períodos del mismo tipo se toma del primero al último día
-        const mesIni = `${mes}-01`, mesFin = `${mes}-${pad2(diasMes(mes))}`;
-        const sinFecha = [];
-        const rango = (lista, nombre) => {
-          const rs = (lista || []).filter((r) => r && r.ini && r.fin).map((r) => ({ ini: r.ini < mesIni ? mesIni : r.ini, fin: r.fin > mesFin ? mesFin : r.fin, clase: r.clase || '' })).filter((r) => r.fin >= r.ini).sort((a, b) => a.ini.localeCompare(b.ini));
-          if ((lista || []).some((r) => !r)) sinFecha.push(nombre);
-          if (!rs.length) return null;
-          const out = { ini: rs[0].ini, fin: rs.reduce((m, r) => (r.fin > m ? r.fin : m), rs[0].fin), clase: rs[0].clase };
-          if (rs.some((r, j) => j && r.ini > Docs().sumarDias(rs[j - 1].fin, 1))) avisos.push(`${e.nombre}: tiene dos períodos de ${nombre} separados en el mes. Aportes en Línea pide un renglón por período; el archivo lleva del ${fmtDate(out.ini)} al ${fmtDate(out.fin)}. Revísalo.`);
-          out.dias = diasRango(out.ini, out.fin);
-          return out;
-        };
-        const susp = (R.datos.suspensiones || []).filter((s) => s.empId === e.id && s.inicio <= mesFin && s.fin >= mesIni).map((s) => ({ ini: s.inicio, fin: s.fin }));
-        const sln = (x.lnr || x.sus) ? rango([...susp, ...(x.fechas.lnr || [])], 'licencia no remunerada o suspensión') : null;
-        if (x.sus && !susp.length) sinFecha.push('suspensión');
-        const inc = x.inc ? rango(x.fechas.inc, 'incapacidad') : null;
-        const vac = x.vac ? rango(x.fechas.vac, 'vacaciones') : null;
-        const lic = x.lr ? rango(x.fechas.lr, 'licencia remunerada') : null;
-        const ige = inc && inc.clase !== 'irl' ? inc : null, irl = inc && inc.clase === 'irl' ? inc : null;
-        const lma = lic && lic.clase === 'lma' ? lic : null, lr = lic && lic.clase !== 'lma' ? lic : null;
-        const vlr = vac || lr; // la planilla tiene una sola casilla para vacaciones o licencia remunerada
-        if (vac && lr) avisos.push(`${e.nombre}: tiene vacaciones y licencia remunerada en el mismo mes; Aportes pide un renglón aparte para la licencia (el archivo solo lleva las vacaciones).`);
-        if (sinFecha.length) avisos.push(`${e.nombre}: faltan las fechas de ${[...new Set(sinFecha)].join(', ')}. Ponlas en la Nómina quincenal (botón "Poner fechas" debajo de los días) y vuelve a descargar.`);
-        const v = {
-          A: i + 1, B: e.tipoId || 'CC', C: String(e.cedula), D: n.ap1, E: n.ap2, F: n.n1, G: n.n2, H: sinTilde(e.depto || 'ATLANTICO').replace(/ /g, '_'), I: sinTilde(e.ciudad || 'BARRANQUILLA'),
-          // Horas laboradas: obligatorias para Aportes (8 horas por día cotizado)
-          J: '1. DEPENDIENTE', K: 'NINGUNO', L: x.dias * 8, M: 'NO', N: 'NO',
-          P: x.ing ? 'Todos los sistemas (ARL, AFP, CCF, EPS)' : 'NO', Q: x.ing || '', R: x.ret ? 'Todos los sistemas (ARL, AFP, CCF, EPS)' : 'NO', S: x.ret || '',
-          T: 'NO', U: 'NO', V: 'NO', W: 'NO', X: 'NO', Z: 'NO',
-          AA: x.lnr + x.sus ? 'LICENCIA NO REMUNERADA' : 'NO', AB: sln ? sln.ini : '', AC: sln ? sln.fin : '',
-          AD: x.inc && !irl ? 'INCAPACIDAD GENERAL' : 'NO', AE: ige ? ige.ini : '', AF: ige ? ige.fin : '',
-          AG: lma ? 'LICENCIA DE MATERNIDAD (LMA)' : 'NO', AH: lma ? lma.ini : '', AI: lma ? lma.fin : '',
-          AJ: vac ? 'VACACIONES' : lr ? 'LICENCIA REMUNERADA' : x.vac ? 'VACACIONES' : x.lr && !lma ? 'LICENCIA REMUNERADA' : 'NO', AK: vlr ? vlr.ini : '', AL: vlr ? vlr.fin : '',
-          AM: 'NO', AN: 'NO', AQ: irl ? irl.dias : '', AR: irl ? irl.ini : '', AS: irl ? irl.fin : '', AT: 'NO',
-          AU: sal, AV: 'NO', AW: 'NO',
-          AX: afp || 'NINGUNA', AY: x.dias, AZ: x.ibc, BA: P.pension / 100, BB: x.pension, BC: 'Sin Riesgo', BF: fsp || '', BI: x.pension + fsp, BJ: 'NINGUNA',
-          BK: eps || 'NINGUNA', BL: x.dias, BM: x.ibc, BN: (exon ? P.saludEmp : P.saludEmp + P.saludEmpresa) / 100, BO: x.salud, BP: 0, BU: 'NINGUNA',
-          BV: arl || 'NINGUNA', BW: x.dias, BX: x.ibc, BY: (P.arl[r] || 0) / 100, BZ: String(r), CA: e.centro || '', CC: x.arl,
-          CD: x.dias, CE: ccf || 'NINGUNA', CF: x.ibc, CG: P.ccf / 100, CH: x.ccf,
-          CI: exon ? 0 : x.ibc, CJ: exon ? 0 : P.sena / 100, CK: x.sena, CL: exon ? 0 : P.icbf / 100, CM: x.icbf, CN: 0, CO: 0, CP: 0, CQ: 0, CR: exon ? 'SI' : 'NO', CS: 'CC',
-        };
-        renglones.push(v);
+    const emp = empresas[0], generales = [];
+    const rev = new Map(); // empId -> { e, rojo: [], amarillo: [] }
+    const marca = (e, nivel, texto, ir) => { const r = rev.get(e.id) || { e, rojo: [], amarillo: [] }; r[nivel].push({ texto, ir }); rev.set(e.id, r); };
+    const cfg = (P.pila || {})[emp] || {};
+    const fs = filas.filter((x) => (x.e.empresa || EMPRESA_DEF) === emp).sort((a, b) => partesDe(a.e).ap1.localeCompare(partesDe(b.e).ap1));
+    const arlEmp = cfg.arl || fs.map((x) => x.e.arl).find(Boolean) || '';
+    const cabecera = { A: mes, C: mesSalud, D: 'E - Planilla Empleados Empresas', H: cfg.sucursal || 'UNICA', I: 'EMPLEADOR', K: oficial('arl', arlEmp) || 'NINGUNA' };
+    if (!cfg.arl) generales.push('No se ha importado una planilla de Aportes de esta empresa: revisa en el archivo la sucursal y la ARL (fila 10).');
+    const abiertas = [1, 2].filter((q) => (R.datos.periodos[claveQ(mes, q)] || {}).estado !== 'cerrado');
+    if (abiertas.length) generales.push(`${abiertas.length === 2 ? 'Las dos quincenas siguen abiertas' : `La quincena del ${nombreQ(mes, abiertas[0])} sigue abierta`}: si alguien cambia algo después, el archivo ya no coincidiría.`);
+    const mesIni = `${mes}-01`, mesFin = `${mes}-${pad2(diasMes(mes))}`;
+    const renglones = [];
+    fs.forEach((x, i) => {
+      const e = x.e, n = partesDe(e), sal = Number(e.salario) || 0, r = e.riesgo || 1;
+      const exon = P.exonerado && sal < 10 * P.smmlv;
+      const fsp = sal >= 4 * P.smmlv ? arriba100(x.ibc * 0.01) : 0;
+      const afp = oficial('afp', e.afp), eps = oficial('eps', e.eps), ccf = oficial('ccf', e.ccf || cfg.ccf), arl = oficial('arl', e.arl || arlEmp);
+      const falta = [!n.ap1 && 'primer apellido', !n.n1 && 'primer nombre', !enLista('afp', afp) && 'fondo de pensiones', !enLista('eps', eps) && 'EPS', !enLista('ccf', ccf) && 'caja de compensación', !enLista('arl', arl) && 'ARL'].filter(Boolean);
+      if (falta.length) marca(e, 'rojo', `Falta o no coincide con la lista de Aportes: ${falta.join(', ')}.`, `emp:${e.id}`);
+      // Fechas de novedades: se recortan al mes; si hay varios períodos del mismo tipo se toma del primero al último día
+      const rango = (lista, nombre) => {
+        const sin = (lista || []).find((r) => r.sin);
+        if (sin) marca(e, 'rojo', `Faltan las fechas de ${nombre}.`, `q:${mes}:${sin.q}`);
+        const rs = (lista || []).filter((r) => r.ini && r.fin).map((r) => ({ ini: r.ini < mesIni ? mesIni : r.ini, fin: r.fin > mesFin ? mesFin : r.fin, clase: r.clase || '' })).filter((r) => r.fin >= r.ini).sort((a, b) => a.ini.localeCompare(b.ini));
+        if (!rs.length) return null;
+        const out = { ini: rs[0].ini, fin: rs.reduce((mx, r) => (r.fin > mx ? r.fin : mx), rs[0].fin), clase: rs[0].clase };
+        if (rs.some((r, j) => j && r.ini > Docs().sumarDias(rs[j - 1].fin, 1))) marca(e, 'amarillo', `Tiene dos períodos de ${nombre} separados en el mes. Aportes pide un renglón por período; el archivo lleva del ${fmtDate(out.ini)} al ${fmtDate(out.fin)}.`);
+        out.dias = diasRango(out.ini, out.fin);
+        return out;
+      };
+      const susp = (R.datos.suspensiones || []).filter((s) => s.empId === e.id && s.inicio <= mesFin && s.fin >= mesIni).map((s) => ({ ini: s.inicio, fin: s.fin }));
+      if (x.sus && !susp.length) marca(e, 'rojo', 'Tiene días de suspensión sin memorando ni fechas.', `q:${mes}:${x.susQ || 1}`);
+      const sln = (x.lnr || x.sus) ? rango([...susp, ...(x.fechas.lnr || [])], 'licencia no remunerada') : null;
+      const inc = x.inc ? rango(x.fechas.inc, 'incapacidad') : null;
+      const vac = x.vac ? rango(x.fechas.vac, 'vacaciones') : null;
+      const lic = x.lr ? rango(x.fechas.lr, 'licencia remunerada') : null;
+      const ige = inc && inc.clase !== 'irl' ? inc : null, irl = inc && inc.clase === 'irl' ? inc : null;
+      const lma = lic && lic.clase === 'lma' ? lic : null, lr = lic && lic.clase !== 'lma' ? lic : null;
+      const vlr = vac || lr; // la planilla tiene una sola casilla para vacaciones o licencia remunerada
+      if (vac && lr) marca(e, 'amarillo', 'Tiene vacaciones y licencia remunerada en el mismo mes; Aportes pide un renglón aparte para la licencia (el archivo solo lleva las vacaciones).');
+      renglones.push({
+        A: i + 1, B: e.tipoId || 'CC', C: String(e.cedula), D: n.ap1, E: n.ap2, F: n.n1, G: n.n2, H: sinTilde(e.depto || 'ATLANTICO').replace(/ /g, '_'), I: sinTilde(e.ciudad || 'BARRANQUILLA'),
+        // Horas laboradas: obligatorias para Aportes (8 horas por día cotizado)
+        J: '1. DEPENDIENTE', K: 'NINGUNO', L: x.dias * 8, M: 'NO', N: 'NO',
+        P: x.ing ? 'Todos los sistemas (ARL, AFP, CCF, EPS)' : 'NO', Q: x.ing || '', R: x.ret ? 'Todos los sistemas (ARL, AFP, CCF, EPS)' : 'NO', S: x.ret || '',
+        T: 'NO', U: 'NO', V: 'NO', W: 'NO', X: 'NO', Z: 'NO',
+        AA: x.lnr + x.sus ? 'LICENCIA NO REMUNERADA' : 'NO', AB: sln ? sln.ini : '', AC: sln ? sln.fin : '',
+        AD: x.inc && !irl ? 'INCAPACIDAD GENERAL' : 'NO', AE: ige ? ige.ini : '', AF: ige ? ige.fin : '',
+        AG: lma ? 'LICENCIA DE MATERNIDAD (LMA)' : 'NO', AH: lma ? lma.ini : '', AI: lma ? lma.fin : '',
+        AJ: vac ? 'VACACIONES' : lr ? 'LICENCIA REMUNERADA' : x.vac ? 'VACACIONES' : x.lr && !lma ? 'LICENCIA REMUNERADA' : 'NO', AK: vlr ? vlr.ini : '', AL: vlr ? vlr.fin : '',
+        AM: 'NO', AN: 'NO', AQ: irl ? irl.dias : '', AR: irl ? irl.ini : '', AS: irl ? irl.fin : '', AT: 'NO',
+        AU: sal, AV: 'NO', AW: 'NO',
+        AX: afp || 'NINGUNA', AY: x.dias, AZ: x.ibc, BA: P.pension / 100, BB: x.pension, BC: 'Sin Riesgo', BF: fsp || '', BI: x.pension + fsp, BJ: 'NINGUNA',
+        BK: eps || 'NINGUNA', BL: x.dias, BM: x.ibc, BN: (exon ? P.saludEmp : P.saludEmp + P.saludEmpresa) / 100, BO: x.salud, BP: 0, BU: 'NINGUNA',
+        BV: arl || 'NINGUNA', BW: x.dias, BX: x.ibc, BY: (P.arl[r] || 0) / 100, BZ: String(r), CA: e.centro || '', CC: x.arl,
+        CD: x.dias, CE: ccf || 'NINGUNA', CF: x.ibc, CG: P.ccf / 100, CH: x.ccf,
+        CI: exon ? 0 : x.ibc, CJ: exon ? 0 : P.sena / 100, CK: x.sena, CL: exon ? 0 : P.icbf / 100, CM: x.icbf, CN: 0, CO: 0, CP: 0, CQ: 0, CR: exon ? 'SI' : 'NO', CS: 'CC',
       });
-      const blob = await llenarPlantilla(plantillaBuf, cabecera, renglones);
+    });
+    // Semáforo
+    const lista = [...rev.values()];
+    const rojos = lista.filter((r) => r.rojo.length), amarillos = lista.filter((r) => !r.rojo.length && r.amarillo.length);
+    const verdes = fs.filter((x) => !rev.has(x.e.id));
+    const total = fs.reduce((s, x) => s + x.total, 0);
+    aportesListo = { cabecera, renglones, emp, total };
+    const item = (r, nivel) => `<li class="${nivel}"><span class="rh-luz" aria-hidden="true"></span><div><b>${esc(r.e.nombre)}</b>${[...r.rojo, ...r.amarillo].map((a) => `<span>${esc(a.texto)}${a.ir ? ` <button class="rh-link" type="button" data-rev-ir="${esc(a.ir)}">Corregir</button>` : ''}</span>`).join('')}</div></li>`;
+    $('#rev-titulo').textContent = 'Revisión antes de descargar';
+    $('#rev-res').innerHTML = `
+      <p style="margin:0 0 10px">Planilla de <b>${esc(nombreMes(mes).toLowerCase())}</b> · ${esc(emp)} · ${fs.length} cotizantes · total <b>${fmt(total)}</b></p>
+      <div class="rh-semaforo">
+        <span class="verde"><span class="rh-luz"></span>${verdes.length} ${verdes.length === 1 ? 'completo' : 'completos'}</span>
+        <span class="amarillo"><span class="rh-luz"></span>${amarillos.length} por revisar</span>
+        <span class="rojo"><span class="rh-luz"></span>${rojos.length} con datos faltantes</span>
+      </div>
+      ${generales.length ? `<ul class="rh-rev">${generales.map((g) => `<li class="amarillo"><span class="rh-luz" aria-hidden="true"></span><div><span>${esc(g)}</span></div></li>`).join('')}</ul>` : ''}
+      ${rojos.length || amarillos.length ? `<ul class="rh-rev">${rojos.map((r) => item(r, 'rojo')).join('')}${amarillos.map((r) => item(r, 'amarillo')).join('')}</ul>` : '<p class="rh-guia">Todo está completo. Puedes descargar el archivo.</p>'}
+      ${verdes.length ? `<details class="rh-verdes"><summary>${verdes.length === 1 ? 'Ver el que está completo' : `Ver los ${verdes.length} completos`}</summary><p>${verdes.map((x) => esc(x.e.nombre)).join(' · ')}</p></details>` : ''}
+      <h4 style="margin:14px 0 4px">Después de descargar</h4>
+      <ol class="rh-despues"><li>Entra a Aportes en Línea → <b>Liquidaciones</b> → <b>Transmisión de Planilla Integrada Excel</b>.</li><li>Sube <b>${NOMBRE_PLANTILLA}</b> sin cambiarle el nombre (si quedó con "(1)", bórraselo).</li><li>Compara el total que muestra Aportes con el de la app: <b>${fmt(total)}</b>.</li></ol>`;
+    $('#rev-go').hidden = false;
+    $('#rev-go').textContent = rojos.length ? 'Descargar de todas formas' : 'Descargar archivo';
+    $('#rev-go').classList.toggle('primary', !rojos.length);
+    $('#dlg-rev').showModal();
+  }
+  $('#rev-go').addEventListener('click', async () => {
+    const x = aportesListo; if (!x) return;
+    const b = $('#rev-go'); b.disabled = true;
+    try {
+      await cargarJSZip();
+      const blob = await llenarPlantilla(plantillaBuf, x.cabecera, x.renglones);
       // Aportes en Línea exige el mismo nombre de la plantilla original
       bajar(blob, NOMBRE_PLANTILLA);
-    }
-    avisos.unshift(`Se descargó ${NOMBRE_PLANTILLA} de ${empresas[0].replace(/\.$/, '')}. Si en Descargas quedó con "(1)" o "(2)" en el nombre, bórrale eso: Aportes en Línea solo lo acepta con el nombre exacto.`);
-    setTimeout(() => mostrarInfo(avisos.length > 1 ? 'Revisa antes de subir a Aportes en Línea' : 'Archivo listo para Aportes en Línea', avisos), 300);
-  }
+      $('#dlg-rev').close();
+      toast(`Se descargó ${NOMBRE_PLANTILLA} de ${x.emp.replace(/\.$/, '')}.`);
+    } catch (err) { toast('No se pudo generar el archivo: ' + (err.message || err)); }
+    b.disabled = false;
+  });
+  $('#dlg-rev').addEventListener('click', (ev) => {
+    const t = ev.target.closest('[data-rev-ir], [data-rev-emp]'); if (!t) return;
+    if ('revEmp' in t.dataset) { R.empresa = t.dataset.revEmp; $('#dlg-rev').close(); render(); archivoAportes(); return; }
+    const [que, a, b] = t.dataset.revIr.split(':');
+    $('#dlg-rev').close();
+    if (que === 'emp') abrirEmpleado(a);
+    else if (que === 'q') { R.tab = 'nom'; R.mes = a; R.q = Number(b) || 1; render(); }
+  });
 
   // ---------- eventos ----------
   $('#view-rrhh').addEventListener('click', (ev) => {
-    const t = ev.target.closest('[data-rh-tab], [data-rh], [data-rh-ver], [data-rh-q], [data-rh-empresa], [data-rh-docs], [data-rh-retiro], [data-rh-noprorroga], [data-rh-continua], [data-doc-bajar], [data-rh-fechas], [data-rh-emp]');
+    const t = ev.target.closest('[data-rh-tab], [data-rh], [data-rh-ver], [data-rh-q], [data-rh-empresa], [data-rh-docs], [data-rh-retiro], [data-rh-noprorroga], [data-rh-continua], [data-doc-bajar], [data-rh-fechas], [data-rh-ir], [data-rh-ayuda], [data-rh-pend], [data-rh-emp]');
     if (!t) return;
+    if (t.dataset.rhAyuda) { ev.stopPropagation(); const [tit, txt, ej] = AYUDA[t.dataset.rhAyuda]; mostrarInfo(tit, [txt, ej].filter(Boolean)); return; }
+    if (t.dataset.rhPend) { completarPendiente(); return; }
+    if (t.dataset.rhIr) {
+      const [a, b] = t.dataset.rhIr.split(':');
+      if (a === 'emp') { R.tab = 'emp'; R.ver = b || 'activos'; render(); }
+      else if (a === 'nom') { const h = quincenaHoy(); R.tab = 'nom'; R.mes = h.mes; R.q = h.q; render(); }
+      else if (a === 'pla') { R.tab = 'pla'; R.mesPla = mesAnterior(mesActual()); render(); if (b === 'archivo') archivoAportes(); }
+      else if (a === 'novedad') abrirAsistente();
+      else if (a === 'nuevo') abrirEmpleado(null);
+      else { R.tab = a; render(); }
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
     if (t.dataset.rhFechas) { const [id, k] = t.dataset.rhFechas.split('|'); abrirFechas(id, k, claveQ(R.mes, R.q)); return; }
     if (t.dataset.rhTab) { R.tab = t.dataset.rhTab; render(); return; }
     if ('rhEmpresa' in t.dataset) { R.empresa = t.dataset.rhEmpresa; render(); return; }

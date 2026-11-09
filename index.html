@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="theme-color" content="#0d5c4b">
+<meta name="theme-color" content="#002796">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Pagos">
 <title>Pagos por Aprobar</title>
@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="estilos.css?v=33">
+<link rel="stylesheet" href="estilos.css?v=36">
 </head>
 <body>
 
@@ -123,14 +123,14 @@
           <svg viewBox="0 0 140 150">
             <circle cx="110" cy="30" r="16" fill="#f2c063"/>
             <rect x="0" y="118" width="140" height="32" fill="#e3d3b4"/>
-            <rect x="14" y="70" width="62" height="42" rx="4" fill="#0d5c4b"/>
+            <rect x="14" y="70" width="62" height="42" rx="4" fill="#002796"/>
             <rect x="20" y="76" width="22" height="14" rx="2" fill="#e8f3ee"/>
             <rect x="46" y="76" width="24" height="14" rx="2" fill="#e8f3ee"/>
             <path d="M76 82h22l14 16v14H76z" fill="#1a7343"/>
             <rect x="82" y="86" width="16" height="10" rx="2" fill="#cfe9df"/>
-            <circle cx="34" cy="114" r="9" fill="#12201b"/><circle cx="34" cy="114" r="4" fill="#cfd8d4"/>
-            <circle cx="96" cy="114" r="9" fill="#12201b"/><circle cx="96" cy="114" r="4" fill="#cfd8d4"/>
-            <g transform="rotate(-8 40 40)"><rect x="22" y="18" width="40" height="48" rx="3" fill="#fff" stroke="#c9b48a"/><rect x="28" y="26" width="26" height="3" fill="#c9b48a"/><rect x="28" y="33" width="20" height="3" fill="#e3d3b4"/><rect x="28" y="40" width="24" height="3" fill="#e3d3b4"/><rect x="28" y="52" width="14" height="5" fill="#0d5c4b"/></g>
+            <circle cx="34" cy="114" r="9" fill="#121a2e"/><circle cx="34" cy="114" r="4" fill="#cfd6e6"/>
+            <circle cx="96" cy="114" r="9" fill="#121a2e"/><circle cx="96" cy="114" r="4" fill="#cfd6e6"/>
+            <g transform="rotate(-8 40 40)"><rect x="22" y="18" width="40" height="48" rx="3" fill="#fff" stroke="#c9b48a"/><rect x="28" y="26" width="26" height="3" fill="#c9b48a"/><rect x="28" y="33" width="20" height="3" fill="#e3d3b4"/><rect x="28" y="40" width="24" height="3" fill="#e3d3b4"/><rect x="28" y="52" width="14" height="5" fill="#002796"/></g>
           </svg>
         </span>
       </button>
@@ -174,12 +174,9 @@
   <!-- Recursos humanos -->
   <div class="view" id="view-rrhh" hidden>
     <nav class="views" aria-label="Recursos humanos">
-      <button class="vbtn volver" type="button" data-view="inicio">← Inicio</button>
-      <button class="vbtn" type="button" data-rh-tab="emp" aria-pressed="true">Empleados</button>
-      <button class="vbtn" type="button" data-rh-tab="nom" aria-pressed="false">Nómina quincenal</button>
-      <button class="vbtn" type="button" data-rh-tab="pla" aria-pressed="false">Novedades y planilla</button>
-      <button class="vbtn" type="button" data-rh-tab="doc" aria-pressed="false">Contratos y documentos</button>
-      <button class="vbtn" type="button" data-rh-tab="log" aria-pressed="false">Cambios</button>
+      <button class="vbtn volver" type="button" data-view="inicio" id="rh-volver-inicio">← Inicio</button>
+      <button class="vbtn volver" type="button" data-rh-tab="menu" id="rh-volver-menu" hidden>← Volver al menú</button>
+      <h2 class="rh-titulo" id="rh-titulo">Recursos humanos</h2>
     </nav>
     <div class="notice" id="rh-aviso" hidden></div>
     <div id="rh-cuerpo"><div class="empty"><h3>Cargando…</h3></div></div>
@@ -459,6 +456,40 @@
     </div>
     <input type="file" id="docs-firmado" accept=".pdf,image/*" hidden>
     <div class="err" id="docs-err" hidden></div>
+  </div>
+</dialog>
+
+<!-- Asistente: registrar una novedad con fechas -->
+<dialog id="dlg-asis">
+  <div class="dlg">
+    <div class="dlg-head"><h2>Registrar novedad</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
+    <p class="rh-guia" style="margin:0">Contesta tres preguntas y la app pone los días en la quincena que corresponde. Si la novedad pasa a la otra quincena, los reparte sola.</p>
+    <form class="grid" id="asis-form" novalidate>
+      <div class="field full"><label for="asis-emp"><span class="rh-num">1</span> ¿A quién?</label><select id="asis-emp" required></select></div>
+      <div class="field full"><label for="asis-tipo"><span class="rh-num">2</span> ¿Qué novedad?</label><select id="asis-tipo" required>
+        <option value="vac">Vacaciones</option>
+        <option value="inc|ige">Incapacidad por enfermedad general (EPS)</option>
+        <option value="inc|irl">Incapacidad por accidente o enfermedad laboral (ARL)</option>
+        <option value="lr|lr">Licencia remunerada (la paga la empresa)</option>
+        <option value="lr|lma">Licencia de maternidad o paternidad</option>
+        <option value="lnr">Licencia no remunerada (permiso sin sueldo)</option>
+        <option value="sus">Suspensión disciplinaria</option>
+      </select><span class="hint" id="asis-tipo-ayuda"></span></div>
+      <div class="field"><label for="asis-ini"><span class="rh-num">3</span> Desde (primer día)</label><input type="date" id="asis-ini" required></div>
+      <div class="field"><label for="asis-fin">Hasta (último día)</label><input type="date" id="asis-fin" required></div>
+      <div class="full" id="asis-res"></div>
+      <div class="err full" id="asis-err" hidden></div>
+      <div class="form-actions full"><button class="btn" type="button" data-close>Cancelar</button><button class="btn primary" type="submit" id="asis-go" disabled>Guardar novedad</button></div>
+    </form>
+  </div>
+</dialog>
+
+<!-- Revisión antes de descargar el archivo de Aportes -->
+<dialog id="dlg-rev">
+  <div class="dlg">
+    <div class="dlg-head"><h2 id="rev-titulo">Revisión antes de descargar</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
+    <div id="rev-res"></div>
+    <div class="form-actions"><button class="btn" type="button" data-close>Corregir primero</button><button class="btn primary" type="button" id="rev-go">Descargar archivo</button></div>
   </div>
 </dialog>
 
@@ -821,11 +852,11 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="cripto.js?v=33"></script>
-<script src="github.js?v=33"></script>
-<script src="lector.js?v=33"></script>
-<script src="app.js?v=33"></script>
-<script src="rrhh-docs.js?v=33"></script>
-<script src="rrhh.js?v=33"></script>
+<script src="cripto.js?v=36"></script>
+<script src="github.js?v=36"></script>
+<script src="lector.js?v=36"></script>
+<script src="app.js?v=36"></script>
+<script src="rrhh-docs.js?v=36"></script>
+<script src="rrhh.js?v=36"></script>
 </body>
 </html>
