@@ -177,6 +177,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .avisos .aviso b { font-variant-numeric: tabular-nums; }
 .avisos .aviso.mal b { color: var(--bad); }
 .avisos .aviso.pend b { color: var(--warn); }
+.avisos.mini { display: flex; padding: 0; border: 0; background: transparent; margin: 8px 0; }
+.siigo-chip { justify-self: start; display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--muted); font: inherit; font-size: .82rem; font-weight: 600; cursor: pointer; }
+.siigo-chip:hover { border-color: var(--accent); color: var(--accent); }
+.siigo-chip b { font-variant-numeric: tabular-nums; } .siigo-chip b.mal { color: var(--bad); } .siigo-chip b.pend { color: var(--warn); } .siigo-chip .ok { color: var(--ok); }
 /* Reporte mensual */
 .rm-grid { display: grid; gap: 14px; }
 .rm-grid table { width: 100%; border-collapse: collapse; font-size: .9rem; }

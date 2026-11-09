@@ -1060,6 +1060,7 @@
     $('#i-cli-dato').textContent = C.loaded && C.items.length ? `Por cobrar · ${millones(totalesCartera().total)}` : '';
     renderPendSiigo();
   }
+  let siigoAbierto = false; // la lista de pendientes con Siigo empieza recogida
   // Avisos al entrar (solo administradora): lo que falta por enviar a Siigo o no cuadra
   function renderPendSiigo() {
     const box = $('#i-avisos');
@@ -1073,10 +1074,15 @@
       + fila(sinDS, sinDS === 1 ? 'cuenta de cobro aprobada sin documento soporte' : 'cuentas de cobro aprobadas sin documento soporte', 'pend', 'dsPend')
       + fila(pagosSin, pagosSin === 1 ? 'pago pagado sin subir a Siigo' : 'pagos pagados sin subir a Siigo', 'pend', 'sinSiigo')
       + fila(cajasSin, cajasSin === 1 ? 'caja menor sin subir a Siigo' : 'cajas menores sin subir a Siigo', 'pend', 'cajas');
-    box.innerHTML = html ? `<span class="section-lbl">Pendientes con Siigo</span>${html}` : '<span class="section-lbl">Pendientes con Siigo</span><div class="aviso"><span>✓ Todo está al día con Siigo.</span></div>';
+    // Recogido por defecto: solo un botoncito; se abre cuando la administradora lo toca
+    const total = malos + sinDS + pagosSin + cajasSin;
+    box.classList.toggle('mini', !siigoAbierto);
+    box.innerHTML = `<button class="siigo-chip" type="button" data-siigo-toggle aria-expanded="${siigoAbierto}">Pendientes con Siigo ${total ? `<b class="${malos ? 'mal' : 'pend'}">${total}</b>` : '<span class="ok">✓</span>'} <span aria-hidden="true">${siigoAbierto ? '▴' : '▾'}</span></button>`
+      + (siigoAbierto ? (html || '<div class="aviso"><span>✓ Todo está al día con Siigo.</span></div>') : '');
     box.hidden = false;
   }
   $('#i-avisos').addEventListener('click', (ev) => {
+    if (ev.target.closest('[data-siigo-toggle]')) { siigoAbierto = !siigoAbierto; renderPendSiigo(); return; }
     const b = ev.target.closest('[data-aviso]');
     if (!b) return;
     if (b.dataset.aviso === 'cajas') { setView('cajas'); return; }
@@ -1897,6 +1903,8 @@
   // Línea consolidada debajo del saldo (la ven todos)
   function renderCartResumen() {
     const el = $('#cart-resumen');
+    // A pedido de la administradora, la línea de cartera ya no se muestra en Pagos (la cartera sigue en su propia sección)
+    el.hidden = true; return;
     if (!C.loaded || !C.items.length) { el.hidden = true; return; }
     const t = totalesCartera();
     const saldo = S.banco && typeof S.banco.saldo === 'number' ? S.banco.saldo : null;
