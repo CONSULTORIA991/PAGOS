@@ -114,6 +114,9 @@
       const x = porEmp.get(e.cedula || e.id) || { e, dias: [0, 0], ibc: [0, 0], inc: 0, vac: 0, lr: 0, lnr: 0, sus: 0, he: 0 };
       x.dias[q - 1] = Math.max(0, (Number(f.dias) || 0) - (Number(f.lnr) || 0) - (Number(f.sus) || 0)); x.ibc[q - 1] = c.ibc; x.ibcX = (x.ibcX || 0) + c.ibcX;
       x.inc += Number(f.inc) || 0; x.vac += Number(f.vac) || 0; x.lr += Number(f.lr) || 0; x.lnr += Number(f.lnr) || 0; x.sus += Number(f.sus) || 0; x.he += c.he;
+      // Fechas de las novedades de cada quincena (para la planilla de Aportes)
+      x.fechas = x.fechas || {};
+      for (const k of ['inc', 'vac', 'lr', 'lnr']) if (Number(f[k]) > 0) { (x.fechas[k] = x.fechas[k] || []).push((f.fechas || {})[k] || null); }
       porEmp.set(e.cedula || e.id, x);
     }
     return [...porEmp.values()].map((x) => {
@@ -130,7 +133,7 @@
       const descontado = Math.round(ibc * (P.pensionEmp + P.saludEmp) / 100);
       const ing = e.ingreso && e.ingreso.slice(0, 7) === mes ? e.ingreso : '', ret = e.retiro && e.retiro.slice(0, 7) === mes ? e.retiro : '';
       return { e, diasQ1: x.dias[0], diasQ2: x.dias[1], dias, ibcQ1: x.ibc[0], ibcQ2: x.ibc[1], ibc, pension, salud, arl, ccf, sena, icbf, total, descontado, empresa: total - descontado,
-        inc: x.inc, vac: x.vac, lr: x.lr, lnr: x.lnr, sus: x.sus, he: x.he, ing, ret };
+        inc: x.inc, vac: x.vac, lr: x.lr, lnr: x.lnr, sus: x.sus, he: x.he, ing, ret, fechas: x.fechas || {} };
     });
   }
 
@@ -196,6 +199,14 @@
     const dis = cerrado ? ' disabled' : '';
     const modificados = new Set(d.cambios.filter((c) => c.periodo === claveQ(R.mes, R.q)).map((c) => c.empId + '|' + c.campo));
     const inp = (e, f, k, cls) => `<input class="rh-in ${cls || ''}${modificados.has(e.id + '|' + k) ? ' mod' : ''}" data-rh-in="${k}" data-rh-e="${esc(e.id)}" value="${esc(k === 'nota' ? (f.nota || '') : (Number(f[k]) || 0) ? (cls === 'din' ? Math.round(f[k]).toLocaleString('es-CO') : String(f[k]).replace('.', ',')) : '')}" inputmode="${k === 'nota' ? 'text' : 'decimal'}" placeholder="${k === 'nota' ? '' : '0'}" title="${esc(NOMBRE_CAMPO[k])}"${dis}>`;
+    // Debajo de vacaciones / incapacidad / licencias: las fechas (o un aviso si faltan)
+    const corta = (x) => `${Number(x.slice(8))}/${Number(x.slice(5, 7))}`;
+    const fch = (e, f, k) => {
+      if (!NOV[k] || !(Number(f[k]) > 0)) return '';
+      const r = (f.fechas || {})[k];
+      const txt = r ? (r.ini === r.fin ? corta(r.ini) : `${corta(r.ini)}–${corta(r.fin)}`) : 'Poner fechas';
+      return `<button class="rh-fch${r ? '' : ' falta'}" type="button" data-rh-fechas="${esc(e.id)}|${k}" title="${r ? esc(rangoTxt(r)) + ' · tocar para cambiar' : 'Faltan las fechas para la planilla de Aportes'}"${dis}>${esc(txt)}</button>`;
+    };
     let granTotal = { devengado: 0, deducciones: 0, neto: 0 };
     const bloques = empresas.map((emp) => {
       const es = emps.filter((e) => (e.empresa || EMPRESA_DEF) === emp).sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
@@ -205,7 +216,7 @@
         for (const k of Object.keys(tot)) if (k !== 'nov') tot[k] += c[k] || 0;
         tot.nov += c.vac + c.lr + c.inc;
         return `<tr><td><span class="emp">${esc(e.nombre)}</span><br><span class="sub">${esc(e.cargo || '')} · ${fmt(e.salario)}</span></td>
-          ${DIAS.map(([k]) => `<td class="n">${inp(e, f, k)}</td>`).join('')}<td class="n"><b>${c.diasTrab}</b></td>
+          ${DIAS.map(([k]) => `<td class="n">${inp(e, f, k)}${fch(e, f, k)}</td>`).join('')}<td class="n"><b>${c.diasTrab}</b></td>
           ${HORAS.map(([k]) => `<td class="n">${inp(e, f, k)}</td>`).join('')}
           <td class="n">${inp(e, f, 'otros', 'din')}</td>
           <td class="n">${fmt(c.salario)}</td><td class="n">${fmt(c.vac + c.lr + c.inc)}</td><td class="n">${fmt(c.he)}</td><td class="n">${fmt(c.aux)}</td><td class="n"><b>${fmt(c.devengado)}</b></td>
@@ -269,6 +280,7 @@
       if (c.tipo === 'firmado') return `Subió firmado: <b>${esc(c.titulo || '')}</b> de <b>${esc(emp.get(c.empId) || '')}</b>`;
       if (c.tipo === 'prorroga') return `Registró que <b>${esc(emp.get(c.empId) || '')}</b> continúa: contrato prorrogado del ${esc(fmtDate(c.antes))} al <b>${esc(fmtDate(c.despues))}</b>`;
       if (c.tipo === 'suspension') return `Registró suspensión de <b>${esc(emp.get(c.empId) || '')}</b>: ${esc(c.texto || '')}`;
+      if (c.tipo === 'fechas') return `Quincena del ${esc(nombreQ(c.periodo.slice(0, 7), Number(c.periodo.slice(-1))))} · <b>${esc(emp.get(c.empId) || '')}</b>: ${esc(c.texto || '')}`;
       if (c.tipo === 'pila') return `Importó la planilla de Aportes en Línea (${esc(c.texto || '')})`;
       if (c.tipo === 'periodo') return `${c.accion === 'cerrar' ? 'Cerró' : c.accion === 'importar' ? 'Importó del Excel' : 'Reabrió'} la quincena del ${esc(nombreQ(c.periodo.slice(0, 7), Number(c.periodo.slice(-1))))}`;
       const v = (x) => (DINERO.some(([k]) => k === c.campo) ? fmt(x) : c.campo === 'nota' ? `“${x || ''}”` : String(x || 0));
@@ -300,6 +312,8 @@
         const antes = filaDe(e, R.mes, R.q)[campo];
         if (String(antes ?? '') === String(valor)) return false;
         p.filas[empId] = { ...(p.filas[empId] || {}), [campo]: valor };
+        // Si se borran los días de la novedad, también sus fechas
+        if (NOV[campo] && !valor && p.filas[empId].fechas) { const fx = { ...p.filas[empId].fechas }; delete fx[campo]; p.filas[empId].fechas = fx; }
         anotar(d, { tipo: 'nomina', periodo: clave, empId, campo, antes: antes ?? '', despues: valor });
         previo = Number(antes) || 0;
       });
@@ -308,7 +322,88 @@
     render();
     // Primera vez que se marcan días de suspensión en esta quincena: pedir datos y hacer el memorando
     if (campo === 'sus' && valor > 0 && previo === 0) abrirSuspension(empId, valor, clave);
+    // Vacaciones, incapacidad o licencia: pedir desde y hasta cuándo (Aportes en Línea lo exige)
+    if (NOV[campo] && valor > 0 && previo !== null) abrirFechas(empId, campo, clave);
   }
+
+  // ---------- fechas de vacaciones, incapacidades y licencias ----------
+  const NOV = { inc: 'Incapacidad', vac: 'Vacaciones', lr: 'Licencia remunerada', lnr: 'Licencia no remunerada' };
+  const CLASES = { inc: [['ige', 'Enfermedad general (EPS)'], ['irl', 'Accidente o enfermedad laboral (ARL)']], lr: [['lr', 'Licencia remunerada (la paga la empresa)'], ['lma', 'Licencia de maternidad o paternidad (EPS)']] };
+  const finQ = (clave) => `${clave.slice(0, 7)}-${clave.endsWith('Q1') ? '15' : pad2(diasMes(clave.slice(0, 7)))}`;
+  const diasRango = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 864e5) + 1; // incluye ambos días
+  const rangoTxt = (r) => (r.ini === r.fin ? `el ${fmtDate(r.ini)}` : `del ${fmtDate(r.ini)} al ${fmtDate(r.fin)}`);
+  let novFch = null; // { empId, k, clave, dias, finTocado }
+  function abrirFechas(empId, k, clave) {
+    const e = R.datos.empleados.find((x) => x.id === empId); if (!e || !NOV[k]) return;
+    const p = R.datos.periodos[clave] || {};
+    if (p.estado === 'cerrado') return toast('Esta quincena ya fue cerrada.');
+    const f = filaDe(e, clave.slice(0, 7), Number(clave.slice(-1)));
+    const dias = Number(f[k]) || 0, prev = (f.fechas || {})[k] || {};
+    novFch = { empId, k, clave, dias, finTocado: !!prev.fin };
+    $('#nov-titulo').textContent = `Fechas · ${NOV[k]}`;
+    $('#nov-intro').innerHTML = `<b>${esc(e.nombre)}</b> tiene <b>${dias} ${dias === 1 ? 'día' : 'días'}</b> de ${esc(NOV[k].toLowerCase())} en la quincena del ${esc(nombreQ(clave.slice(0, 7), Number(clave.slice(-1))))}. La planilla de Aportes en Línea pide desde y hasta qué fecha.`;
+    const cl = CLASES[k];
+    $('#nov-clase-wrap').hidden = !cl;
+    if (cl) {
+      $('#nov-clase-lbl').textContent = k === 'inc' ? 'Origen de la incapacidad' : 'Tipo de licencia';
+      $('#nov-clase').innerHTML = cl.map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join('');
+      $('#nov-clase').value = prev.clase || cl[0][0];
+    }
+    $('#nov-ini').value = prev.ini || ''; $('#nov-fin').value = prev.fin || '';
+    mostrarError('#nov-err', ''); pintarFechas(); $('#dlg-nov').showModal();
+    if (!prev.ini) $('#nov-ini').focus();
+  }
+  function pintarFechas() {
+    if (!novFch) return;
+    const { k, clave, dias } = novFch, ini = $('#nov-ini').value, fin = $('#nov-fin').value;
+    const info = [];
+    if (ini && fin && fin >= ini) {
+      const total = diasRango(ini, fin);
+      const a = ini < inicioQ(clave) ? inicioQ(clave) : ini, b = fin > finQ(clave) ? finQ(clave) : fin;
+      const enQ = b >= a ? diasRango(a, b) : 0;
+      info.push(`${total === 1 ? 'Es 1 día' : `Son ${total} días`} calendario${total !== enQ ? `, ${enQ} dentro de esta quincena` : ''}.`);
+      if (k === 'vac') { if (enQ > dias) info.push('Las vacaciones se cuentan en días hábiles, así que el rango puede tener más días calendario que los marcados: está bien.'); }
+      else if (enQ !== dias) info.push(`<b>Ojo:</b> marcaste ${dias} ${dias === 1 ? 'día' : 'días'} en la nómina y el rango tiene ${enQ} dentro de la quincena. Revisa uno de los dos.`);
+      if (total > enQ) info.push('Si sigue en la otra quincena, márcale allá los días que correspondan y escribe el mismo rango.');
+    } else info.push('Escribe el primer y el último día. Si es un solo día, pon la misma fecha en las dos casillas.');
+    $('#nov-info').innerHTML = info.join(' ');
+  }
+  $('#dlg-nov').addEventListener('input', (ev) => {
+    if (!novFch) return;
+    if (ev.target.id === 'nov-fin') novFch.finTocado = !!ev.target.value;
+    // Al escribir la fecha inicial se propone la final con los días marcados (si no la han escrito)
+    if (ev.target.id === 'nov-ini' && ev.target.value && !novFch.finTocado && novFch.k !== 'vac') $('#nov-fin').value = Docs().sumarDias(ev.target.value, Math.max(1, novFch.dias) - 1);
+    if (ev.target.id === 'nov-ini' && ev.target.value && !novFch.finTocado && novFch.k === 'vac' && novFch.dias === 1) $('#nov-fin').value = ev.target.value;
+    pintarFechas();
+  });
+  $('#dlg-nov').addEventListener('change', pintarFechas);
+  $('#dlg-nov').addEventListener('close', () => { if (novFch && !novFch.listo) toast('Quedaron los días sin fechas. Puedes ponerlas luego tocando "Poner fechas" debajo de la casilla.'); novFch = null; });
+  $('#nov-form').addEventListener('submit', async (ev) => {
+    ev.preventDefault(); if (!novFch) return;
+    const s = novFch, ini = $('#nov-ini').value, fin = $('#nov-fin').value;
+    if (!ini || !fin) return mostrarError('#nov-err', 'Escribe las dos fechas.');
+    if (fin < ini) return mostrarError('#nov-err', 'La fecha final no puede ser antes de la inicial.');
+    if (fin < inicioQ(s.clave) || ini > finQ(s.clave)) return mostrarError('#nov-err', 'El rango no cae dentro de esta quincena. Revisa las fechas.');
+    if (diasRango(ini, fin) > 180) return mostrarError('#nov-err', 'El rango tiene más de 180 días. Revisa las fechas.');
+    const clase = CLASES[s.k] ? $('#nov-clase').value : '';
+    const b = $('#nov-go'); b.disabled = true;
+    try {
+      let msg = '';
+      await mutar((d) => {
+        const p = d.periodos[s.clave] = d.periodos[s.clave] || { estado: 'borrador', filas: {} };
+        if (p.estado === 'cerrado') { msg = 'Esta quincena ya fue cerrada.'; return false; }
+        p.filas = p.filas || {};
+        const fila = p.filas[s.empId] = { ...(p.filas[s.empId] || {}) };
+        const antes = (fila.fechas || {})[s.k];
+        fila.fechas = { ...(fila.fechas || {}), [s.k]: clase ? { ini, fin, clase } : { ini, fin } };
+        const nombreClase = clase ? ` (${(CLASES[s.k].find(([v]) => v === clase) || [, ''])[1]})` : '';
+        anotar(d, { tipo: 'fechas', periodo: s.clave, empId: s.empId, texto: `${NOV[s.k]}${nombreClase} ${rangoTxt({ ini, fin })}${antes ? ` (antes ${rangoTxt(antes)})` : ''}` });
+      });
+      if (msg) { mostrarError('#nov-err', msg); b.disabled = false; return; }
+      s.listo = true; $('#dlg-nov').close(); toast('Fechas guardadas.'); render();
+    } catch (err) { mostrarError('#nov-err', msgGitHub(err)); }
+    b.disabled = false;
+  });
   async function cerrarQuincena(cerrar) {
     const clave = claveQ(R.mes, R.q);
     try {
@@ -1258,18 +1353,40 @@
         const afp = oficial('afp', e.afp), eps = oficial('eps', e.eps), ccf = oficial('ccf', e.ccf || cfg.ccf), arl = oficial('arl', e.arl || arlEmp);
         const falta = [!n.ap1 && 'primer apellido', !n.n1 && 'primer nombre', !enLista('afp', afp) && 'fondo de pensiones', !enLista('eps', eps) && 'EPS', !enLista('ccf', ccf) && 'caja', !enLista('arl', arl) && 'ARL'].filter(Boolean);
         if (falta.length) avisos.push(`${e.nombre}: falta o no coincide con la lista de Aportes: ${falta.join(', ')}.`);
-        const susp = (R.datos.suspensiones || []).filter((s) => s.empId === e.id && s.inicio <= `${mes}-31` && s.fin >= `${mes}-01`);
-        const slnIni = susp.length ? (susp[0].inicio < `${mes}-01` ? `${mes}-01` : susp[0].inicio) : '';
-        const slnFin = susp.length ? (susp[susp.length - 1].fin > `${mes}-${pad2(diasMes(mes))}` ? `${mes}-${pad2(diasMes(mes))}` : susp[susp.length - 1].fin) : '';
-        if ((x.lnr || x.inc || x.vac || x.lr) && !susp.length) avisos.push(`${e.nombre}: tiene ${[x.lnr && 'licencia no remunerada', x.inc && 'incapacidad', x.vac && 'vacaciones', x.lr && 'licencia remunerada'].filter(Boolean).join(', ')}; escribe en el archivo las fechas de inicio y fin.`);
+        // Fechas de novedades: se recortan al mes; si hay varios períodos del mismo tipo se toma del primero al último día
+        const mesIni = `${mes}-01`, mesFin = `${mes}-${pad2(diasMes(mes))}`;
+        const sinFecha = [];
+        const rango = (lista, nombre) => {
+          const rs = (lista || []).filter((r) => r && r.ini && r.fin).map((r) => ({ ini: r.ini < mesIni ? mesIni : r.ini, fin: r.fin > mesFin ? mesFin : r.fin, clase: r.clase || '' })).filter((r) => r.fin >= r.ini).sort((a, b) => a.ini.localeCompare(b.ini));
+          if ((lista || []).some((r) => !r)) sinFecha.push(nombre);
+          if (!rs.length) return null;
+          const out = { ini: rs[0].ini, fin: rs.reduce((m, r) => (r.fin > m ? r.fin : m), rs[0].fin), clase: rs[0].clase };
+          if (rs.some((r, j) => j && r.ini > Docs().sumarDias(rs[j - 1].fin, 1))) avisos.push(`${e.nombre}: tiene dos períodos de ${nombre} separados en el mes. Aportes en Línea pide un renglón por período; el archivo lleva del ${fmtDate(out.ini)} al ${fmtDate(out.fin)}. Revísalo.`);
+          out.dias = diasRango(out.ini, out.fin);
+          return out;
+        };
+        const susp = (R.datos.suspensiones || []).filter((s) => s.empId === e.id && s.inicio <= mesFin && s.fin >= mesIni).map((s) => ({ ini: s.inicio, fin: s.fin }));
+        const sln = (x.lnr || x.sus) ? rango([...susp, ...(x.fechas.lnr || [])], 'licencia no remunerada o suspensión') : null;
+        if (x.sus && !susp.length) sinFecha.push('suspensión');
+        const inc = x.inc ? rango(x.fechas.inc, 'incapacidad') : null;
+        const vac = x.vac ? rango(x.fechas.vac, 'vacaciones') : null;
+        const lic = x.lr ? rango(x.fechas.lr, 'licencia remunerada') : null;
+        const ige = inc && inc.clase !== 'irl' ? inc : null, irl = inc && inc.clase === 'irl' ? inc : null;
+        const lma = lic && lic.clase === 'lma' ? lic : null, lr = lic && lic.clase !== 'lma' ? lic : null;
+        const vlr = vac || lr; // la planilla tiene una sola casilla para vacaciones o licencia remunerada
+        if (vac && lr) avisos.push(`${e.nombre}: tiene vacaciones y licencia remunerada en el mismo mes; Aportes pide un renglón aparte para la licencia (el archivo solo lleva las vacaciones).`);
+        if (sinFecha.length) avisos.push(`${e.nombre}: faltan las fechas de ${[...new Set(sinFecha)].join(', ')}. Ponlas en la Nómina quincenal (botón "Poner fechas" debajo de los días) y vuelve a descargar.`);
         const v = {
           A: i + 1, B: e.tipoId || 'CC', C: String(e.cedula), D: n.ap1, E: n.ap2, F: n.n1, G: n.n2, H: sinTilde(e.depto || 'ATLANTICO').replace(/ /g, '_'), I: sinTilde(e.ciudad || 'BARRANQUILLA'),
           // Horas laboradas: obligatorias para Aportes (8 horas por día cotizado)
           J: '1. DEPENDIENTE', K: 'NINGUNO', L: x.dias * 8, M: 'NO', N: 'NO',
           P: x.ing ? 'Todos los sistemas (ARL, AFP, CCF, EPS)' : 'NO', Q: x.ing || '', R: x.ret ? 'Todos los sistemas (ARL, AFP, CCF, EPS)' : 'NO', S: x.ret || '',
           T: 'NO', U: 'NO', V: 'NO', W: 'NO', X: 'NO', Z: 'NO',
-          AA: x.lnr + x.sus ? 'LICENCIA NO REMUNERADA' : 'NO', AB: slnIni, AC: slnFin,
-          AD: x.inc ? 'SI' : 'NO', AG: 'NO', AJ: x.vac ? 'VACACIONES' : x.lr ? 'LICENCIA REMUNERADA' : 'NO', AM: 'NO', AN: 'NO', AT: 'NO',
+          AA: x.lnr + x.sus ? 'LICENCIA NO REMUNERADA' : 'NO', AB: sln ? sln.ini : '', AC: sln ? sln.fin : '',
+          AD: x.inc && !irl ? 'INCAPACIDAD GENERAL' : 'NO', AE: ige ? ige.ini : '', AF: ige ? ige.fin : '',
+          AG: lma ? 'LICENCIA DE MATERNIDAD (LMA)' : 'NO', AH: lma ? lma.ini : '', AI: lma ? lma.fin : '',
+          AJ: vac ? 'VACACIONES' : lr ? 'LICENCIA REMUNERADA' : x.vac ? 'VACACIONES' : x.lr && !lma ? 'LICENCIA REMUNERADA' : 'NO', AK: vlr ? vlr.ini : '', AL: vlr ? vlr.fin : '',
+          AM: 'NO', AN: 'NO', AQ: irl ? irl.dias : '', AR: irl ? irl.ini : '', AS: irl ? irl.fin : '', AT: 'NO',
           AU: sal, AV: 'NO', AW: 'NO',
           AX: afp || 'NINGUNA', AY: x.dias, AZ: x.ibc, BA: P.pension / 100, BB: x.pension, BC: 'Sin Riesgo', BF: fsp || '', BI: x.pension + fsp, BJ: 'NINGUNA',
           BK: eps || 'NINGUNA', BL: x.dias, BM: x.ibc, BN: (exon ? P.saludEmp : P.saludEmp + P.saludEmpresa) / 100, BO: x.salud, BP: 0, BU: 'NINGUNA',
@@ -1283,14 +1400,15 @@
       // Aportes en Línea exige el mismo nombre de la plantilla original
       bajar(blob, NOMBRE_PLANTILLA);
     }
-    avisos.unshift(`Se descargó ${NOMBRE_PLANTILLA} de ${empresas[0]}. Si en Descargas quedó con "(1)" o "(2)" en el nombre, bórrale eso: Aportes en Línea solo lo acepta con el nombre exacto.`);
+    avisos.unshift(`Se descargó ${NOMBRE_PLANTILLA} de ${empresas[0].replace(/\.$/, '')}. Si en Descargas quedó con "(1)" o "(2)" en el nombre, bórrale eso: Aportes en Línea solo lo acepta con el nombre exacto.`);
     setTimeout(() => mostrarInfo(avisos.length > 1 ? 'Revisa antes de subir a Aportes en Línea' : 'Archivo listo para Aportes en Línea', avisos), 300);
   }
 
   // ---------- eventos ----------
   $('#view-rrhh').addEventListener('click', (ev) => {
-    const t = ev.target.closest('[data-rh-tab], [data-rh], [data-rh-ver], [data-rh-q], [data-rh-empresa], [data-rh-docs], [data-rh-retiro], [data-rh-noprorroga], [data-rh-continua], [data-doc-bajar], [data-rh-emp]');
+    const t = ev.target.closest('[data-rh-tab], [data-rh], [data-rh-ver], [data-rh-q], [data-rh-empresa], [data-rh-docs], [data-rh-retiro], [data-rh-noprorroga], [data-rh-continua], [data-doc-bajar], [data-rh-fechas], [data-rh-emp]');
     if (!t) return;
+    if (t.dataset.rhFechas) { const [id, k] = t.dataset.rhFechas.split('|'); abrirFechas(id, k, claveQ(R.mes, R.q)); return; }
     if (t.dataset.rhTab) { R.tab = t.dataset.rhTab; render(); return; }
     if ('rhEmpresa' in t.dataset) { R.empresa = t.dataset.rhEmpresa; render(); return; }
     if (t.dataset.rhDocs) { abrirDocs(t.dataset.rhDocs); return; }

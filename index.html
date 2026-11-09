@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="estilos.css?v=32">
+<link rel="stylesheet" href="estilos.css?v=33">
 </head>
 <body>
 
@@ -462,6 +462,22 @@
   </div>
 </dialog>
 
+<!-- Fechas de vacaciones, incapacidad o licencia (para la planilla de Aportes) -->
+<dialog id="dlg-nov">
+  <div class="dlg">
+    <div class="dlg-head"><h2 id="nov-titulo">Fechas</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
+    <p id="nov-intro" style="margin:0"></p>
+    <form class="grid" id="nov-form" novalidate>
+      <div class="field full" id="nov-clase-wrap"><label for="nov-clase" id="nov-clase-lbl">Tipo</label><select id="nov-clase"></select></div>
+      <div class="field"><label for="nov-ini">Desde (primer día)</label><input type="date" id="nov-ini" required></div>
+      <div class="field"><label for="nov-fin">Hasta (último día)</label><input type="date" id="nov-fin" required></div>
+      <p class="hint full" id="nov-info" style="margin:0"></p>
+      <div class="err full" id="nov-err" hidden></div>
+      <div class="form-actions full"><button class="btn" type="button" data-close>Ahora no</button><button class="btn primary" type="submit" id="nov-go">Guardar fechas</button></div>
+    </form>
+  </div>
+</dialog>
+
 <!-- Suspensión -->
 <dialog id="dlg-susp">
   <div class="dlg">
@@ -805,11 +821,11 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="cripto.js?v=32"></script>
-<script src="github.js?v=32"></script>
-<script src="lector.js?v=32"></script>
-<script src="app.js?v=32"></script>
-<script src="rrhh-docs.js?v=32"></script>
-<script src="rrhh.js?v=32"></script>
+<script src="cripto.js?v=33"></script>
+<script src="github.js?v=33"></script>
+<script src="lector.js?v=33"></script>
+<script src="app.js?v=33"></script>
+<script src="rrhh-docs.js?v=33"></script>
+<script src="rrhh.js?v=33"></script>
 </body>
 </html>

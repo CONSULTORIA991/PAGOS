@@ -367,6 +367,9 @@ details.repo .field { margin-top: 8px; }
 .rh-tabla input.rh-in.nota { width: 180px; text-align: left; }
 .rh-tabla input.rh-in.mod { border-color: var(--warn); background: var(--warn-soft); }
 .rh-tabla input.rh-in:disabled { opacity: .7; }
+.rh-tabla .rh-fch { display: block; margin: 3px 0 0 auto; padding: 1px 6px; font: inherit; font-size: 11px; line-height: 1.5; white-space: nowrap; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--muted, inherit); cursor: pointer; }
+.rh-tabla .rh-fch.falta { border-color: var(--warn); background: var(--warn-soft); color: inherit; font-weight: 600; }
+.rh-tabla .rh-fch:disabled { cursor: default; opacity: .7; }
 .rh-tabla .emp { font-weight: 600; }
 .rh-tabla .sub { color: var(--muted); font-size: .76rem; }
 .rh-empresa { font-family: var(--font-display); font-size: 1.1rem; margin: 18px 0 8px; }
