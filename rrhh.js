@@ -1154,6 +1154,81 @@
     $('#dlg-rh-imp').showModal();
   }
 
+  // Aportes en Línea revisa la "firma" de su plantilla: por eso no se reescribe el Excel, sino que se abre el
+  // archivo original (es un .zip) y solo se cambian las celdas de la hoja Liquidaciones y las cadenas de texto.
+  // Todo lo demás (propiedades, datos internos, estilos, validaciones, hojas ocultas) queda idéntico.
+  const URL_JSZIP = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+  let cargaZip = null;
+  function cargarJSZip() {
+    if (window.JSZip) return Promise.resolve();
+    if (!cargaZip) cargaZip = new Promise((ok, mal) => { const s = document.createElement('script'); s.src = URL_JSZIP; s.onload = () => ok(); s.onerror = () => { cargaZip = null; mal(new Error('No cargó el lector de la plantilla. Revisa el internet y vuelve a intentar.')); }; document.head.appendChild(s); });
+    return cargaZip;
+  }
+  const xmlEsc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const xmlDes = (s) => String(s).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+  const colNum = (l) => [...l].reduce((n, c) => n * 26 + c.charCodeAt(0) - 64, 0);
+  async function llenarPlantilla(buf, cabecera, renglones) {
+    const zip = await JSZip.loadAsync(buf.slice(0));
+    const RUTA_SS = 'xl/sharedStrings.xml';
+    // La hoja "Liquidaciones" según workbook.xml y sus relaciones
+    const wbx = await zip.file('xl/workbook.xml').async('string');
+    const rels = await zip.file('xl/_rels/workbook.xml.rels').async('string');
+    const rid = (/<sheet [^>]*name="Liquidaciones"[^>]*r:id="([^"]+)"/.exec(wbx) || [])[1];
+    const destino = (new RegExp(`<Relationship [^>]*Id="${rid}"[^>]*Target="([^"]+)"`).exec(rels) || new RegExp(`<Relationship [^>]*Target="([^"]+)"[^>]*Id="${rid}"`).exec(rels) || [])[1];
+    const RUTA_HOJA = 'xl/' + String(destino || 'worksheets/sheet2.xml').replace(/^\/?xl\//, '');
+    let ss = await zip.file(RUTA_SS).async('string');
+    let hoja = await zip.file(RUTA_HOJA).async('string');
+    // Cadenas existentes
+    const textos = [...ss.matchAll(/<si>([\s\S]*?)<\/si>/g)].map((m) => xmlDes([...m[1].matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map((t) => t[1]).join('')));
+    const indice = new Map(); textos.forEach((t, i) => { if (!indice.has(t)) indice.set(t, i); });
+    const nuevas = []; let usos = 0;
+    const idx = (t) => { usos++; if (indice.has(t)) return indice.get(t); const i = textos.length + nuevas.length; nuevas.push(t); indice.set(t, i); return i; };
+    // Estilo de cada columna tomado del renglón 19 de la plantilla
+    const r19 = (/<row r="19"[\s\S]*?<\/row>/.exec(hoja) || [''])[0];
+    const estilo = {}; for (const m of r19.matchAll(/<c r="([A-Z]+)19" s="(\d+)"/g)) estilo[m[1]] = m[2];
+    const celda = (ref, col, v) => {
+      const s = estilo[col] || (typeof v === 'number' ? '7' : '16');
+      if (v === '' || v === null || v === undefined) return `<c r="${ref}" s="${s}"/>`;
+      if (typeof v === 'number') return `<c r="${ref}" s="${s}"><v>${v}</v></c>`;
+      return `<c r="${ref}" s="${s}" t="s"><v>${idx(String(v))}</v></c>`;
+    };
+    // Fila 10: datos de la liquidación
+    hoja = hoja.replace(/<row r="10"[\s\S]*?<\/row>/, (fila) => {
+      for (const [col, v] of Object.entries(cabecera)) {
+        const ref = `${col}10`, re = new RegExp(`<c r="${ref}"( s="(\\d+)")?[^>]*?(\\/>|>[\\s\\S]*?<\\/c>)`);
+        const m = re.exec(fila), s = m && m[2] ? m[2] : '16';
+        const nueva = `<c r="${ref}" s="${s}" t="s"><v>${idx(String(v))}</v></c>`;
+        if (m) fila = fila.replace(re, nueva);
+        else {
+          // insertar en orden de columna
+          const celdas = [...fila.matchAll(/<c r="([A-Z]+)10"/g)];
+          const sig = celdas.find((c) => colNum(c[1]) > colNum(col));
+          fila = sig ? fila.replace(`<c r="${sig[1]}10"`, `${nueva}<c r="${sig[1]}10"`) : fila.replace('</row>', `${nueva}</row>`);
+        }
+      }
+      return fila;
+    });
+    // Renglones de cotizantes desde la fila 19 (reemplaza los de ejemplo de la plantilla)
+    const filasXml = renglones.map((v, i) => {
+      const f = 19 + i;
+      const cols = Object.keys(v).sort((a, b) => colNum(a) - colNum(b));
+      return `<row r="${f}" spans="1:98" x14ac:dyDescent="0.25">${cols.map((c) => celda(`${c}${f}`, c, v[c])).join('')}</row>`;
+    }).join('');
+    const ini = hoja.indexOf('<row r="19"'), fin = hoja.indexOf('</sheetData>');
+    if (ini < 0 || fin < 0) throw new Error('La plantilla de Aportes no tiene el formato esperado.');
+    hoja = hoja.slice(0, ini) + filasXml + hoja.slice(fin);
+    hoja = hoja.replace(/<dimension ref="[^"]*"\/>/, `<dimension ref="A1:CT${Math.max(38, 18 + renglones.length)}"/>`);
+    // Cadenas nuevas al final de sharedStrings
+    if (nuevas.length) {
+      ss = ss.replace('</sst>', nuevas.map((t) => `<si><t xml:space="preserve">${xmlEsc(t)}</t></si>`).join('') + '</sst>');
+      ss = ss.replace(/uniqueCount="\d+"/, `uniqueCount="${textos.length + nuevas.length}"`).replace(/ count="(\d+)"/, (m, n) => ` count="${Number(n) + usos}"`);
+    }
+    zip.file(RUTA_SS, ss, { createFolders: false }); zip.file(RUTA_HOJA, hoja, { createFolders: false });
+    // JSZip no debe agregar entradas de carpeta que la plantilla original no tiene
+    for (const n of Object.keys(zip.files)) if (zip.files[n].dir) zip.remove(n);
+    return zip.generateAsync({ type: 'blob', compression: 'DEFLATE', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  }
+
   // Archivo para subir a Aportes en Línea: la plantilla oficial (hoja "Liquidaciones") llena, un archivo por empresa
   let plantillaBuf = null;
   async function archivoAportes() {
@@ -1166,18 +1241,14 @@
     const [y, m] = mes.split('-').map(Number), mesSalud = `${m === 12 ? y + 1 : y}-${pad2(m === 12 ? 1 : m + 1)}`;
     const avisos = [];
     const empresas = [...new Set(filas.map((x) => x.e.empresa || EMPRESA_DEF))];
+    try { await cargarJSZip(); } catch (err) { return toast(err.message); }
     for (const emp of empresas) {
       const cfg = (P.pila || {})[emp] || {};
       const fs = filas.filter((x) => (x.e.empresa || EMPRESA_DEF) === emp).sort((a, b) => partesDe(a.e).ap1.localeCompare(partesDe(b.e).ap1));
-      const wb = XLSX.read(plantillaBuf.slice(0), { type: 'array', cellStyles: true });
-      const ws = wb.Sheets['Liquidaciones'];
-      const poner = (dir, v) => { const prev = ws[dir] || {}; if (v === '' || v === null || v === undefined) { delete ws[dir]; return; } ws[dir] = { t: typeof v === 'number' ? 'n' : 's', v, ...(prev.z ? { z: prev.z } : {}), ...(prev.s ? { s: prev.s } : {}) }; };
       const arlEmp = cfg.arl || fs.map((x) => x.e.arl).find(Boolean) || '';
-      poner('A10', mes); poner('C10', mesSalud); poner('D10', 'E - Planilla Empleados Empresas'); poner('H10', cfg.sucursal || 'UNICA'); poner('I10', 'EMPLEADOR'); poner('K10', oficial('arl', arlEmp) || 'NINGUNA');
+      const cabecera = { A: mes, C: mesSalud, D: 'E - Planilla Empleados Empresas', H: cfg.sucursal || 'UNICA', I: 'EMPLEADOR', K: oficial('arl', arlEmp) || 'NINGUNA' };
       if (!cfg.arl) avisos.push(`${emp}: no hay planilla de Aportes importada; revisa en el archivo la sucursal y la ARL de la empresa (fila 10).`);
-      // Borra los renglones de ejemplo de la plantilla
-      for (let r = 19; r <= 38; r++) for (let c = 0; c < 98; c++) delete ws[XLSX.utils.encode_cell({ r: r - 1, c })];
-      const C = (letra, fila) => `${letra}${fila}`;
+      const renglones = [];
       fs.forEach((x, i) => {
         const e = x.e, f = 19 + i, n = partesDe(e), sal = Number(e.salario) || 0, r = e.riesgo || 1;
         const exon = P.exonerado && sal < 10 * P.smmlv;
@@ -1203,14 +1274,10 @@
           CD: x.dias, CE: ccf || 'NINGUNA', CF: x.ibc, CG: P.ccf / 100, CH: x.ccf,
           CI: exon ? 0 : x.ibc, CJ: exon ? 0 : P.sena / 100, CK: x.sena, CL: exon ? 0 : P.icbf / 100, CM: x.icbf, CN: 0, CO: 0, CP: 0, CQ: 0, CR: exon ? 'SI' : 'NO', CS: 'CC',
         };
-        for (const [letra, val] of Object.entries(v)) poner(C(letra, f), val);
-        // formatos como en la plantilla
-        for (const l of ['AU', 'AZ', 'BB', 'BF', 'BI', 'BM', 'BO', 'BP', 'BX', 'CC', 'CF', 'CH', 'CI', 'CK', 'CM']) if (ws[C(l, f)]) ws[C(l, f)].z = '"$"#,###';
-        for (const l of ['BA', 'BN', 'BY', 'CG', 'CJ', 'CL', 'CN', 'CP']) if (ws[C(l, f)]) ws[C(l, f)].z = '0.00%';
+        renglones.push(v);
       });
-      const ultima = 18 + Math.max(fs.length, 1);
-      ws['!ref'] = `A1:CT${Math.max(ultima, 18)}`;
-      XLSX.writeFile(wb, `Aportes en Linea ${emp.replace(/ S\.A\.S\.?$/i, '')} ${mes}.xlsx`, { bookType: 'xlsx' });
+      const blob = await llenarPlantilla(plantillaBuf, cabecera, renglones);
+      bajar(blob, `Aportes en Linea ${emp.replace(/ S\.A\.S\.?$/i, '')} ${mes}.xlsx`);
     }
     toast(`Listo: ${empresas.length === 1 ? 'se descargó el archivo' : `se descargaron ${empresas.length} archivos (uno por empresa)`} para Aportes en Línea.`);
     if (avisos.length) setTimeout(() => mostrarInfo('Revisa antes de subir a Aportes en Línea', avisos), 300);
