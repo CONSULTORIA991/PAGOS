@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="estilos.css?v=29">
+<link rel="stylesheet" href="estilos.css?v=30">
 </head>
 <body>
 
@@ -403,12 +403,20 @@
       <div class="field full"><label for="emp-funciones">Funciones del cargo (una por línea, van en el Anexo 1)</label><textarea id="emp-funciones" rows="3"></textarea></div>
       <div class="field"><label for="emp-cc">Centro de costo</label><input id="emp-cc" list="cc-lista" autocomplete="off"></div>
       <div class="field full"><span class="section-lbl">Afiliaciones</span></div>
-      <div class="field"><label for="emp-eps">EPS</label><input id="emp-eps" autocomplete="off"></div>
-      <div class="field"><label for="emp-afp">Fondo de pensiones</label><input id="emp-afp" autocomplete="off"></div>
-      <div class="field"><label for="emp-arl">ARL</label><input id="emp-arl" autocomplete="off"></div>
+      <div class="field"><label for="emp-eps">EPS</label><input id="emp-eps" list="pila-eps" autocomplete="off"></div>
+      <div class="field"><label for="emp-afp">Fondo de pensiones</label><input id="emp-afp" list="pila-afp" autocomplete="off"></div>
+      <div class="field"><label for="emp-arl">ARL</label><input id="emp-arl" list="pila-arl" autocomplete="off"></div>
       <div class="field"><label for="emp-riesgo">Riesgo ARL</label><select id="emp-riesgo"><option value="1">I · Administrativo</option><option value="2">II</option><option value="3">III</option><option value="4">IV</option><option value="5">V · Obra</option></select></div>
-      <div class="field"><label for="emp-ccf">Caja de compensación</label><input id="emp-ccf" autocomplete="off"></div>
+      <div class="field"><label for="emp-ccf">Caja de compensación</label><input id="emp-ccf" list="pila-ccf" autocomplete="off"></div>
       <div class="field"><label for="emp-cesantias">Fondo de cesantías</label><input id="emp-cesantias" autocomplete="off"></div>
+      <div class="field full"><span class="section-lbl">Para la planilla (Aportes en Línea)</span></div>
+      <div class="field"><label for="emp-ap1">Primer apellido</label><input id="emp-ap1" autocomplete="off"></div>
+      <div class="field"><label for="emp-ap2">Segundo apellido</label><input id="emp-ap2" autocomplete="off"></div>
+      <div class="field"><label for="emp-n1">Primer nombre</label><input id="emp-n1" autocomplete="off"></div>
+      <div class="field"><label for="emp-n2">Segundo nombre</label><input id="emp-n2" autocomplete="off"></div>
+      <div class="field"><label for="emp-ciudad">Ciudad</label><input id="emp-ciudad" autocomplete="off" placeholder="BARRANQUILLA"></div>
+      <div class="field"><label for="emp-centro">Centro de trabajo</label><input id="emp-centro" autocomplete="off" placeholder="RIESGO V"></div>
+      <datalist id="pila-eps"></datalist><datalist id="pila-afp"></datalist><datalist id="pila-arl"></datalist><datalist id="pila-ccf"></datalist>
       <div class="field full" id="emp-gen-wrap"><label class="check"><input type="checkbox" id="emp-gen" checked> Generar el contrato en Word al guardar</label></div>
       <div class="field full"><span class="section-lbl">Retiro</span></div>
       <div class="field"><label for="emp-retiro">Fecha de retiro</label><input type="date" id="emp-retiro"><span class="hint">Déjala vacía si sigue activo.</span></div>
@@ -417,6 +425,18 @@
       <div class="err full" id="emp-err" hidden></div>
       <div class="form-actions full"><button class="btn" type="button" id="emp-docs" hidden>Documentos</button><button class="btn" type="button" data-close>Cancelar</button><button class="btn primary" type="submit" id="emp-guardar">Guardar</button></div>
     </form>
+  </div>
+</dialog>
+
+<!-- Importaciones de Recursos humanos (planilla pagada de Aportes en Línea / quincenas del Excel de nómina) -->
+<dialog id="dlg-rh-imp">
+  <div class="dlg">
+    <div class="dlg-head"><h2 id="rhi-titulo">Importar</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
+    <p id="rhi-intro" style="margin:0;color:var(--muted)"></p>
+    <div class="field"><input type="file" id="rhi-file" accept=".xlsx,.xls"></div>
+    <div id="rhi-res"></div>
+    <div class="err" id="rhi-err" hidden></div>
+    <div class="form-actions"><button class="btn" type="button" data-close>Cancelar</button><button class="btn primary" type="button" id="rhi-go" disabled>Importar</button></div>
   </div>
 </dialog>
 
@@ -785,11 +805,11 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="cripto.js?v=29"></script>
-<script src="github.js?v=29"></script>
-<script src="lector.js?v=29"></script>
-<script src="app.js?v=29"></script>
-<script src="rrhh-docs.js?v=29"></script>
-<script src="rrhh.js?v=29"></script>
+<script src="cripto.js?v=30"></script>
+<script src="github.js?v=30"></script>
+<script src="lector.js?v=30"></script>
+<script src="app.js?v=30"></script>
+<script src="rrhh-docs.js?v=30"></script>
+<script src="rrhh.js?v=30"></script>
 </body>
 </html>

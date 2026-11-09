@@ -103,7 +103,7 @@
     // Como en el Excel: el total se redondea una sola vez (no la suma de valores ya redondeados)
     const deducciones = Math.round(ibc * (P.saludEmp + P.pensionEmp) / 100 + (sal >= 4 * P.smmlv ? ibc * 0.01 : 0)) + n('prestamos') + n('otrasDed');
     return { diasTrab, salario: Math.round(salario), vac: Math.round(vac), lr: Math.round(lr), inc: Math.round(inc), he: Math.round(he), aux: Math.round(aux), otros: n('otros'),
-      ibc: Math.round(ibc), devengado: Math.round(devengado), salud, pension, fsp, prestamos: n('prestamos'), otrasDed: n('otrasDed'), deducciones, neto: Math.round(devengado) - deducciones };
+      ibc: Math.round(ibc), ibcX: ibc, devengado: Math.round(devengado), salud, pension, fsp, prestamos: n('prestamos'), otrasDed: n('otrasDed'), deducciones, neto: Math.round(devengado) - deducciones };
   }
   const arriba100 = (v) => Math.ceil(v / 100) * 100;
   // Planilla del mes: suma las dos quincenas
@@ -112,13 +112,14 @@
     for (const q of [1, 2]) for (const e of empleadosDe(mes, q)) {
       const f = filaDe(e, mes, q), c = calcular(e, f);
       const x = porEmp.get(e.cedula || e.id) || { e, dias: [0, 0], ibc: [0, 0], inc: 0, vac: 0, lr: 0, lnr: 0, sus: 0, he: 0 };
-      x.dias[q - 1] = Math.max(0, (Number(f.dias) || 0) - (Number(f.lnr) || 0) - (Number(f.sus) || 0)); x.ibc[q - 1] = c.ibc;
+      x.dias[q - 1] = Math.max(0, (Number(f.dias) || 0) - (Number(f.lnr) || 0) - (Number(f.sus) || 0)); x.ibc[q - 1] = c.ibc; x.ibcX = (x.ibcX || 0) + c.ibcX;
       x.inc += Number(f.inc) || 0; x.vac += Number(f.vac) || 0; x.lr += Number(f.lr) || 0; x.lnr += Number(f.lnr) || 0; x.sus += Number(f.sus) || 0; x.he += c.he;
       porEmp.set(e.cedula || e.id, x);
     }
     return [...porEmp.values()].map((x) => {
       const e = x.e, sal = Number(e.salario) || 0, dias = Math.min(30, x.dias[0] + x.dias[1]);
-      const ibc = Math.max(x.ibc[0] + x.ibc[1], Math.round(P.smmlv / 30 * dias));
+      // IBC del mes: se suma sin redondear cada quincena (ej. 875.452,5 × 2 = 1.750.905, como liquida el operador)
+      const ibc = Math.max(Math.round(x.ibcX || x.ibc[0] + x.ibc[1]), Math.round(P.smmlv / 30 * dias));
       const exon = P.exonerado && sal < 10 * P.smmlv;
       const pension = arriba100(ibc * P.pension / 100);
       const salud = arriba100(ibc * (exon ? P.saludEmp : P.saludEmp + P.saludEmpresa) / 100);
@@ -174,7 +175,7 @@
       </section>
       <div class="rh-barra"><div class="grupo">${selEmpresa()}
         <div class="quick"><button class="qbtn" type="button" data-rh-ver="activos" aria-pressed="${R.ver === 'activos'}">Activos</button><button class="qbtn" type="button" data-rh-ver="retirados" aria-pressed="${R.ver === 'retirados'}">Retirados</button><button class="qbtn" type="button" data-rh-ver="todos" aria-pressed="${R.ver === 'todos'}">Todos</button></div>
-      </div><div class="grupo">${A.isAdmin ? '<button class="btn" type="button" data-rh="importar">Importar desde Excel</button>' : ''}<button class="btn" type="button" data-rh="xls-emp">Descargar Excel</button><button class="btn primary" type="button" data-rh="nuevo">+ Agregar empleado</button></div></div>
+      </div><div class="grupo">${A.isAdmin ? '<button class="btn" type="button" data-rh="importar">Importar desde Excel</button>' : ''}<button class="btn" type="button" data-rh="imp-pila">Importar planilla de Aportes</button><button class="btn" type="button" data-rh="xls-emp">Descargar Excel</button><button class="btn primary" type="button" data-rh="nuevo">+ Agregar empleado</button></div></div>
       ${empresas.map((emp) => {
         const es = lista.filter((e) => (e.empresa || EMPRESA_DEF) === emp);
         return `<h3 class="rh-empresa">${esc(emp)} · ${es.length}</h3><div class="rh-tabla-wrap"><table class="rh-tabla"><thead><tr><th>Empleado</th><th>Cargo</th><th class="n">Salario</th><th>Riesgo ARL</th><th>Ingreso</th><th>EPS / Pensión</th><th>Estado</th><th></th></tr></thead><tbody>
@@ -223,7 +224,7 @@
         <div class="field"><label for="rh-mes">Mes</label><input type="month" id="rh-mes" value="${esc(R.mes)}"></div>
         <div class="quick"><button class="qbtn" type="button" data-rh-q="1" aria-pressed="${R.q === 1}">1 al 15</button><button class="qbtn" type="button" data-rh-q="2" aria-pressed="${R.q === 2}">16 al 30</button></div>
         <span class="rh-estado ${cerrado ? 'cerrado' : 'borrador'}">${cerrado ? `Cerrada${p.cerradoPor ? ' por ' + esc(quien(p.cerradoPor)) : ''}` : 'Borrador · se puede modificar'}</span>
-      </div><div class="grupo"><button class="btn" type="button" data-rh="xls-nom">Descargar Excel</button>${A.isAdmin ? (cerrado ? '<button class="btn" type="button" data-rh="reabrir">Reabrir quincena</button>' : '<button class="btn primary" type="button" data-rh="cerrar">Cerrar quincena</button>') : ''}</div></div>
+      </div><div class="grupo">${cerrado ? '' : '<button class="btn" type="button" data-rh="imp-q">Importar quincenas desde Excel</button>'}<button class="btn" type="button" data-rh="xls-nom">Descargar Excel</button>${A.isAdmin ? (cerrado ? '<button class="btn" type="button" data-rh="reabrir">Reabrir quincena</button>' : '<button class="btn primary" type="button" data-rh="cerrar">Cerrar quincena</button>') : ''}</div></div>
       <p class="rep-note" style="margin-top:0">Quincena del ${esc(nombreQ(R.mes, R.q))}. Escribe los días, horas y valores en las casillas; cada cambio se guarda solo y queda en <b>Cambios</b> con tu nombre. Las casillas en amarillo fueron modificadas. Días trabajados = días de la quincena − incapacidad − vacaciones − licencias − suspensión. Al marcar días de <b>suspensión</b> la app te pide la fecha inicial y hace el memorando.</p>
       ${bloques || '<div class="empty"><p>No hay empleados con días en esta quincena.</p></div>'}
       <section class="rep-sum"><div class="tile main"><span class="lbl">Neto a pagar quincena</span><span class="val">${fmt(granTotal.neto)}</span><span>Devengado ${fmt(granTotal.devengado)} − deducciones ${fmt(granTotal.deducciones)}</span></div></section>`;
@@ -241,7 +242,7 @@
     $('#rh-cuerpo').innerHTML = `
       <div class="rh-barra"><div class="grupo">${selEmpresa()}<div class="field"><label for="rh-mespla">Mes</label><input type="month" id="rh-mespla" value="${esc(R.mesPla)}"></div>
         <span class="rh-estado ${qs[0] && qs[1] ? 'cerrado' : 'borrador'}">${qs[0] && qs[1] ? 'Las dos quincenas cerradas' : 'Borrador: falta cerrar ' + (qs[0] ? 'la 2.ª quincena' : qs[1] ? 'la 1.ª quincena' : 'las quincenas')}</span></div>
-        <div class="grupo"><button class="btn" type="button" data-rh="xls-nov">Reporte de novedades</button><button class="btn primary" type="button" data-rh="xls-pla">Borrador de planilla</button></div></div>
+        <div class="grupo"><button class="btn" type="button" data-rh="xls-nov">Reporte de novedades</button><button class="btn" type="button" data-rh="xls-pla">Borrador de planilla</button><button class="btn primary" type="button" data-rh="aportes">Archivo para Aportes en Línea</button></div></div>
       <section class="rep-sum">
         <div class="tile main"><span class="lbl">Total planilla ${esc(nombreMes(R.mesPla).toLowerCase())}</span><span class="val">${fmt(sum(filas, 'total'))}</span><span>Descontado a empleados ${fmt(sum(filas, 'descontado'))}</span></div>
         <div class="tile"><span class="lbl">Costo empresa</span><span class="val">${fmt(sum(filas, 'empresa'))}</span></div>
@@ -268,7 +269,8 @@
       if (c.tipo === 'firmado') return `Subió firmado: <b>${esc(c.titulo || '')}</b> de <b>${esc(emp.get(c.empId) || '')}</b>`;
       if (c.tipo === 'prorroga') return `Registró que <b>${esc(emp.get(c.empId) || '')}</b> continúa: contrato prorrogado del ${esc(fmtDate(c.antes))} al <b>${esc(fmtDate(c.despues))}</b>`;
       if (c.tipo === 'suspension') return `Registró suspensión de <b>${esc(emp.get(c.empId) || '')}</b>: ${esc(c.texto || '')}`;
-      if (c.tipo === 'periodo') return `${c.accion === 'cerrar' ? 'Cerró' : 'Reabrió'} la quincena del ${esc(nombreQ(c.periodo.slice(0, 7), Number(c.periodo.slice(-1))))}`;
+      if (c.tipo === 'pila') return `Importó la planilla de Aportes en Línea (${esc(c.texto || '')})`;
+      if (c.tipo === 'periodo') return `${c.accion === 'cerrar' ? 'Cerró' : c.accion === 'importar' ? 'Importó del Excel' : 'Reabrió'} la quincena del ${esc(nombreQ(c.periodo.slice(0, 7), Number(c.periodo.slice(-1))))}`;
       const v = (x) => (DINERO.some(([k]) => k === c.campo) ? fmt(x) : c.campo === 'nota' ? `“${x || ''}”` : String(x || 0));
       return `Quincena del ${esc(nombreQ(c.periodo.slice(0, 7), Number(c.periodo.slice(-1))))} · <b>${esc(emp.get(c.empId) || '')}</b>: ${esc(NOMBRE_CAMPO[c.campo] || c.campo)} de <b>${esc(v(c.antes))}</b> a <b>${esc(v(c.despues))}</b>`;
     };
@@ -327,8 +329,9 @@
   // ---------- empleado: agregar / editar ----------
   let editando = null;
   const CAMPOS_EMP = { nombre: 'Nombre', cedula: 'Cédula', empresa: 'Empresa', cargo: 'Cargo', contrato: 'Tipo de contrato', salario: 'Salario', riesgo: 'Riesgo ARL', aux: 'Auxilio de transporte', ingreso: 'Ingreso', cc: 'Centro de costo', eps: 'EPS', afp: 'Pensión', retiro: 'Retiro', motivoRetiro: 'Motivo del retiro',
-    sexo: 'Sexo', expedida: 'Cédula expedida en', telefono: 'Teléfono', direccion: 'Dirección', contratoFin: 'Fin del contrato', obra: 'Obra o labor', prueba: 'Período de prueba (días)', horario: 'Horario', lugar: 'Lugar de trabajo', funciones: 'Funciones', arl: 'ARL', ccf: 'Caja de compensación', cesantias: 'Fondo de cesantías' };
-  const TEXTOS_EMP = ['sexo', 'expedida', 'telefono', 'direccion', 'contratoFin', 'obra', 'prueba', 'horario', 'lugar', 'funciones', 'arl', 'ccf', 'cesantias'];
+    sexo: 'Sexo', expedida: 'Cédula expedida en', telefono: 'Teléfono', direccion: 'Dirección', contratoFin: 'Fin del contrato', obra: 'Obra o labor', prueba: 'Período de prueba (días)', horario: 'Horario', lugar: 'Lugar de trabajo', funciones: 'Funciones', arl: 'ARL', ccf: 'Caja de compensación', cesantias: 'Fondo de cesantías',
+    ap1: 'Primer apellido', ap2: 'Segundo apellido', n1: 'Primer nombre', n2: 'Segundo nombre', ciudad: 'Ciudad', centro: 'Centro de trabajo' };
+  const TEXTOS_EMP = ['sexo', 'expedida', 'telefono', 'direccion', 'contratoFin', 'obra', 'prueba', 'horario', 'lugar', 'funciones', 'arl', 'ccf', 'cesantias', 'ap1', 'ap2', 'n1', 'n2', 'ciudad', 'centro'];
   const ID_CAMPO = { contratoFin: 'emp-fin' };
   function mostrarCamposContrato() {
     const t = Docs().tipoContrato({ contrato: $('#emp-contrato').value });
@@ -873,6 +876,346 @@
     libro([{ titulo: `Planilla ${mes}`, filas: out, anchos: [6, 22, 30, 14, 18, 8, 8, 14, 7, 7, 8, 13, 13, 13, 13, 12, 12, 12, 10, 10, 14, 14, 14, 5, 5, 8, 8, 8, 8], pesos: [1, 2, 3, 4, 7, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22] }], `Borrador planilla ${mes}${sufijoEmp()}.xlsx`);
   }
 
+  // ---------- planilla de Aportes en Línea (PILA) ----------
+  // Nombres oficiales de las listas de la plantilla de Aportes en Línea
+  const LISTAS = {
+    afp: ['COLFONDOS', 'COLPENSIONES', 'PORVENIR', 'PROTECCION', 'SKANDIA', 'SKANDIA ALTERNATIVO', 'CAXDAC', 'FONPRECON', 'PENSIONES DE ANTIOQUIA', 'COLPENSIONES PISO DE PROTECCIÓN'],
+    eps: ['A.I.C.', 'ALIANSALUD EPS (ANTES COLMEDICA)', 'ANAS WAYUU', 'ASMET SALUD EPS SAS', 'CAJACOPI ATLANTICO', 'CAPITAL SALUD', 'CAPRESOCA', 'COMFACHOCÓ', 'COMFAMILIAR HUILA', 'COMFAORIENTE', 'COMFASUCRE', 'COMFENALCO VALLE', 'COMPENSAR', 'CONVIDA', 'COOSALUD EPS', 'COOSALUD MOVILIDAD', 'CRUZ BLANCA', 'DUSAKAWI', 'EMPRESAS PUBLICAS DE MEDELLIN DEPARTAMENTO MEDICO', 'EMSSANAR', 'EPS ECOOPSOS S.A.S', 'EPS SURA (ANTES SUSALUD)', 'FAMISANAR', 'FONDO DE FERROCARRILES NACIONALES DE COLOMBIA', 'MALLAMAS', 'MUTUAL SER', 'NUEVA E.P.S.', 'NUEVA EPS MOVILIDAD', 'PIJAOSALUD', 'S.O.S. SERVICIO OCCIDENTAL DE SALUD S.A.', 'SALUD BOLIVAR', 'SALUD MIA EPS', 'SALUD TOTAL', 'SALUDCOOP', 'SANITAS', 'SAVIA SALUD'],
+    ccf: ['CAJACOPI ATLANTICO', 'COMBARRANQUILLA', 'COMFAMILIAR ATLANTICO', 'CAFABA', 'CAFAM', 'CAFAMAZ', 'CAFASUR', 'CAJAMAG', 'CAJASAI', 'CAJASAN', 'COFREM', 'COLSUBSIDIO', 'COMCAJA', 'COMFABOY', 'COMFACA', 'COMFACASANARE', 'COMFACAUCA', 'COMFACESAR', 'COMFACHOCÓ', 'COMFACOR', 'COMFACUNDI', 'COMFAMA', 'COMFAMILIAR CARTAGENA', 'COMFAMILIAR GUAJIRA', 'COMFAMILIAR HUILA', 'COMFAMILIAR NARIÑO', 'COMFAMILIAR PUTUMAYO', 'COMFAMILIAR RISARALDA', 'COMFANDI', 'COMFANORTE', 'COMFAORIENTE', 'COMFASUCRE', 'COMFATOLIMA', 'COMFENALCO ANTIOQUIA', 'COMFENALCO CARTAGENA', 'COMFENALCO QUINDIO', 'COMFENALCO SANTANDER', 'COMFENALCO TOLIMA', 'COMFENALCO VALLE', 'COMFIAR', 'COMPENSAR', 'CONFAMILIARES'],
+    arl: ['COLMENA', 'ARL SURA', 'POSITIVA COMPAÑIA DE SEGUROS', 'SEGUROS BOLIVAR', 'LA EQUIDAD SEGUROS', 'LIBERTY', 'ALFA', 'COLPATRIA ARP', 'COLSANITAS ARL', 'MAPFRE COLOMBIA VIDA SEGUROS S.A.', 'SEGUROS DE VIDA AURORA', 'FONDO DE RIESGOS LABORALES'],
+  };
+  for (const [k, l] of Object.entries(LISTAS)) { const dl = $('#pila-' + k); if (dl) dl.innerHTML = l.map((x) => `<option value="${esc(x)}"></option>`).join(''); }
+  const sinTilde = (s) => String(s || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
+  // Lleva un nombre de administradora al nombre exacto de la lista (ej. "EPS MUTUAL SER" → "MUTUAL SER")
+  function oficial(tipo, nombre) {
+    const n = sinTilde(nombre); if (!n) return '';
+    const l = LISTAS[tipo] || [];
+    const igual = l.find((x) => sinTilde(x) === n) || l.find((x) => sinTilde(x) === n.replace(/^(EPS|ARL|AFP|CCF)\s+/, ''));
+    if (igual) return igual;
+    const parecido = l.filter((x) => sinTilde(x).includes(n) || n.includes(sinTilde(x)));
+    return parecido.length === 1 ? parecido[0] : String(nombre).toUpperCase().trim();
+  }
+  const enLista = (tipo, nombre) => (LISTAS[tipo] || []).includes(nombre);
+  const PARTICULAS = new Set(['DE', 'DEL', 'LA', 'LAS', 'LOS', 'SAN', 'SANTA', 'VAN', 'VON', 'Y']);
+  // Mayúsculas sin tildes pero conservando la Ñ (para nombres y apellidos)
+  const mayus = (s) => String(s || '').toUpperCase().replace(/Ñ/g, '\u0001').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\u0001/g, 'Ñ').replace(/\s+/g, ' ').trim();
+  function tokens(s) {
+    const t = mayus(s).split(' ').filter(Boolean), out = [];
+    for (let i = 0; i < t.length; i++) { let w = t[i]; while (PARTICULAS.has(w.split(' ').pop()) && i + 1 < t.length) w += ' ' + t[++i]; out.push(w); }
+    return out;
+  }
+  // Planilla de Aportes: "APELLIDO1 APELLIDO2 NOMBRE1 NOMBRE2"
+  function partirApellidosPrimero(s) {
+    const t = tokens(s);
+    if (t.length <= 2) return { ap1: t[0] || '', ap2: '', n1: t[1] || '', n2: '' };
+    return { ap1: t[0], ap2: t[1], n1: t[2], n2: t.slice(3).join(' ') };
+  }
+  // Nombre en la app: "NOMBRE1 NOMBRE2 APELLIDO1 APELLIDO2"
+  function partesDe(e) {
+    if (e.ap1 || e.n1) return { ap1: mayus(e.ap1), ap2: mayus(e.ap2), n1: mayus(e.n1), n2: mayus(e.n2) };
+    const t = tokens(e.nombre);
+    if (t.length >= 4) return { n1: t[0], n2: t.slice(1, -2).join(' '), ap1: t[t.length - 2], ap2: t[t.length - 1] };
+    if (t.length === 3) return { n1: t[0], n2: '', ap1: t[1], ap2: t[2] };
+    return { n1: t[0] || '', n2: '', ap1: t[1] || '', ap2: '' };
+  }
+  const EMPRESA_NIT = { '900409543': EMPRESA_DEF, '901724020': 'OBS' };
+  const riesgoDeTarifa = (t) => { const v = Number(t) * (Number(t) < 1 ? 100 : 1); let mejor = 1, dif = 99; for (const [k, x] of Object.entries(R.datos.param.arl)) { if (Math.abs(x - v) < dif) { dif = Math.abs(x - v); mejor = Number(k); } } return mejor; };
+  const pad2 = (n) => String(n).padStart(2, '0');
+  const diasMes = (mes) => { const [y, m] = mes.split('-').map(Number); return new Date(y, m, 0).getDate(); };
+
+  // Lee la planilla pagada que se descarga de Aportes en Línea (resumen con un renglón por cotizante)
+  function leerPlanillaAportes(wb) {
+    const codigos = new Map();
+    for (const n of wb.SheetNames) for (const r of XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: '' })) {
+      const c = r.filter((x) => String(x).trim() !== '');
+      if (c.length >= 3 && typeof c[0] === 'string' && /^[A-Z0-9-]{4,8}$/.test(String(c[1]).trim()) && /^\d{8,10}$/.test(String(c[2]).trim())) codigos.set(String(c[1]).trim(), c[0].trim());
+    }
+    const hoja = wb.SheetNames.map((n) => XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: '' })).find((rows) => rows.some((r) => r.some((x) => String(x).trim() === 'Nombre') && r.some((x) => String(x).trim() === 'ing')));
+    if (!hoja) return null;
+    let nit = '', periodo = '', sucursal = '';
+    const iCab = hoja.findIndex((r) => r.some((x) => String(x).trim() === 'Nombre') && r.some((x) => String(x).trim() === 'ing'));
+    hoja.forEach((r, i) => {
+      for (const [j, x] of r.entries()) {
+        const s = String(x).trim();
+        if (!nit && /^NIT\s*\d+/.test(s)) nit = s.replace(/\D/g, '');
+        if (!periodo && /^\d{4}-\d{2}$/.test(s) && i < iCab) periodo = s;
+        if (s === 'Sucursal Principal' && hoja[i + 1]) sucursal = String(hoja[i + 1][j] || '').trim();
+      }
+    });
+    const cab = hoja[iCab].map((x) => String(x).trim());
+    const col = (t, desde) => cab.findIndex((x, j) => j >= (desde || 0) && x.toLowerCase() === t.toLowerCase());
+    const cId = col('Identificación'), cNom = col('Nombre'), cIng = col('ing'), cRet = col('ret');
+    const cods = []; cab.forEach((x, j) => { if (x === 'Codigo') cods.push(j); });
+    const cDias = col('Días'), cIbc = col('IBC'), cTarifa = col('Tarifa');
+    const empresa = EMPRESA_NIT[nit] || '';
+    const out = []; let centro = '', ciudad = '', depto = '';
+    for (const r of hoja.slice(iCab + 1)) {
+      const t = String(r[1] || '').trim();
+      let m;
+      if ((m = /^Centro de Trabajo:\s*(.+?)\s*\(/i.exec(t))) { centro = m[1]; continue; }
+      if ((m = /^Ciudad:\s*(.+?)\s+Depto:\s*(.+?)\s*\(/i.exec(t))) { ciudad = m[1]; depto = m[2]; continue; }
+      if (!/^\d+$/.test(t)) continue;
+      const tipoId = /^[A-Z]{2}$/.test(String(r[cId]).trim()) ? String(r[cId]).trim() : 'CC';
+      const ced = String(tipoId === String(r[cId]).trim() ? r[cId + 1] : r[cId]).replace(/\D/g, '');
+      if (!ced) continue;
+      const nom = (k) => (cods[k] >= 0 ? String(r[cods[k]] || '').trim() : '');
+      const dias = Number(r[cDias]) || 0, ibc = Number(r[cIbc]) || 0;
+      out.push({ tipoId, cedula: ced, completo: String(r[cNom]).trim(), ...partirApellidosPrimero(r[cNom]), ing: /x/i.test(r[cIng]), ret: /x/i.test(r[cRet]), dias, ibc,
+        afpCod: nom(0), epsCod: nom(1), ccfCod: nom(2), arlCod: nom(3),
+        afp: oficial('afp', codigos.get(nom(0))), eps: oficial('eps', codigos.get(nom(1))), ccf: oficial('ccf', codigos.get(nom(2))), arl: oficial('arl', codigos.get(nom(3))),
+        riesgo: riesgoDeTarifa(r[cTarifa]), centro, ciudad, depto });
+    }
+    return { nit, empresa, periodo, sucursal, filas: out };
+  }
+
+  // Lee las hojas de quincena del Excel de nómina ("1-15 OCTUBRE 2026", "16-30 OCTUBRE OBS"…)
+  const MESES_N = { ENERO: 1, FEBRERO: 2, MARZO: 3, ABRIL: 4, MAYO: 5, JUNIO: 6, JULIO: 7, AGOSTO: 8, SEPTIEMBRE: 9, SETIEMBRE: 9, OCTUBRE: 10, NOVIEMBRE: 11, DICIEMBRE: 12 };
+  function leerQuincenas(wb) {
+    const out = [];
+    for (const n of wb.SheetNames) {
+      const m = /^(1-15|16-30)\s+([A-ZÁÉÍÓÚ]+)/i.exec(sinTilde(n)); if (!m || !MESES_N[m[2]]) continue;
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: '' });
+      const h = rows.findIndex((r) => norm(r[0]) === 'NOMBRE' && norm(r[1]).startsWith('IDENTIFICACION')); if (h < 0) continue;
+      const anio = (/(\d{4})/.exec(n) || /(\d{4})/.exec(rows.slice(0, h).flat().join(' ')) || [0, hoy().slice(0, 4)])[1];
+      const cab = rows[h].map(norm), c = (re) => cab.findIndex((x) => re.test(x));
+      const cDias = c(/^DIAS TRABAJADOS/), cOtros = c(/^OTROS PAGOS/), cHed = c(/^H\.?E\.? DIURNAS \(HORAS\)/), cPrest = c(/PRESTAMOS/);
+      const q = m[1] === '1-15' ? 1 : 2, mes = `${anio}-${pad2(MESES_N[m[2]])}`, empresa = /OBS/i.test(n) ? 'OBS' : EMPRESA_DEF;
+      for (const r of rows.slice(h + 1)) {
+        const nombre = String(r[0] || '').trim(); if (/^TOTAL/i.test(nombre)) break;
+        const ced = String(r[1] || '').replace(/\D/g, ''); if (!nombre || !ced) continue;
+        out.push({ hoja: n, mes, q, empresa, nombre, cedula: ced, dias: num(r[cDias]), otros: cOtros >= 0 ? Math.round(num(r[cOtros])) : 0, hed: cHed >= 0 ? num(r[cHed]) : 0, prestamos: cPrest >= 0 ? Math.round(num(r[cPrest])) : 0 });
+      }
+    }
+    return out;
+  }
+  // Fechas de ingreso / retiro que se deducen de los días de cada quincena
+  function proponerFechas(filasMes, mes) {
+    const porCed = new Map();
+    for (const f of filasMes) { const x = porCed.get(f.cedula) || { cedula: f.cedula, nombre: f.nombre, q: {} }; x.q[f.q] = f.dias; porCed.set(f.cedula, x); }
+    const res = [];
+    for (const x of porCed.values()) {
+      const e = R.datos.empleados.find((y) => y.cedula === x.cedula);
+      const d1 = x.q[1], d2 = x.q[2];
+      let tipo = '', fecha = '', alerta = '';
+      if (d1 !== undefined && d2 === undefined && d1 < 15) { tipo = 'retiro'; fecha = `${mes}-${pad2(d1)}`; }
+      else if (d1 === undefined && d2 !== undefined && d2 < 15) { tipo = 'ingreso'; fecha = `${mes}-${pad2(31 - d2)}`; }
+      else if (d1 !== undefined && d2 !== undefined) {
+        if (d1 < 15 && d2 >= 15) { tipo = 'ingreso'; fecha = `${mes}-${pad2(16 - d1)}`; }
+        else if (d1 >= 15 && d2 < 15) { tipo = 'retiro'; fecha = `${mes}-${pad2(15 + d2)}`; }
+        else if (d1 < 15 && d2 < 15) alerta = `Le faltan días en las dos quincenas (${d1} y ${d2}) y no se sabe la novedad: márcala en la nómina (licencia, incapacidad, suspensión…).`;
+      }
+      if (tipo && e && e[tipo] && e[tipo].slice(0, 7) === mes) fecha = e[tipo];
+      if (tipo === 'ingreso' && e && e.ingreso && e.ingreso.slice(0, 7) < mes) { alerta = `Tiene menos días pero ingresó antes (${fmtDate(e.ingreso)}): revisa la novedad.`; tipo = ''; }
+      if (tipo || alerta) res.push({ ...x, e, tipo, fecha, alerta });
+    }
+    return res;
+  }
+
+  let impModo = '', impDatos = null;
+  function abrirImportacion(modo) {
+    impModo = modo; impDatos = null;
+    $('#rhi-titulo').textContent = modo === 'pila' ? 'Importar planilla de Aportes en Línea' : 'Importar quincenas desde el Excel de nómina';
+    $('#rhi-intro').innerHTML = modo === 'pila'
+      ? 'Elige el Excel de una planilla ya pagada que descargas de Aportes en Línea. Se toman de ahí, para cada trabajador, los apellidos y nombres, la EPS, el fondo de pensiones, la caja, la ARL con su riesgo y el centro de trabajo. Los que no estén en la app y sigan activos se agregan.'
+      : 'Elige tu Excel de nómina (hojas "1-15 OCTUBRE 2026", "16-30 OCTUBRE OBS"…). Se pasan a la app los días, horas extra diurnas, otros pagos y préstamos de cada quincena del mes que escojas, y se registran los ingresos y retiros.';
+    $('#rhi-file').value = ''; $('#rhi-file').hidden = false; $('#rhi-file').closest('.field').hidden = false;
+    $('#rhi-res').innerHTML = ''; mostrarError('#rhi-err', ''); $('#rhi-go').disabled = true; $('#rhi-go').hidden = false; $('#rhi-go').textContent = 'Importar';
+    $('#dlg-rh-imp').showModal();
+  }
+  $('#rhi-file').addEventListener('change', async () => {
+    const f = $('#rhi-file').files[0];
+    impDatos = null; $('#rhi-go').disabled = true; mostrarError('#rhi-err', ''); $('#rhi-res').innerHTML = '';
+    if (!f) return;
+    if (!window.XLSX) return mostrarError('#rhi-err', 'No cargó el lector de Excel. Recarga la página.');
+    try {
+      const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
+      if (impModo === 'pila') pintarImpPila(leerPlanillaAportes(wb));
+      else { impDatos = { filas: leerQuincenas(wb) }; pintarImpQ(); }
+    } catch (err) { mostrarError('#rhi-err', 'No pude leer ese Excel.'); }
+  });
+  function pintarImpPila(p) {
+    if (!p || !p.filas.length) return mostrarError('#rhi-err', 'No encontré la liquidación detallada (columnas Identificación, Nombre, ing, ret…). Descarga la planilla en Excel desde Aportes en Línea.');
+    if (!p.empresa) return mostrarError('#rhi-err', `La planilla es del NIT ${p.nit || '—'}, que no corresponde a ODESA CARIBE ni a OBS.`);
+    const existentes = new Map(R.datos.empleados.map((e) => [e.cedula, e]));
+    for (const x of p.filas) x.accion = existentes.has(x.cedula) ? 'actualizar' : x.ing && x.ret ? 'omitir' : 'nuevo';
+    impDatos = p;
+    const avisos = p.filas.filter((x) => [['afp', x.afp], ['eps', x.eps], ['ccf', x.ccf], ['arl', x.arl]].some(([t, v]) => v && !enLista(t, v)));
+    $('#rhi-res').innerHTML = `<p style="margin:8px 0"><b>${esc(p.empresa)}</b> · período ${esc(p.periodo)} · ${p.filas.length} cotizantes: <b>${p.filas.filter((x) => x.accion === 'actualizar').length}</b> se actualizan, <b>${p.filas.filter((x) => x.accion === 'nuevo').length}</b> se agregan y ${p.filas.filter((x) => x.accion === 'omitir').length} se omiten (entraron y salieron ese mes).</p>
+      ${avisos.length ? `<p class="rep-note" style="margin:0 0 8px">Revisa: ${avisos.map((x) => esc(x.completo)).join(', ')} tienen una administradora que no encontré con el mismo nombre en la lista de Aportes.</p>` : ''}
+      <div class="rh-tabla-wrap" style="max-height:320px;overflow:auto"><table class="rh-tabla"><thead><tr><th>Trabajador</th><th>EPS</th><th>Pensión</th><th>Caja</th><th>ARL</th><th></th></tr></thead><tbody>
+      ${p.filas.map((x) => `<tr><td>${esc(x.completo)}<br><span class="sub">${esc(x.tipoId)} ${esc(x.cedula)} · ${esc(x.centro)}</span></td><td>${esc(x.eps)}</td><td>${esc(x.afp)}</td><td>${esc(x.ccf)}</td><td>${esc(x.arl)} · ${['', 'I', 'II', 'III', 'IV', 'V'][x.riesgo]}</td><td>${x.accion === 'nuevo' ? '<span class="chip sg-va">Nuevo</span>' : x.accion === 'omitir' ? '<span class="chip ok">Se omite</span>' : '<span class="chip sg-ok">Actualiza</span>'}</td></tr>`).join('')}
+      </tbody></table></div>`;
+    $('#rhi-go').disabled = false;
+  }
+  function pintarImpQ() {
+    const filas = impDatos.filas;
+    if (!filas.length) return mostrarError('#rhi-err', 'No encontré hojas de quincena con NOMBRE, IDENTIFICACIÓN y DÍAS TRABAJADOS.');
+    const meses = [...new Set(filas.map((f) => f.mes))].sort();
+    impDatos.mes = impDatos.mes && meses.includes(impDatos.mes) ? impDatos.mes : meses[meses.length - 1];
+    const mes = impDatos.mes, delMes = filas.filter((f) => f.mes === mes);
+    const ced = new Set(R.datos.empleados.map((e) => e.cedula));
+    const faltan = [...new Map(delMes.filter((f) => !ced.has(f.cedula)).map((f) => [f.cedula, f])).values()];
+    impDatos.fechas = proponerFechas(delMes, mes);
+    const cerradas = [1, 2].filter((q) => (R.datos.periodos[claveQ(mes, q)] || {}).estado === 'cerrado');
+    $('#rhi-res').innerHTML = `
+      <div class="field" style="margin-top:10px"><label for="rhi-mes">Mes a importar</label><select id="rhi-mes">${meses.map((m) => `<option value="${m}"${m === mes ? ' selected' : ''}>${esc(nombreMes(m))}</option>`).join('')}</select></div>
+      <p style="margin:8px 0">${[1, 2].map((q) => `${q === 1 ? '1 al 15' : '16 al 30'}: <b>${delMes.filter((f) => f.q === q).length}</b> renglones`).join(' · ')}. Se reemplazan los días, horas extra diurnas, otros pagos y préstamos de esas quincenas en la app.</p>
+      ${cerradas.length ? `<p class="err">La quincena ${cerradas.map((q) => (q === 1 ? '1 al 15' : '16 al 30')).join(' y ')} ya está cerrada y no se toca.</p>` : ''}
+      ${faltan.length ? `<p class="rep-note" style="margin:0 0 8px">No están en la app (agrégalos o importa primero la planilla de Aportes): ${faltan.map((f) => `${esc(f.nombre)} (${esc(f.cedula)})`).join(', ')}.</p>` : ''}
+      ${impDatos.fechas.length ? `<h3 class="rh-empresa" style="margin-top:6px">Ingresos y retiros del mes</h3><p class="rep-note" style="margin:0 0 6px">Los saqué de los días de cada quincena. Corrige la fecha si no es exacta (la planilla usa estas fechas).</p>
+        <div class="rh-tabla-wrap"><table class="rh-tabla"><thead><tr><th></th><th>Trabajador</th><th>Días Q1 / Q2</th><th>Novedad</th><th>Fecha</th></tr></thead><tbody>
+        ${impDatos.fechas.map((x, i) => `<tr><td>${x.tipo && x.e ? `<input type="checkbox" data-rhi-ok="${i}" checked>` : ''}</td><td>${esc(x.nombre)}${x.e ? '' : '<br><span class="sub">No está en la app</span>'}</td><td>${x.q[1] ?? '—'} / ${x.q[2] ?? '—'}</td><td>${x.tipo === 'ingreso' ? 'Ingreso (ING)' : x.tipo === 'retiro' ? 'Retiro (RET)' : '—'}${x.alerta ? `<br><span class="sub" style="color:var(--warn)">${esc(x.alerta)}</span>` : ''}</td><td>${x.tipo ? `<input type="date" data-rhi-fecha="${i}" value="${esc(x.fecha)}">` : ''}</td></tr>`).join('')}
+        </tbody></table></div>` : ''}`;
+    $('#rhi-go').disabled = !delMes.some((f) => ced.has(f.cedula));
+  }
+  $('#rhi-res').addEventListener('change', (ev) => { if (ev.target.id === 'rhi-mes') { impDatos.mes = ev.target.value; pintarImpQ(); } });
+  $('#rhi-go').addEventListener('click', async () => {
+    if (!impDatos) return;
+    const b = $('#rhi-go'); b.disabled = true; b.textContent = 'Importando…';
+    try {
+      if (impModo === 'pila') await aplicarPila(impDatos); else await aplicarQuincenas(impDatos);
+      $('#dlg-rh-imp').close(); render();
+    } catch (err) { mostrarError('#rhi-err', err && err.message && !err.status ? err.message : msgGitHub(err)); }
+    b.disabled = false; b.textContent = 'Importar';
+  });
+  async function aplicarPila(p) {
+    const P = R.datos.param;
+    let nuevos = 0, act = 0;
+    await mutar((d) => {
+      nuevos = 0; act = 0;
+      const cuenta = (k) => { const m = new Map(); for (const x of p.filas) if (x[k]) m.set(x[k], (m.get(x[k]) || 0) + 1); return [...m.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || ''; };
+      d.param.pila = { ...(d.param.pila || {}), [p.empresa]: { nit: p.nit, sucursal: p.sucursal || 'UNICA', arl: cuenta('arl'), ccf: cuenta('ccf'), desde: p.periodo, en: new Date().toISOString() } };
+      for (const x of p.filas) {
+        if (x.accion === 'omitir') continue;
+        const datos = { tipoId: x.tipoId, ap1: x.ap1, ap2: x.ap2, n1: x.n1, n2: x.n2, nombre: [x.n1, x.n2, x.ap1, x.ap2].filter(Boolean).join(' '), eps: x.eps, afp: x.afp, ccf: x.ccf, arl: x.arl, epsCod: x.epsCod, afpCod: x.afpCod, ccfCod: x.ccfCod, arlCod: x.arlCod, riesgo: x.riesgo, ciudad: x.ciudad, depto: x.depto, centro: x.centro };
+        let e = d.empleados.find((y) => y.cedula === x.cedula);
+        const ingreso = x.ing && !x.ret && p.periodo ? `${p.periodo}-${pad2(Math.max(1, Math.min(diasMes(p.periodo), 31 - x.dias)))}` : '';
+        if (!e) {
+          const sal = x.dias ? Math.round(x.ibc * 30 / x.dias) : P.smmlv;
+          e = { id: nuevoId(), cedula: x.cedula, empresa: p.empresa, cargo: '', salario: sal, aux: sal <= 2 * P.smmlv, ingreso, ...datos, creado: new Date().toISOString() };
+          d.empleados.push(e); nuevos++;
+          anotar(d, { tipo: 'empleado', accion: 'importar', empId: e.id, nombre: e.nombre, nota: `Planilla de Aportes ${p.periodo}` });
+          continue;
+        }
+        if (ingreso && !e.ingreso) datos.ingreso = ingreso;
+        for (const [k, v] of Object.entries(datos)) {
+          if (v === '' || v === undefined || String(e[k] ?? '') === String(v)) continue;
+          if (CAMPOS_EMP[k]) anotar(d, { tipo: 'empleado', accion: 'importar', empId: e.id, campo: CAMPOS_EMP[k], antes: e[k] ?? '', despues: v, nota: `Planilla de Aportes ${p.periodo}` });
+          e[k] = v;
+        }
+        act++;
+      }
+      anotar(d, { tipo: 'pila', texto: `${p.empresa}, ${p.periodo}: ${act} actualizados, ${nuevos} nuevos` });
+    });
+    toast(`Listo: ${act} empleados actualizados y ${nuevos} agregados con sus afiliaciones.`);
+  }
+  async function aplicarQuincenas(imp) {
+    const mes = imp.mes, delMes = imp.filas.filter((f) => f.mes === mes);
+    const fechas = (imp.fechas || []).map((x, i) => {
+      const ok = document.querySelector(`[data-rhi-ok="${i}"]`), f = document.querySelector(`[data-rhi-fecha="${i}"]`);
+      return ok && ok.checked && f && f.value && x.e ? { empId: x.e.id, tipo: x.tipo, fecha: f.value } : null;
+    }).filter(Boolean);
+    const avisos = [];
+    await mutar((d) => {
+      avisos.length = 0;
+      for (const f of fechas) {
+        const e = d.empleados.find((y) => y.id === f.empId); if (!e || e[f.tipo] === f.fecha) continue;
+        anotar(d, { tipo: 'empleado', accion: 'importar', empId: e.id, campo: CAMPOS_EMP[f.tipo], antes: e[f.tipo] || '', despues: f.fecha, nota: 'Excel de nómina' });
+        e[f.tipo] = f.fecha;
+        if (f.tipo === 'retiro' && !e.motivoRetiro) e.motivoRetiro = 'Retiro';
+      }
+      for (const q of [1, 2]) {
+        const clave = claveQ(mes, q), filas = delMes.filter((f) => f.q === q); if (!filas.length) continue;
+        const p = d.periodos[clave] = d.periodos[clave] || { estado: 'borrador', filas: {} };
+        if (p.estado === 'cerrado') { avisos.push(`La quincena ${q === 1 ? '1 al 15' : '16 al 30'} está cerrada: no se cambió.`); continue; }
+        p.filas = p.filas || {};
+        let n = 0;
+        for (const f of filas) {
+          const e = d.empleados.find((y) => y.cedula === f.cedula); if (!e) continue;
+          const base = diasBase(e, mes, q);
+          if (base === 0) { avisos.push(`${e.nombre}: el Excel trae ${f.dias} días en la quincena ${q === 1 ? '1-15' : '16-30'}, pero por sus fechas de ingreso/retiro no le corresponden días. No se tomó.`); continue; }
+          const dias = Math.min(f.dias, base);
+          if (dias < f.dias) avisos.push(`${e.nombre}: el Excel trae ${f.dias} días en la quincena ${q === 1 ? '1-15' : '16-30'}; por su fecha de ${e.retiro && e.retiro.slice(0, 7) === mes ? 'retiro' : 'ingreso'} se tomaron ${dias}.`);
+          p.filas[e.id] = { ...(p.filas[e.id] || {}), dias, otros: f.otros || 0, hed: f.hed || 0, prestamos: f.prestamos || 0, nota: (p.filas[e.id] || {}).nota || 'Importado del Excel de nómina' };
+          n++;
+        }
+        anotar(d, { tipo: 'periodo', periodo: clave, accion: 'importar', nota: `${n} empleados` });
+      }
+    });
+    R.mes = mes; R.mesPla = mes;
+    toast(`Listo: ${nombreMes(mes)} quedó en la app.${avisos.length ? ' Revisa los avisos.' : ''}`);
+    if (avisos.length) setTimeout(() => mostrarInfo('Avisos de la importación', avisos), 300);
+  }
+  function mostrarInfo(titulo, lineas) {
+    impModo = 'info'; impDatos = null;
+    $('#rhi-titulo').textContent = titulo; $('#rhi-intro').textContent = '';
+    $('#rhi-file').closest('.field').hidden = true; $('#rhi-go').hidden = true; mostrarError('#rhi-err', '');
+    $('#rhi-res').innerHTML = `<ul class="rh-log">${lineas.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>`;
+    $('#dlg-rh-imp').showModal();
+  }
+
+  // Archivo para subir a Aportes en Línea: la plantilla oficial (hoja "Liquidaciones") llena, un archivo por empresa
+  let plantillaBuf = null;
+  async function archivoAportes() {
+    if (!window.XLSX) return toast('No cargó el generador de Excel. Recarga la página.');
+    const mes = R.mesPla, P = R.datos.param;
+    const filas = planillaMes(mes).filter((x) => deEmpresa(x.e));
+    if (!filas.length) return toast('No hay cotizantes en ese mes.');
+    try { if (!plantillaBuf) { const r = await fetch('plantilla-aportes.xlsx?v=30'); if (!r.ok) throw new Error(); plantillaBuf = await r.arrayBuffer(); } }
+    catch (err) { return toast('No pude cargar la plantilla de Aportes en Línea. Revisa el internet.'); }
+    const [y, m] = mes.split('-').map(Number), mesSalud = `${m === 12 ? y + 1 : y}-${pad2(m === 12 ? 1 : m + 1)}`;
+    const avisos = [];
+    const empresas = [...new Set(filas.map((x) => x.e.empresa || EMPRESA_DEF))];
+    for (const emp of empresas) {
+      const cfg = (P.pila || {})[emp] || {};
+      const fs = filas.filter((x) => (x.e.empresa || EMPRESA_DEF) === emp).sort((a, b) => partesDe(a.e).ap1.localeCompare(partesDe(b.e).ap1));
+      const wb = XLSX.read(plantillaBuf.slice(0), { type: 'array', cellStyles: true });
+      const ws = wb.Sheets['Liquidaciones'];
+      const poner = (dir, v) => { const prev = ws[dir] || {}; if (v === '' || v === null || v === undefined) { delete ws[dir]; return; } ws[dir] = { t: typeof v === 'number' ? 'n' : 's', v, ...(prev.z ? { z: prev.z } : {}), ...(prev.s ? { s: prev.s } : {}) }; };
+      const arlEmp = cfg.arl || fs.map((x) => x.e.arl).find(Boolean) || '';
+      poner('A10', mes); poner('C10', mesSalud); poner('D10', 'E - Planilla Empleados Empresas'); poner('H10', cfg.sucursal || 'UNICA'); poner('I10', 'EMPLEADOR'); poner('K10', oficial('arl', arlEmp) || 'NINGUNA');
+      if (!cfg.arl) avisos.push(`${emp}: no hay planilla de Aportes importada; revisa en el archivo la sucursal y la ARL de la empresa (fila 10).`);
+      // Borra los renglones de ejemplo de la plantilla
+      for (let r = 19; r <= 38; r++) for (let c = 0; c < 98; c++) delete ws[XLSX.utils.encode_cell({ r: r - 1, c })];
+      const C = (letra, fila) => `${letra}${fila}`;
+      fs.forEach((x, i) => {
+        const e = x.e, f = 19 + i, n = partesDe(e), sal = Number(e.salario) || 0, r = e.riesgo || 1;
+        const exon = P.exonerado && sal < 10 * P.smmlv;
+        const fsp = sal >= 4 * P.smmlv ? arriba100(x.ibc * 0.01) : 0;
+        const afp = oficial('afp', e.afp), eps = oficial('eps', e.eps), ccf = oficial('ccf', e.ccf || cfg.ccf), arl = oficial('arl', e.arl || arlEmp);
+        const falta = [!n.ap1 && 'primer apellido', !n.n1 && 'primer nombre', !enLista('afp', afp) && 'fondo de pensiones', !enLista('eps', eps) && 'EPS', !enLista('ccf', ccf) && 'caja', !enLista('arl', arl) && 'ARL'].filter(Boolean);
+        if (falta.length) avisos.push(`${e.nombre}: falta o no coincide con la lista de Aportes: ${falta.join(', ')}.`);
+        const susp = (R.datos.suspensiones || []).filter((s) => s.empId === e.id && s.inicio <= `${mes}-31` && s.fin >= `${mes}-01`);
+        const slnIni = susp.length ? (susp[0].inicio < `${mes}-01` ? `${mes}-01` : susp[0].inicio) : '';
+        const slnFin = susp.length ? (susp[susp.length - 1].fin > `${mes}-${pad2(diasMes(mes))}` ? `${mes}-${pad2(diasMes(mes))}` : susp[susp.length - 1].fin) : '';
+        if ((x.lnr || x.inc || x.vac || x.lr) && !susp.length) avisos.push(`${e.nombre}: tiene ${[x.lnr && 'licencia no remunerada', x.inc && 'incapacidad', x.vac && 'vacaciones', x.lr && 'licencia remunerada'].filter(Boolean).join(', ')}; escribe en el archivo las fechas de inicio y fin.`);
+        const v = {
+          A: i + 1, B: e.tipoId || 'CC', C: String(e.cedula), D: n.ap1, E: n.ap2, F: n.n1, G: n.n2, H: sinTilde(e.depto || 'ATLANTICO').replace(/ /g, '_'), I: sinTilde(e.ciudad || 'BARRANQUILLA'),
+          J: '1. DEPENDIENTE', K: 'NINGUNO', M: 'NO', N: 'NO',
+          P: x.ing ? 'Todos los sistemas (ARL, AFP, CCF, EPS)' : 'NO', Q: x.ing || '', R: x.ret ? 'Todos los sistemas (ARL, AFP, CCF, EPS)' : 'NO', S: x.ret || '',
+          T: 'NO', U: 'NO', V: 'NO', W: 'NO', X: 'NO', Z: 'NO',
+          AA: x.lnr + x.sus ? 'LICENCIA NO REMUNERADA' : 'NO', AB: slnIni, AC: slnFin,
+          AD: x.inc ? 'SI' : 'NO', AG: 'NO', AJ: x.vac ? 'VACACIONES' : x.lr ? 'LICENCIA REMUNERADA' : 'NO', AM: 'NO', AN: 'NO', AT: 'NO',
+          AU: sal, AV: 'NO', AW: 'NO',
+          AX: afp || 'NINGUNA', AY: x.dias, AZ: x.ibc, BA: P.pension / 100, BB: x.pension, BC: 'Sin Riesgo', BF: fsp || '', BI: x.pension + fsp, BJ: 'NINGUNA',
+          BK: eps || 'NINGUNA', BL: x.dias, BM: x.ibc, BN: (exon ? P.saludEmp : P.saludEmp + P.saludEmpresa) / 100, BO: x.salud, BP: 0, BU: 'NINGUNA',
+          BV: arl || 'NINGUNA', BW: x.dias, BX: x.ibc, BY: (P.arl[r] || 0) / 100, BZ: String(r), CA: e.centro || '', CC: x.arl,
+          CD: x.dias, CE: ccf || 'NINGUNA', CF: x.ibc, CG: P.ccf / 100, CH: x.ccf,
+          CI: exon ? 0 : x.ibc, CJ: exon ? 0 : P.sena / 100, CK: x.sena, CL: exon ? 0 : P.icbf / 100, CM: x.icbf, CN: 0, CO: 0, CP: 0, CQ: 0, CR: exon ? 'SI' : 'NO', CS: 'CC',
+        };
+        for (const [letra, val] of Object.entries(v)) poner(C(letra, f), val);
+        // formatos como en la plantilla
+        for (const l of ['AU', 'AZ', 'BB', 'BF', 'BI', 'BM', 'BO', 'BP', 'BX', 'CC', 'CF', 'CH', 'CI', 'CK', 'CM']) if (ws[C(l, f)]) ws[C(l, f)].z = '"$"#,###';
+        for (const l of ['BA', 'BN', 'BY', 'CG', 'CJ', 'CL', 'CN', 'CP']) if (ws[C(l, f)]) ws[C(l, f)].z = '0.00%';
+      });
+      const ultima = 18 + Math.max(fs.length, 1);
+      ws['!ref'] = `A1:CT${Math.max(ultima, 18)}`;
+      XLSX.writeFile(wb, `Aportes en Linea ${emp.replace(/ S\.A\.S\.?$/i, '')} ${mes}.xlsx`, { bookType: 'xlsx' });
+    }
+    toast(`Listo: ${empresas.length === 1 ? 'se descargó el archivo' : `se descargaron ${empresas.length} archivos (uno por empresa)`} para Aportes en Línea.`);
+    if (avisos.length) setTimeout(() => mostrarInfo('Revisa antes de subir a Aportes en Línea', avisos), 300);
+  }
+
   // ---------- eventos ----------
   $('#view-rrhh').addEventListener('click', (ev) => {
     const t = ev.target.closest('[data-rh-tab], [data-rh], [data-rh-ver], [data-rh-q], [data-rh-empresa], [data-rh-docs], [data-rh-retiro], [data-rh-noprorroga], [data-rh-continua], [data-doc-bajar], [data-rh-emp]');
@@ -900,6 +1243,9 @@
     else if (a === 'xls-nom') excelNomina();
     else if (a === 'xls-nov') excelNovedades();
     else if (a === 'xls-pla') excelPlanilla();
+    else if (a === 'imp-pila') abrirImportacion('pila');
+    else if (a === 'imp-q') abrirImportacion('quincenas');
+    else if (a === 'aportes') archivoAportes();
     else if (a === 'cerrar' || a === 'reabrir') {
       if (!t.dataset.sure) { t.dataset.sure = '1'; t.textContent = a === 'cerrar' ? '¿Cerrar? Ya no se podrá modificar. Toca de nuevo' : '¿Reabrir? Toca de nuevo'; return; }
       cerrarQuincena(a === 'cerrar');
