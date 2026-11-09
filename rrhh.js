@@ -1231,6 +1231,7 @@
 
   // Archivo para subir a Aportes en Línea: la plantilla oficial (hoja "Liquidaciones") llena, un archivo por empresa
   let plantillaBuf = null;
+  const NOMBRE_PLANTILLA = 'PlantillaXLSX_Excel_2007.xlsx';
   async function archivoAportes() {
     if (!window.XLSX) return toast('No cargó el generador de Excel. Recarga la página.');
     const mes = R.mesPla, P = R.datos.param;
@@ -1241,6 +1242,7 @@
     const [y, m] = mes.split('-').map(Number), mesSalud = `${m === 12 ? y + 1 : y}-${pad2(m === 12 ? 1 : m + 1)}`;
     const avisos = [];
     const empresas = [...new Set(filas.map((x) => x.e.empresa || EMPRESA_DEF))];
+    if (empresas.length > 1) return mostrarInfo('Escoge una empresa', ['Aportes en Línea solo acepta el archivo con el nombre original de la plantilla (PlantillaXLSX_Excel_2007.xlsx), así que se descarga una empresa a la vez.', 'Arriba toca ODESA CARIBE u OBS y vuelve a tocar "Archivo para Aportes en Línea". Sube ese archivo antes de descargar el de la otra empresa.']);
     try { await cargarJSZip(); } catch (err) { return toast(err.message); }
     for (const emp of empresas) {
       const cfg = (P.pila || {})[emp] || {};
@@ -1262,7 +1264,8 @@
         if ((x.lnr || x.inc || x.vac || x.lr) && !susp.length) avisos.push(`${e.nombre}: tiene ${[x.lnr && 'licencia no remunerada', x.inc && 'incapacidad', x.vac && 'vacaciones', x.lr && 'licencia remunerada'].filter(Boolean).join(', ')}; escribe en el archivo las fechas de inicio y fin.`);
         const v = {
           A: i + 1, B: e.tipoId || 'CC', C: String(e.cedula), D: n.ap1, E: n.ap2, F: n.n1, G: n.n2, H: sinTilde(e.depto || 'ATLANTICO').replace(/ /g, '_'), I: sinTilde(e.ciudad || 'BARRANQUILLA'),
-          J: '1. DEPENDIENTE', K: 'NINGUNO', M: 'NO', N: 'NO',
+          // Horas laboradas: obligatorias para Aportes (8 horas por día cotizado)
+          J: '1. DEPENDIENTE', K: 'NINGUNO', L: x.dias * 8, M: 'NO', N: 'NO',
           P: x.ing ? 'Todos los sistemas (ARL, AFP, CCF, EPS)' : 'NO', Q: x.ing || '', R: x.ret ? 'Todos los sistemas (ARL, AFP, CCF, EPS)' : 'NO', S: x.ret || '',
           T: 'NO', U: 'NO', V: 'NO', W: 'NO', X: 'NO', Z: 'NO',
           AA: x.lnr + x.sus ? 'LICENCIA NO REMUNERADA' : 'NO', AB: slnIni, AC: slnFin,
@@ -1277,10 +1280,11 @@
         renglones.push(v);
       });
       const blob = await llenarPlantilla(plantillaBuf, cabecera, renglones);
-      bajar(blob, `Aportes en Linea ${emp.replace(/ S\.A\.S\.?$/i, '')} ${mes}.xlsx`);
+      // Aportes en Línea exige el mismo nombre de la plantilla original
+      bajar(blob, NOMBRE_PLANTILLA);
     }
-    toast(`Listo: ${empresas.length === 1 ? 'se descargó el archivo' : `se descargaron ${empresas.length} archivos (uno por empresa)`} para Aportes en Línea.`);
-    if (avisos.length) setTimeout(() => mostrarInfo('Revisa antes de subir a Aportes en Línea', avisos), 300);
+    avisos.unshift(`Se descargó ${NOMBRE_PLANTILLA} de ${empresas[0]}. Si en Descargas quedó con "(1)" o "(2)" en el nombre, bórrale eso: Aportes en Línea solo lo acepta con el nombre exacto.`);
+    setTimeout(() => mostrarInfo(avisos.length > 1 ? 'Revisa antes de subir a Aportes en Línea' : 'Archivo listo para Aportes en Línea', avisos), 300);
   }
 
   // ---------- eventos ----------
