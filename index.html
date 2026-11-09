@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="estilos.css?v=28">
+<link rel="stylesheet" href="estilos.css?v=29">
 </head>
 <body>
 
@@ -72,7 +72,7 @@
   <header class="top">
     <div>
       <h1>Pagos ODESA</h1>
-      <div class="sub"><span id="hoy"></span><span class="role" id="role"></span><span class="user-chip" id="who"></span><span class="sync" id="sync"></span><button class="siigo-luz" id="siigo-luz" type="button" hidden data-nivel="rojo"><i aria-hidden="true"></i><span></span></button></div>
+      <div class="sub"><span id="hoy"></span><span class="role" id="role"></span><span class="user-chip" id="who"></span><span class="sync" id="sync"></span><button class="siigo-luz" id="siigo-luz" type="button" hidden data-nivel="rojo"><i aria-hidden="true"></i><span></span></button><button class="rh-campana" id="rh-campana" type="button" hidden title="Contratos por notificar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22a2.5 2.5 0 0 0 2.45-2h-4.9A2.5 2.5 0 0 0 12 22zm7-6V11a7 7 0 0 0-5.5-6.84V3.5a1.5 1.5 0 0 0-3 0v.66A7 7 0 0 0 5 11v5l-2 2v1h18v-1z" fill="currentColor"/></svg><span></span></button></div>
     </div>
     <div class="top-actions">
       <span id="admin-actions" class="top-actions" hidden>
@@ -178,6 +178,7 @@
       <button class="vbtn" type="button" data-rh-tab="emp" aria-pressed="true">Empleados</button>
       <button class="vbtn" type="button" data-rh-tab="nom" aria-pressed="false">Nómina quincenal</button>
       <button class="vbtn" type="button" data-rh-tab="pla" aria-pressed="false">Novedades y planilla</button>
+      <button class="vbtn" type="button" data-rh-tab="doc" aria-pressed="false">Contratos y documentos</button>
       <button class="vbtn" type="button" data-rh-tab="log" aria-pressed="false">Cambios</button>
     </nav>
     <div class="notice" id="rh-aviso" hidden></div>
@@ -385,20 +386,97 @@
       <div class="field"><label for="emp-cedula">Cédula</label><input id="emp-cedula" inputmode="numeric" autocomplete="off" required></div>
       <div class="field"><label for="emp-empresa">Empresa</label><input id="emp-empresa" list="emp-empresas" autocomplete="off" placeholder="ODESA CARIBE S.A.S."><datalist id="emp-empresas"></datalist></div>
       <div class="field"><label for="emp-cargo">Cargo</label><input id="emp-cargo" autocomplete="off"></div>
+      <div class="field"><label for="emp-sexo">Sexo (para los documentos)</label><select id="emp-sexo"><option value="">—</option><option value="M">Hombre</option><option value="F">Mujer</option></select></div>
+      <div class="field"><label for="emp-expedida">Cédula expedida en</label><input id="emp-expedida" autocomplete="off" placeholder="Barranquilla"></div>
+      <div class="field"><label for="emp-telefono">Teléfono</label><input id="emp-telefono" inputmode="tel" autocomplete="off"></div>
+      <div class="field full"><label for="emp-direccion">Dirección</label><input id="emp-direccion" autocomplete="off"></div>
+      <div class="field full"><span class="section-lbl">Contrato</span></div>
       <div class="field"><label for="emp-contrato">Tipo de contrato</label><select id="emp-contrato"><option value="">—</option><option>Término indefinido</option><option>Término fijo</option><option>Obra o labor</option><option>Aprendizaje</option></select></div>
-      <div class="field"><label for="emp-salario">Salario mensual (COP)</label><input id="emp-salario" inputmode="decimal" autocomplete="off" required></div>
-      <div class="field"><label for="emp-riesgo">Riesgo ARL</label><select id="emp-riesgo"><option value="1">I · Administrativo</option><option value="2">II</option><option value="3">III</option><option value="4">IV</option><option value="5">V · Obra</option></select></div>
-      <div class="field full"><label class="check"><input type="checkbox" id="emp-aux" checked> Recibe auxilio de transporte (si gana hasta 2 salarios mínimos)</label></div>
       <div class="field"><label for="emp-ingreso">Fecha de ingreso</label><input type="date" id="emp-ingreso"></div>
+      <div class="field" id="emp-fin-wrap" hidden><label for="emp-fin">Fecha de terminación del contrato</label><input type="date" id="emp-fin"><span class="hint" id="emp-fin-hint">Ej. 3 meses: si entra el 14 de octubre, termina el 13 de enero.</span></div>
+      <div class="field full" id="emp-obra-wrap" hidden><label for="emp-obra">Obra o labor contratada</label><input id="emp-obra" autocomplete="off" placeholder="Ej. Construcción de piscina, Conjunto Altos del Prado, Barranquilla"></div>
+      <div class="field"><label for="emp-salario">Salario mensual (COP)</label><input id="emp-salario" inputmode="decimal" autocomplete="off" required></div>
+      <div class="field"><label for="emp-prueba">Período de prueba (días)</label><input id="emp-prueba" inputmode="numeric" autocomplete="off" placeholder="Automático"><span class="hint">Vacío: 2 meses, o la quinta parte si es a término fijo.</span></div>
+      <div class="field full"><label class="check"><input type="checkbox" id="emp-aux" checked> Recibe auxilio de transporte (si gana hasta 2 salarios mínimos)</label></div>
+      <div class="field full"><label for="emp-horario">Horario (42 horas semanales)</label><input id="emp-horario" autocomplete="off" placeholder="Lunes a viernes de 7:00 a.m. a 12:00 m. y de 1:00 p.m. a 4:24 p.m."></div>
+      <div class="field full"><label for="emp-lugar">Lugar de trabajo</label><input id="emp-lugar" autocomplete="off" placeholder="Barranquilla y su área metropolitana"></div>
+      <div class="field full"><label for="emp-funciones">Funciones del cargo (una por línea, van en el Anexo 1)</label><textarea id="emp-funciones" rows="3"></textarea></div>
       <div class="field"><label for="emp-cc">Centro de costo</label><input id="emp-cc" list="cc-lista" autocomplete="off"></div>
+      <div class="field full"><span class="section-lbl">Afiliaciones</span></div>
       <div class="field"><label for="emp-eps">EPS</label><input id="emp-eps" autocomplete="off"></div>
       <div class="field"><label for="emp-afp">Fondo de pensiones</label><input id="emp-afp" autocomplete="off"></div>
+      <div class="field"><label for="emp-arl">ARL</label><input id="emp-arl" autocomplete="off"></div>
+      <div class="field"><label for="emp-riesgo">Riesgo ARL</label><select id="emp-riesgo"><option value="1">I · Administrativo</option><option value="2">II</option><option value="3">III</option><option value="4">IV</option><option value="5">V · Obra</option></select></div>
+      <div class="field"><label for="emp-ccf">Caja de compensación</label><input id="emp-ccf" autocomplete="off"></div>
+      <div class="field"><label for="emp-cesantias">Fondo de cesantías</label><input id="emp-cesantias" autocomplete="off"></div>
+      <div class="field full" id="emp-gen-wrap"><label class="check"><input type="checkbox" id="emp-gen" checked> Generar el contrato en Word al guardar</label></div>
       <div class="field full"><span class="section-lbl">Retiro</span></div>
       <div class="field"><label for="emp-retiro">Fecha de retiro</label><input type="date" id="emp-retiro"><span class="hint">Déjala vacía si sigue activo.</span></div>
       <div class="field"><label for="emp-motivo">Motivo del retiro</label><input id="emp-motivo" autocomplete="off" placeholder="Renuncia, terminación de obra…"></div>
       <div class="field full"><label for="emp-nota">Motivo del cambio (queda en el registro)</label><input id="emp-nota" autocomplete="off" placeholder="Ej. Aumento de salario aprobado por gerencia"></div>
       <div class="err full" id="emp-err" hidden></div>
-      <div class="form-actions full"><button class="btn" type="button" data-close>Cancelar</button><button class="btn primary" type="submit" id="emp-guardar">Guardar</button></div>
+      <div class="form-actions full"><button class="btn" type="button" id="emp-docs" hidden>Documentos</button><button class="btn" type="button" data-close>Cancelar</button><button class="btn primary" type="submit" id="emp-guardar">Guardar</button></div>
+    </form>
+  </div>
+</dialog>
+
+<!-- Documentos de un empleado -->
+<dialog id="dlg-docs">
+  <div class="dlg">
+    <div class="dlg-head"><h2 id="docs-titulo">Documentos</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
+    <div id="docs-lista"></div>
+    <div class="rh-generar">
+      <div class="field"><label for="docs-tipo">Generar un documento</label><select id="docs-tipo">
+        <option value="contrato">Contrato de trabajo</option>
+        <option value="citacion">Citación a descargos</option>
+        <option value="acta">Acta de descargos</option>
+        <option value="suspension">Memorando de suspensión</option>
+        <option value="noprorroga">Preaviso de no prórroga (término fijo)</option>
+        <option value="terminacion">Retiro: carta de terminación</option>
+        <option value="certificado">Certificado laboral</option>
+      </select></div>
+      <button class="btn primary" type="button" id="docs-generar">Generar</button>
+    </div>
+    <input type="file" id="docs-firmado" accept=".pdf,image/*" hidden>
+    <div class="err" id="docs-err" hidden></div>
+  </div>
+</dialog>
+
+<!-- Suspensión -->
+<dialog id="dlg-susp">
+  <div class="dlg">
+    <div class="dlg-head"><h2>Suspensión</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
+    <p id="susp-intro" style="margin:0"></p>
+    <div id="susp-cual"></div>
+    <form class="grid" id="susp-form" novalidate>
+      <div class="field"><label for="susp-inicio">Fecha inicial de la suspensión</label><input type="date" id="susp-inicio" required></div>
+      <div class="field"><label for="susp-dias">Días de suspensión (en total)</label><input id="susp-dias" inputmode="numeric" required><span class="hint" id="susp-fin"></span></div>
+      <div class="field full"><label for="susp-hechos">¿Qué pasó? (hechos, con fechas)</label><textarea id="susp-hechos" rows="3" placeholder="Ej. El 3 de noviembre no se presentó a trabajar y no avisó ni presentó excusa."></textarea></div>
+      <div class="field full"><label for="susp-falta">Obligación o norma incumplida</label><input id="susp-falta" autocomplete="off" placeholder="Ej. Art. 58 num. 1 del CST y el Reglamento Interno de Trabajo"></div>
+      <div class="field"><label for="susp-descargos">Fecha de la diligencia de descargos</label><input type="date" id="susp-descargos"><span class="hint">La ley exige escuchar al trabajador antes de suspender. Si aún no se hizo, genera primero la citación desde Documentos.</span></div>
+      <div class="err full" id="susp-err" hidden></div>
+      <div class="form-actions full"><button class="btn" type="button" data-close>Ahora no</button><button class="btn primary" type="submit" id="susp-go">Guardar y generar memorando</button></div>
+    </form>
+  </div>
+</dialog>
+
+<!-- Retiro -->
+<dialog id="dlg-retiro">
+  <div class="dlg">
+    <div class="dlg-head"><h2 id="ret-titulo">Retiro</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
+    <form class="grid" id="ret-form" novalidate>
+      <div class="field"><label for="ret-fecha">Fecha de retiro (último día)</label><input type="date" id="ret-fecha" required></div>
+      <div class="field"><label for="ret-motivo">Motivo</label><select id="ret-motivo"></select></div>
+      <div class="field" data-ret="renuncia"><label for="ret-renuncia">Fecha de la carta de renuncia</label><input type="date" id="ret-renuncia"></div>
+      <div class="field" data-ret="vencimiento"><label for="ret-preaviso">Fecha en que se entregó el preaviso</label><input type="date" id="ret-preaviso"></div>
+      <div class="field full" data-ret="justa"><label for="ret-hechos">Hechos (qué pasó, con fechas)</label><textarea id="ret-hechos" rows="3"></textarea></div>
+      <div class="field" data-ret="justa"><label for="ret-causal">Justa causa</label><input id="ret-causal" autocomplete="off" placeholder="Ej. Art. 62 literal a) num. 6 del CST"></div>
+      <div class="field" data-ret="justa"><label for="ret-descargos">Fecha de los descargos</label><input type="date" id="ret-descargos"></div>
+      <div class="field"><label for="ret-aportes">Aportes pagados hasta</label><input id="ret-aportes" autocomplete="off" placeholder="octubre de 2026"></div>
+      <div class="field full"><label class="check"><input type="checkbox" id="ret-cert" checked> Generar también el certificado laboral</label></div>
+      <p class="rep-note full" id="ret-nota" style="margin:0"></p>
+      <div class="err full" id="ret-err" hidden></div>
+      <div class="form-actions full"><button class="btn" type="button" data-close>Ahora no</button><button class="btn primary" type="submit" id="ret-go">Guardar y generar documentos</button></div>
     </form>
   </div>
 </dialog>
@@ -707,10 +785,11 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="cripto.js?v=28"></script>
-<script src="github.js?v=28"></script>
-<script src="lector.js?v=28"></script>
-<script src="app.js?v=28"></script>
-<script src="rrhh.js?v=28"></script>
+<script src="cripto.js?v=29"></script>
+<script src="github.js?v=29"></script>
+<script src="lector.js?v=29"></script>
+<script src="app.js?v=29"></script>
+<script src="rrhh-docs.js?v=29"></script>
+<script src="rrhh.js?v=29"></script>
 </body>
 </html>

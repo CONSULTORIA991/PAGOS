@@ -3390,6 +3390,8 @@
   window.ODESA = {
     get maestra() { return maestra; }, get uid() { return uid; }, get conf() { return conf; }, get isAdmin() { return isAdmin; },
     $, esc, fmt, fmtDate, dtFmt, toast, mostrarError, msgGitHub, nuevoId, personName, parseMonto, todayISO, localISO, setView,
+    // Aviso al celular de los jefes (ntfy), solo si el canal está activado. Sin nombres ni valores.
+    async avisar(titulo, mensaje) { if (conf && conf.avisos && conf.avisos.canal) { await enviarNtfy(titulo, mensaje); return true; } return false; },
   };
   iniciar();
 })();
