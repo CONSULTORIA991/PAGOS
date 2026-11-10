@@ -539,3 +539,17 @@ label .rh-num { width: 22px; height: 22px; font-size: .78rem; margin-right: 4px;
 .proy-cuentas b { font-family: var(--font-num); }
 #dlg-proy-det, #dlg-proy-form { width: min(820px, calc(100vw - 32px)); }
 @media (max-width: 560px) { .proy-barra { grid-template-columns: 1fr auto; } .proy-barra-t { grid-column: 1 / -1; grid-row: 2; } }
+
+/* Gráfica de líneas (acumulado en el tiempo) */
+.proy-lineas { width: 100%; height: auto; display: block; }
+.proy-lineas text { font-size: 11px; fill: var(--muted); }
+.proy-lineas .guia { stroke: var(--line); stroke-dasharray: 3 3; } .proy-lineas .cero { stroke: var(--muted); }
+.proy-lineas polyline { fill: none; stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+.proy-lineas .zona { fill: transparent; } .proy-lineas .pt:hover .zona { fill: var(--accent-soft); opacity: .6; }
+.proy-lineas polyline.l-ven, .proy-lineas circle.l-ven { stroke: var(--accent); fill: var(--accent); }
+.proy-lineas polyline.l-cos, .proy-lineas circle.l-cos { stroke: #e07b00; fill: #e07b00; }
+.proy-lineas polyline.l-uti, .proy-lineas circle.l-uti { stroke: var(--ok); fill: var(--ok); }
+.proy-lineas polyline { fill: none !important; }
+.proy-ley .l-ven { background: var(--accent); margin-left: 0; } .proy-ley .l-cos { background: #e07b00; } .proy-ley .l-uti { background: var(--ok); }
+.proy-ley b { font-family: var(--font-num); color: var(--ink); margin-right: 6px; }
+.proy-ley { flex-wrap: wrap; }

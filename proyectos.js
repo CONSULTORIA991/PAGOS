@@ -250,6 +250,7 @@
         <section class="proy-caja"><h3>¿En qué se fue la plata?</h3><p class="proy-nota">Costos y gastos por rubro. Toca una barra para ver los proveedores.</p>${barrasRubros(c)}</section>
         <section class="proy-caja"><h3>Mes a mes</h3><p class="proy-nota">Ventas y costos de cada mes.</p>${graficaMeses(ccs)}</section>
       </div>
+      <section class="proy-caja"><h3>Acumulado en el tiempo</h3><p class="proy-nota">${P.periodo === 'mes' ? `Cómo se fueron sumando las ventas, los costos y la utilidad del proyecto hasta ${esc(nombreMes(P.mes).toLowerCase())}.` : 'Cómo se fueron sumando las ventas, los costos y la utilidad entre la fecha de inicio y la de corte.'} Pasa el dedo o el mouse por un punto para ver el valor.</p>${graficaLineas(serieMeses(ccs))}</section>
       <section class="proy-caja"><h3>Estado de resultados (PyG)</h3><p class="proy-nota">Toca un rubro para ver qué proveedores y documentos lo forman.</p>${tablaPyG(c)}</section>
       <section class="proy-caja"><h3>Proveedores principales</h3>${topProv(c)}</section>
       ${seccionObra(claveObra, obra, todos)}`;
@@ -285,6 +286,46 @@
     }).join('');
     return `<svg class="proy-meses" viewBox="0 0 ${W} ${H}" role="img" aria-label="Ventas y costos por mes"><line x1="${pad}" x2="${W}" y1="${H - 24}" y2="${H - 24}" class="eje"/><text x="2" y="14" class="max">${esc(millones(max))}</text>${barras}</svg>
       <p class="proy-ley"><span class="l-ing"></span> Ventas <span class="l-costo"></span> Costos y gastos</p>`;
+  }
+  // Serie mensual: ventas, costos y utilidad de cada mes y sus acumulados.
+  // Acumulado: meses entre la fecha de inicio y la de corte. Un mes: desde el inicio del proyecto hasta ese mes.
+  function serieMeses(ccs) {
+    const dentro = (fecha) => (P.periodo === 'mes' ? fecha.slice(0, 7) <= P.mes : enPeriodo(fecha));
+    const pm = new Map();
+    for (const f of filasDe(ccs)) {
+      if (!dentro(f[0])) continue;
+      const rb = rubroDe(f[2], f[1]); if (rb === NO) continue;
+      const m = f[0].slice(0, 7), x = pm.get(m) || { ing: 0, costo: 0 };
+      if (ING.includes(rb)) x.ing -= f[5]; else x.costo += f[5];
+      pm.set(m, x);
+    }
+    const conMov = [...pm.keys()].sort();
+    const ini = P.periodo === 'mes' ? (conMov[0] || P.mes) : (P.desde || todayISO()).slice(0, 7);
+    const fin = P.periodo === 'mes' ? P.mes : (P.hasta || todayISO()).slice(0, 7);
+    const out = []; let ia = 0, ca = 0;
+    for (let m = ini; m <= fin && out.length < 600; m = mesMas(m, 1)) {
+      const v = pm.get(m) || { ing: 0, costo: 0 }; ia += v.ing; ca += v.costo;
+      out.push({ mes: m, ing: v.ing, costo: v.costo, util: v.ing - v.costo, ingAc: ia, costoAc: ca, utilAc: ia - ca });
+    }
+    return out;
+  }
+  function graficaLineas(serie) {
+    if (!serie.length || serie.every((s) => !s.ing && !s.costo)) return '<p class="proy-nota">Sin movimientos en este periodo.</p>';
+    const L = [['ingAc', 'Ventas acumuladas', 'l-ven'], ['costoAc', 'Costos acumulados', 'l-cos'], ['utilAc', 'Utilidad acumulada', 'l-uti']];
+    const vals = serie.flatMap((s) => L.map(([k]) => s[k]));
+    const max = Math.max(1, ...vals), min = Math.min(0, ...vals);
+    const W = 720, H = 260, izq = 64, der = 12, arr = 14, aba = 26;
+    const x = (i) => izq + (serie.length === 1 ? (W - izq - der) / 2 : i * (W - izq - der) / (serie.length - 1));
+    const y = (v) => arr + (max - v) / (max - min) * (H - arr - aba);
+    // Líneas guía: 0, máximo, mínimo y la mitad
+    const guias = [...new Set([max, max / 2, 0, min].filter((v, i) => i < 3 || v < 0))].filter((v) => v === 0 || Math.abs(y(v) - y(0)) > 14).map((v) => `<line x1="${izq}" x2="${W - der}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" class="${v === 0 ? 'cero' : 'guia'}"/><text x="${izq - 6}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end">${esc(millones(v))}</text>`).join('');
+    const paso = Math.ceil(serie.length / 12);
+    const meses = serie.map((s, i) => (i % paso === 0 || i === serie.length - 1 ? `<text x="${x(i).toFixed(1)}" y="${H - 8}" text-anchor="middle">${esc(mesCorto(s.mes))}</text>` : '')).join('');
+    const lineas = L.map(([k, , cl]) => `<polyline class="${cl}" points="${serie.map((s, i) => `${x(i).toFixed(1)},${y(s[k]).toFixed(1)}`).join(' ')}"/>`).join('');
+    const puntos = serie.map((s, i) => `<g class="pt"><title>${esc(nombreMes(s.mes))}\nVentas acumuladas: ${fmt(s.ingAc)}\nCostos acumulados: ${fmt(s.costoAc)}\nUtilidad acumulada: ${fmt(s.utilAc)}</title><rect x="${(x(i) - (W - izq - der) / Math.max(1, serie.length) / 2).toFixed(1)}" y="${arr}" width="${Math.max(4, (W - izq - der) / Math.max(1, serie.length)).toFixed(1)}" height="${H - arr - aba}" class="zona"/>${L.map(([k, , cl]) => `<circle cx="${x(i).toFixed(1)}" cy="${y(s[k]).toFixed(1)}" r="${serie.length > 40 ? 1.8 : 3}" class="${cl}"/>`).join('')}</g>`).join('');
+    const u = serie[serie.length - 1];
+    return `<svg class="proy-lineas" viewBox="0 0 ${W} ${H}" role="img" aria-label="Ventas, costos y utilidad acumulados por mes">${guias}${meses}${lineas}${puntos}</svg>
+      <p class="proy-ley">${L.map(([k, n, cl]) => `<span class="${cl}"></span> ${n}: <b>${esc(millones(u[k]))}</b>`).join(' ')}</p>`;
   }
   function tablaPyG(c) {
     const fila = (r, v, cl) => `<tr class="click ${cl || ''}" data-proy-rubro="${esc(r)}"><td>${esc(titulo(r))}</td><td class="n">${fmt(v)}</td><td class="n">${pct(c.ventas ? v / c.ventas : NaN)}</td></tr>`;
@@ -483,20 +524,129 @@
   }
 
   // ---------- Excel ----------
-  function excel() {
+  // Hojas: Resumen (datos de la obra, indicadores y gráfico de líneas), Mes a mes (datos del gráfico), PyG y Movimientos
+  async function excel() {
     if (!window.XLSX) return toast('No cargó el generador de Excel. Recarga la página.');
+    const b = document.querySelector('[data-proy="excel"]'); if (b) b.disabled = true;
+    try { await excelArmar(); } catch (e) { toast('No se pudo armar el Excel: ' + (e.message || e)); }
+    if (b) b.disabled = false;
+  }
+  async function cargarJSZip() {
+    if (window.JSZip) return;
+    await new Promise((ok, mal) => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'; s.onload = ok; s.onerror = () => mal(new Error('no cargó el componente para el gráfico; revisa el internet')); document.head.appendChild(s); });
+  }
+  async function excelArmar() {
     const ccs = P.sub ? [P.sub] : ccsDe(P.sel), c = calcular(ccs);
-    const pyg = [[`INFORME DE PROYECTO · ${P.sub ? nombreCC(P.sub) : nombreSel(P.sel)}`], [textoPeriodo()], [], ['Rubro', 'Valor', '% de ventas'],
+    const nombre = P.sub ? nombreCC(P.sub) : nombreSel(P.sel);
+    const claveObra = P.sub ? 'c:' + P.sub : P.sel, obra = (P.conf.obras || {})[claveObra] || {};
+    const m2 = Number(obra.m2) || 0, vendido = Number(obra.valorVenta) || 0;
+    const cTot = P.periodo === 'mes' ? (() => { const s = [P.periodo, P.desde, P.hasta]; P.periodo = 'rango'; P.desde = ''; P.hasta = ''; const x = calcular(ccs); [P.periodo, P.desde, P.hasta] = s; return x; })() : c;
+    const serie = serieMeses(ccs);
+    const DIN = '"$" #,##0', PCT = '0.0%';
+    // Resumen
+    const res = [
+      ['INFORME DE PROYECTO'], [nombre], [textoPeriodo()], [P.sub ? `Centro de costo ${P.sub}` : P.sel.startsWith('g:') ? `Grupo: ${ccsDe(P.sel).join(', ')}` : `Centro de costo ${P.sel.slice(2)}`], [],
+      ['DATOS DE LA OBRA'],
+      ['Valor del contrato (vendido, sin IVA)', vendido || 'Sin registrar', vendido ? DIN : null],
+      ['Metros cuadrados', m2 || 'Sin registrar', m2 ? (Number.isInteger(m2) ? '#,##0 "m²"' : '#,##0.00 "m²"') : null],
+      ...(obra.nota ? [['Nota', obra.nota]] : []), [],
+      ['INDICADORES'],
+      ['Ventas netas', c.ventas, DIN], ['Costos y gastos', c.costo, DIN], ['Utilidad bruta', c.bruta, DIN], ['Utilidad operativa', c.operativa, DIN],
+      ['Margen bruto', c.ventas ? c.bruta / c.ventas : '', PCT], ['Margen operativo', c.ventas ? c.operativa / c.ventas : '', PCT],
+      ...(m2 ? [['Costo por m²', cTot.costo / m2, DIN]] : []),
+      ...(m2 && vendido ? [['Valor vendido por m²', vendido / m2, DIN], ['Utilidad esperada por m²', (vendido - cTot.costo) / m2, DIN]] : []),
+      ...(vendido ? [['Facturado del contrato', cTot.ventas / vendido, PCT]] : []),
+      ...(P.periodo === 'mes' && (m2 || vendido) ? [['(Los indicadores por m² y del contrato usan todo el proyecto, no solo el mes.)']] : []),
+      [], ['VENTAS, COSTOS Y UTILIDAD ACUMULADOS (datos en la hoja "Mes a mes")'],
+    ];
+    const filaGrafico = res.length; // el gráfico va debajo de esta fila (base 0)
+    const hRes = XLSX.utils.aoa_to_sheet(res.map((f) => f.slice(0, 2)));
+    res.forEach((f, i) => { if (f[2] && typeof f[1] === 'number') hRes[XLSX.utils.encode_cell({ r: i, c: 1 })].z = f[2]; });
+    hRes['!cols'] = [{ wch: 44 }, { wch: 22 }];
+    // Mes a mes
+    const mm = [['Mes', 'Ventas', 'Costos y gastos', 'Utilidad', 'Ventas acumuladas', 'Costos acumulados', 'Utilidad acumulada']]
+      .concat(serie.map((s) => [mesCorto(s.mes), Math.round(s.ing), Math.round(s.costo), Math.round(s.util), Math.round(s.ingAc), Math.round(s.costoAc), Math.round(s.utilAc)]));
+    const hMes = XLSX.utils.aoa_to_sheet(mm);
+    for (let r = 1; r < mm.length; r++) for (let k = 1; k <= 6; k++) hMes[XLSX.utils.encode_cell({ r, c: k })].z = DIN;
+    hMes['!cols'] = [{ wch: 10 }, ...Array(6).fill({ wch: 19 })];
+    // PyG
+    const pyg = [[`INFORME DE PROYECTO · ${nombre}`], [textoPeriodo()], [], ['Rubro', 'Valor', '% de ventas'],
       ['Facturación total', c.fact], ['Descuentos', -c.desc], ['VENTAS NETAS', c.ventas], [],
       ...COSTO.map((r) => [titulo(r), c.r[r]]), ['TOTAL COSTO DE VENTAS', c.costoVentas], ['UTILIDAD BRUTA', c.bruta], [],
       ...GASTO.map((r) => [titulo(r), c.r[r]]), ...(Math.abs(c.r[SIN]) >= 1 ? [['Sin clasificar', c.r[SIN]]] : []), ['TOTAL GASTOS OPERATIVOS', c.gastos], ['UTILIDAD OPERATIVA', c.operativa]];
     pyg.forEach((f) => { if (typeof f[1] === 'number' && c.ventas) f[2] = f[1] / c.ventas; });
     const det = [['Fecha', 'Documento', 'Centro de costo', 'Cuenta / concepto', 'Rubro', 'Tercero', 'Detalle', 'Valor']].concat(
       filasDe(ccs).filter((f) => enPeriodo(f[0]) && rubroDe(f[2], f[1]) !== NO).map((f) => [f[0], f[1], f[3], (f[2].startsWith('P:') || f[2].startsWith('N:') ? '' : f[2] + ' ') + nombreCuenta(f[2]), titulo(rubroDe(f[2], f[1])), f[4] >= 0 ? (TER[f[4]] || [])[1] : f[7], f[6], Math.round(f[5])]));
+    const hPyg = XLSX.utils.aoa_to_sheet(pyg);
+    pyg.forEach((f, i) => { if (typeof f[1] === 'number') { hPyg[XLSX.utils.encode_cell({ r: i, c: 1 })].z = DIN; if (typeof f[2] === 'number') hPyg[XLSX.utils.encode_cell({ r: i, c: 2 })].z = PCT; } });
+    hPyg['!cols'] = [{ wch: 38 }, { wch: 20 }, { wch: 12 }];
+    const hDet = XLSX.utils.aoa_to_sheet(det);
+    hDet['!cols'] = [{ wch: 11 }, { wch: 16 }, { wch: 9 }, { wch: 36 }, { wch: 28 }, { wch: 32 }, { wch: 44 }, { wch: 14 }];
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(pyg), 'PyG');
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(det), 'Movimientos');
-    XLSX.writeFile(wb, `Informe proyecto ${(P.sub || nombreSel(P.sel)).replace(/[\\/:*?"<>|]/g, '').slice(0, 40)} ${P.periodo === 'mes' ? P.mes : `${P.desde} a ${P.hasta}`}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, hRes, 'Resumen');
+    XLSX.utils.book_append_sheet(wb, hMes, 'Mes a mes');
+    XLSX.utils.book_append_sheet(wb, hPyg, 'PyG');
+    XLSX.utils.book_append_sheet(wb, hDet, 'Movimientos');
+    let datos = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    // Gráfico de líneas nativo de Excel (se puede editar), en la hoja Resumen, con los datos de "Mes a mes"
+    if (serie.length) { await cargarJSZip(); datos = await conGrafico(datos, 'Resumen', serie.length, filaGrafico, nombre); }
+    const blob = new Blob([datos], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = `Informe proyecto ${nombre.replace(/[\\/:*?"<>|]/g, '').slice(0, 40)} ${P.periodo === 'mes' ? P.mes : `${P.desde} a ${P.hasta}`}.xlsx`;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  }
+  // Agrega al .xlsx un gráfico de líneas (DrawingML) anclado en la hoja indicada
+  async function conGrafico(datos, hoja, n, fila, nombre) {
+    const zip = await JSZip.loadAsync(datos);
+    const xe = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const wbx = await zip.file('xl/workbook.xml').async('string');
+    const rels = await zip.file('xl/_rels/workbook.xml.rels').async('string');
+    const rid = (new RegExp(`<sheet [^>]*name="${hoja}"[^>]*r:id="([^"]+)"`).exec(wbx) || [])[1];
+    const target = (new RegExp(`<Relationship [^>]*Id="${rid}"[^>]*Target="([^"]+)"`).exec(rels) || new RegExp(`<Relationship [^>]*Target="([^"]+)"[^>]*Id="${rid}"`).exec(rels) || [])[1];
+    const rutaHoja = 'xl/' + String(target || 'worksheets/sheet1.xml').replace(/^\/?xl\//, '');
+    const archivo = rutaHoja.split('/').pop();
+    // Valores en caché (Excel los recalcula al abrir)
+    const hojaMes = XLSX.read(datos, { type: 'array' }).Sheets['Mes a mes'];
+    const celda = (r, c) => (hojaMes[XLSX.utils.encode_cell({ r, c })] || {}).v;
+    const cats = Array.from({ length: n }, (_, i) => celda(i + 1, 0));
+    const ref = (col) => `'Mes a mes'!$${col}$2:$${col}$${n + 1}`;
+    const serieXml = (i, col, colorHex) => `<c:ser><c:idx val="${i}"/><c:order val="${i}"/>
+      <c:tx><c:strRef><c:f>'Mes a mes'!$${col}$1</c:f><c:strCache><c:ptCount val="1"/><c:pt idx="0"><c:v>${xe(celda(0, 'EFG'.indexOf(col) + 4))}</c:v></c:pt></c:strCache></c:strRef></c:tx>
+      <c:spPr><a:ln w="28575" cap="rnd"><a:solidFill><a:srgbClr val="${colorHex}"/></a:solidFill><a:round/></a:ln></c:spPr>
+      <c:marker><c:symbol val="circle"/><c:size val="4"/><c:spPr><a:solidFill><a:srgbClr val="${colorHex}"/></a:solidFill><a:ln><a:noFill/></a:ln></c:spPr></c:marker>
+      <c:cat><c:strRef><c:f>${ref('A')}</c:f><c:strCache><c:ptCount val="${n}"/>${cats.map((v, k) => `<c:pt idx="${k}"><c:v>${xe(v)}</c:v></c:pt>`).join('')}</c:strCache></c:strRef></c:cat>
+      <c:val><c:numRef><c:f>${ref(col)}</c:f><c:numCache><c:formatCode>General</c:formatCode><c:ptCount val="${n}"/>${Array.from({ length: n }, (_, k) => `<c:pt idx="${k}"><c:v>${Number(celda(k + 1, 'EFG'.indexOf(col) + 4)) || 0}</c:v></c:pt>`).join('')}</c:numCache></c:numRef></c:val>
+      <c:smooth val="0"/></c:ser>`;
+    const chart = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><c:roundedCorners val="0"/>
+<c:chart><c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1200" b="1"/></a:pPr><a:r><a:rPr lang="es-CO" sz="1200" b="1"/><a:t>${xe(nombre.slice(0, 60))}: ventas, costos y utilidad acumulados</a:t></a:r></a:p></c:rich></c:tx><c:overlay val="0"/></c:title><c:autoTitleDeleted val="0"/>
+<c:plotArea><c:layout/><c:lineChart><c:grouping val="standard"/><c:varyColors val="0"/>
+${serieXml(0, 'E', '002796')}${serieXml(1, 'F', 'E07B00')}${serieXml(2, 'G', '1A7343')}
+<c:marker val="1"/><c:axId val="50010001"/><c:axId val="50010002"/></c:lineChart>
+<c:catAx><c:axId val="50010001"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="b"/><c:numFmt formatCode="General" sourceLinked="1"/><c:majorTickMark val="out"/><c:minorTickMark val="none"/><c:tickLblPos val="low"/><c:crossAx val="50010002"/><c:crosses val="autoZero"/><c:auto val="1"/><c:lblAlgn val="ctr"/><c:lblOffset val="100"/><c:noMultiLvlLbl val="0"/></c:catAx>
+<c:valAx><c:axId val="50010002"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="l"/><c:majorGridlines><c:spPr><a:ln w="6350"><a:solidFill><a:srgbClr val="D9D9D9"/></a:solidFill></a:ln></c:spPr></c:majorGridlines><c:numFmt formatCode="&quot;$&quot; #,##0" sourceLinked="0"/><c:majorTickMark val="out"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/><c:crossAx val="50010001"/><c:crosses val="autoZero"/><c:crossBetween val="between"/></c:valAx>
+</c:plotArea><c:legend><c:legendPos val="b"/><c:overlay val="0"/></c:legend><c:plotVisOnly val="1"/><c:dispBlanksAs val="gap"/></c:chart></c:chartSpace>`;
+    const drawing = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><xdr:twoCellAnchor editAs="oneCell">
+<xdr:from><xdr:col>0</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${fila}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>
+<xdr:to><xdr:col>6</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${fila + 22}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>
+<xdr:graphicFrame macro=""><xdr:nvGraphicFramePr><xdr:cNvPr id="2" name="Gráfico de líneas"/><xdr:cNvGraphicFramePr/></xdr:nvGraphicFramePr><xdr:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></xdr:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="rId1"/></a:graphicData></a:graphic></xdr:graphicFrame><xdr:clientData/></xdr:twoCellAnchor></xdr:wsDr>`;
+    zip.file('xl/charts/chart1.xml', chart);
+    zip.file('xl/drawings/drawing1.xml', drawing);
+    zip.file('xl/drawings/_rels/drawing1.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart1.xml"/></Relationships>');
+    // Relación de la hoja con el dibujo
+    const rutaRels = rutaHoja.replace(archivo, '_rels/' + archivo + '.rels');
+    let hr = zip.file(rutaRels) ? await zip.file(rutaRels).async('string') : '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>';
+    hr = hr.replace('</Relationships>', '<Relationship Id="rIdGrafico1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/></Relationships>');
+    zip.file(rutaRels, hr);
+    let sx = await zip.file(rutaHoja).async('string');
+    if (!/xmlns:r=/.test(sx.slice(0, 600))) sx = sx.replace('<worksheet ', '<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ');
+    sx = sx.replace('</worksheet>', '<drawing r:id="rIdGrafico1"/></worksheet>');
+    zip.file(rutaHoja, sx);
+    let ct = await zip.file('[Content_Types].xml').async('string');
+    ct = ct.replace('</Types>', '<Override PartName="/xl/charts/chart1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/><Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/></Types>');
+    zip.file('[Content_Types].xml', ct);
+    return zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
   }
 
   // ---------- eventos ----------
