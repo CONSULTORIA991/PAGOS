@@ -13,7 +13,8 @@
   // Salarios operativos proyecto: personal contratado fijo solo para esa obra (su seguridad social va en
   // "Seguridad social operativa directa"); van en el costo de ventas. Salarios operativos compartidos: personal
   // de la empresa que rota entre obras (su seguridad social va en "Seguridad social"); van en gastos.
-  const COSTO = ['MANO DE OBRA DIRECTA', 'SALARIOS OPERATIVOS PROYECTO', 'SEGURIDAD SOCIAL OPERATIVA DIRECTA', 'PREOPERATIVOS', 'ESTRUCTURAS', 'IMPERMEABILIZACIONES', 'REVOQUES Y ENCHAPES', 'PARTE ELECTRICA', 'TUBERIA', 'COMPRA DE EQUIPOS', 'GARANTIAS'];
+  // "Mano de obra directa" ya no es rubro (gerencia, 2026-11-10): sus cuentas van a Salarios operativos proyecto
+  const COSTO = ['SALARIOS OPERATIVOS PROYECTO', 'SEGURIDAD SOCIAL OPERATIVA DIRECTA', 'PREOPERATIVOS', 'ESTRUCTURAS', 'IMPERMEABILIZACIONES', 'REVOQUES Y ENCHAPES', 'PARTE ELECTRICA', 'TUBERIA', 'COMPRA DE EQUIPOS', 'GARANTIAS'];
   const GASTO = ['SALARIOS OPERATIVOS COMPARTIDOS', 'SEGURIDAD SOCIAL', 'TRANSPORTES Y VIATICOS', 'GASTOS ADMINISTRATIVOS'];
   const SIN = 'SIN CLASIFICAR', NO = 'NO INCLUIR'; // NO INCLUIR: cuentas que no van al PyG del proyecto (renta, ingresos no operacionales)
   const RUBROS = [...ING, ...COSTO, ...GASTO];
@@ -75,7 +76,8 @@
     // Personal agregado a mano = personal compartido (como la cuenta 72050501 Nómina Personal Odesa)
     if (k.startsWith('N:')) return { 'N:sal': 'SALARIOS OPERATIVOS COMPARTIDOS', 'N:pre': 'SALARIOS OPERATIVOS COMPARTIDOS', 'N:ss': 'SEGURIDAD SOCIAL', 'N:via': 'TRANSPORTES Y VIATICOS' }[k];
     if (k.startsWith('P:')) return /^NC/.test(comp) ? 'DESCUENTOS' : 'FACTURACION TOTAL';
-    return P.conf.mapa[k] || (P.datos.mapaBase || {})[k] || sugerido(k);
+    const r = P.conf.mapa[k] || (P.datos.mapaBase || {})[k] || sugerido(k);
+    return r === 'MANO DE OBRA DIRECTA' ? 'SALARIOS OPERATIVOS PROYECTO' : r;
   }
   const clasificada = (k) => k.startsWith('P:') || k.startsWith('N:') || !!(P.conf.mapa[k] || (P.datos.mapaBase || {})[k]);
 
@@ -302,7 +304,7 @@
           const gt = [...g.m.values()].reduce((s, v) => s + v, 0);
           for (const [r, v] of g.m) pesos.set(r, (pesos.get(r) || 0) + general * v / gt);
           if (!base) como = g.como;
-        } else pesos.set('MANO DE OBRA DIRECTA', (pesos.get('MANO DE OBRA DIRECTA') || 0) + general);
+        } else pesos.set('SALARIOS OPERATIVOS PROYECTO', (pesos.get('SALARIOS OPERATIVOS PROYECTO') || 0) + general);
       }
       const tot = [...pesos.values()].reduce((s, v) => s + v, 0);
       if (!(tot > 0)) { out.push(f); continue; }
@@ -423,7 +425,7 @@
         <div class="quick" role="group" aria-label="Periodo"><button class="qbtn" type="button" data-proy-per="rango" aria-pressed="${P.periodo === 'rango'}">Acumulado (inicio y corte)</button><button class="qbtn" type="button" data-proy-per="mes" aria-pressed="${P.periodo === 'mes'}">Un mes</button></div>
         ${P.periodo === 'mes' ? `<div class="field"><label for="proy-mes">Mes</label><input type="month" id="proy-mes" value="${esc(P.mes)}"></div>`
     : `<div class="field"><label for="proy-desde">Fecha de inicio</label><input type="date" id="proy-desde" value="${esc(P.desde)}" max="${esc(P.hasta)}"></div><div class="field"><label for="proy-hasta">Fecha de corte</label><input type="date" id="proy-hasta" value="${esc(P.hasta)}" min="${esc(P.desde)}"></div><button class="rh-link" type="button" data-proy="rango-todo" title="Desde el primer movimiento del proyecto hasta hoy">Todo el proyecto</button>`}
-      </div><div class="grupo">${isAdmin() && P.sel.startsWith('g:') ? '<button class="btn" type="button" data-proy="grupo">Editar grupo</button>' : ''}<button class="btn" type="button" data-proy="excel">Descargar Excel</button></div></div>
+      </div><div class="grupo">${isAdmin() && P.sel.startsWith('g:') ? '<button class="btn" type="button" data-proy="grupo">Editar grupo</button>' : ''}<button class="btn" type="button" data-proy="pdf">Descargar PDF</button><button class="btn" type="button" data-proy="excel">Descargar Excel</button></div></div>
       ${subChips}
       <p class="proy-periodo">${esc(textoPeriodo())} · ${esc(P.sub ? `Centro de costo ${P.sub}` : P.sel.startsWith('g:') ? `Grupo: ${todos.join(', ')}` : `Centro de costo ${P.sel.slice(2)}`)}${pr && pr.cliente ? ' · Cliente: ' + esc(pr.cliente) : ''}</p>
       ${c.sinCl.size ? `<div class="proy-aviso">⚠ Hay ${c.sinCl.size} ${c.sinCl.size === 1 ? 'cuenta' : 'cuentas'} sin rubro por ${fmt([...c.sinCl.values()].reduce((s, v) => s + v, 0))}: salen en "Sin clasificar". ${isAdmin() ? '<button class="rh-link" type="button" data-proy="clasificar">Clasificarlas</button>' : 'La administradora debe clasificarlas.'}</div>` : ''}
@@ -433,8 +435,8 @@
   }
 
   // ----- Resumen -----
-  function tabResumen(x) {
-    const { c, cp, k, pr, vendido } = x;
+  function fraseObra(x) {
+    const { c, cp, k, vendido } = x;
     let frase, estado;
     if (k) {
       const uso = k.pTot ? k.vTot / k.pTot : 0, av = vendido ? cp.ventas / vendido : 0;
@@ -445,6 +447,11 @@
       frase = `${x.nombre}: ventas de ${millones(c.ventas)} y costos de ${millones(c.costo)} en estas fechas; ${c.operativa < 0 ? 'pierde' : 'deja'} ${millones(Math.abs(c.operativa))}.`;
       estado = c.operativa < 0 ? 'rojo' : 'verde';
     } else { frase = `${x.nombre} no tiene movimientos en estas fechas.`; estado = ''; }
+    return { frase, estado };
+  }
+  function tabResumen(x) {
+    const { c, cp, k, vendido } = x;
+    const { frase, estado } = fraseObra(x);
     const m2 = Number(x.obra.m2) || 0;
     const kpi = (t, v, ayuda, barra, cl) => `<div class="pk"><span class="pk-t">${t}</span><span class="pk-v">${v}</span><span class="pk-a">${ayuda}</span>${barra == null ? '' : `<span class="pk-b"><span class="${cl || ''}" style="width:${Math.min(100, Math.max(0, barra * 100)).toFixed(1)}%"></span></span>`}</div>`;
     let kpis;
@@ -495,6 +502,11 @@
       <div class="pr-fila tot"><span class="pr-n">Total costo de la obra</span><span class="pr-barra"><span class="pr-txt">${pct0(usoTot)} del presupuesto de costo directo</span></span><span class="pr-num"><b>${fmt(k.vTot)}</b><span>de ${fmt(k.pTot)}</span></span></div></div></section>`;
   }
   function seccionRevisar(x) {
+    const al = alertasObra(x);
+    return `<section class="proy-revisar"><h3>Para revisar</h3>${al.length ? `<div class="pa-grid">${al.map(([cl, tipo, t, txt, acc]) => `<div class="pa"><span class="pr-chip ${cl}">${esc(tipo)}</span><b>${esc(t)}</b><span>${esc(txt)}</span>${acc}</div>`).join('')}</div>` : `<p class="proy-nota">${ICONO_OK} Nada pendiente por revisar.</p>`}</section>`;
+  }
+  // [clase, tipo, título, texto, botón]
+  function alertasObra(x) {
     const { c, cp, k, vendido } = x;
     const al = [];
     if (k) {
@@ -508,7 +520,54 @@
     else if (vendido && k) { const uso = k.pTot ? k.vTot / k.pTot : 0, av = cp.ventas / vendido; if (uso - av > 0.25) al.push(['amarillo', 'Facturación atrasada', 'Se ha gastado más de lo que se ha facturado', `Va el ${pct0(uso)} del costo y el ${pct0(av)} de la facturación.`, '']); }
     if (c.sinCl.size) al.push(['amarillo', 'Contabilidad', `${c.sinCl.size} ${c.sinCl.size === 1 ? 'cuenta sin rubro' : 'cuentas sin rubro'}`, `Suman ${fmt([...c.sinCl.values()].reduce((s, v) => s + v, 0))} y salen en "Sin clasificar".`, isAdmin() ? '<button class="rh-link" type="button" data-proy="clasificar">Clasificarlas →</button>' : '']);
     if (!x.pr && isAdmin()) al.push(['info', 'Presupuesto', 'La obra no tiene presupuesto cargado', 'Sube el PDF del área técnica para ver el semáforo de cada rubro.', '<button class="rh-link" type="button" data-proy="presupuesto">Subir presupuesto →</button>']);
-    return `<section class="proy-revisar"><h3>Para revisar</h3>${al.length ? `<div class="pa-grid">${al.map(([cl, tipo, t, txt, acc]) => `<div class="pa"><span class="pr-chip ${cl}">${esc(tipo)}</span><b>${esc(t)}</b><span>${esc(txt)}</span>${acc}</div>`).join('')}</div>` : `<p class="proy-nota">${ICONO_OK} Nada pendiente por revisar.</p>`}</section>`;
+    return al;
+  }
+
+  // ----- Informe en PDF: todas las pestañas en hojas carta -----
+  function datosObra() {
+    const todos = ccsDe(P.sel), ccs = P.sub ? [P.sub] : todos;
+    const claveObra = P.sub ? 'c:' + P.sub : P.sel;
+    const obra = (P.conf.obras || {})[claveObra] || {};
+    const pr = (P.conf.presup || {})[claveObra] || null;
+    const cp = calcularTodo(ccs), k = pr ? comparativo(pr, cp) : null;
+    const vendido = Number(obra.valorVenta) || (pr ? (Number(pr.total) || 0) - (Number(pr.iva) || 0) : 0);
+    return { c: calcular(ccs), cp, k, pr, ccs, todos, claveObra, obra, vendido, nombre: P.sub ? nombreCC(P.sub) : nombreSel(P.sel) };
+  }
+  function pdfProyecto() {
+    if (typeof InformePDF === 'undefined') { toast('Recarga la página para descargar el PDF.'); return; }
+    const x = datosObra(), { c, cp, k, pr, vendido } = x;
+    const { frase, estado } = fraseObra(x);
+    const kp = (t, v, a) => `<div><span>${esc(t)}</span><b>${v}</b>${a ? `<span>${esc(a)}</span>` : ''}</div>`;
+    let h = `<div class="frase ${estado}"><span>${esc(frase)}</span>${estado ? `<span class="e">${ESTADO[estado][1]}</span>` : ''}</div>`;
+    if (k) {
+      const uso = k.pTot ? k.vTot / k.pTot : 0, av = vendido ? cp.ventas / vendido : 0;
+      h += `<div class="kpis">${kp('Valor vendido (sin IVA)', fmt(vendido))}${kp('Presupuesto de costo', fmt(k.pTot))}${kp('Gastado en la obra', fmt(k.vTot), pct0(uso) + ' del presupuesto')}${kp('Facturado', fmt(cp.ventas), pct0(av) + ' de lo vendido')}</div>
+        <h2>Cómo va cada parte de la obra (todo el proyecto)</h2><table><thead><tr><th>Rubro</th><th class="n">Real</th><th class="n">Presupuesto</th><th class="n">Uso</th><th>Estado</th></tr></thead><tbody>
+        ${k.filas.slice().sort((a, b) => (b.p ? b.uso : 9) - (a.p ? a.uso : 9)).map((f) => { const e = f.p ? estadoUso(f.uso) : 'gris'; return `<tr><td>${esc(titulo(f.r))}</td><td class="n">${fmt(f.v)}</td><td class="n">${f.p ? fmt(f.p) : '—'}</td><td class="n">${f.p ? pct0(f.uso) : '—'}</td><td><span class="chip ${e}">${ESTADO[e][0]}</span></td></tr>`; }).join('')}
+        <tr class="tot"><td>Total costo de la obra</td><td class="n">${fmt(k.vTot)}</td><td class="n">${fmt(k.pTot)}</td><td class="n">${pct0(k.pTot ? k.vTot / k.pTot : NaN)}</td><td></td></tr></tbody></table>`;
+    } else {
+      h += `<div class="kpis">${kp('Ventas netas', fmt(c.ventas))}${kp('Costos y gastos', fmt(c.costo))}${kp('Utilidad operativa', fmt(c.operativa))}${kp('Margen', pct(c.ventas ? c.operativa / c.ventas : NaN))}</div>`;
+    }
+    const al = alertasObra(x).filter((a) => a[1] !== 'Presupuesto');
+    if (al.length) h += `<h2>Para revisar</h2><ul>${al.map(([, , t, txt]) => `<li><b>${esc(t)}.</b> ${esc(txt)}</li>`).join('')}</ul>`;
+    const b = pr ? { pres: pesosPresup(pr), ventasP: vendido, costoP: k.pTot, gastosP: (Number(pr.adm) || 0) + (Number(pr.imp) || 0) } : null;
+    h += `<h2 class="salto">Estado de resultados (PyG) · ${esc(textoPeriodo())}</h2>${tablaPyG(c, b)}
+      <p class="nota">${P.repartir ? 'El personal fijo del proyecto está dentro de cada rubro, según sus labores. ' : ''}${pr ? 'El presupuesto es de toda la obra; el de gastos operativos es la administración más los imprevistos.' : ''}</p>`;
+    const prov = [...c.porProv.entries()].filter(([, v]) => Math.abs(v) >= 1).sort((a, b2) => b2[1] - a[1]).slice(0, 10);
+    if (prov.length) h += `<h2>Proveedores principales</h2><table><thead><tr><th>Proveedor o tercero</th><th class="n">Valor</th><th class="n">% del costo</th></tr></thead><tbody>${prov.map(([n, v]) => `<tr><td>${esc(n)}</td><td class="n">${fmt(v)}</td><td class="n">${pct(c.costo ? v / c.costo : NaN)}</td></tr>`).join('')}</tbody></table>`;
+    if (pr) {
+      const suma = (cap) => cap.items.reduce((s, it) => s + (Number(it.v) || 0), 0);
+      h += `<h2 class="salto">Presupuesto · ${esc(pr.nombre || '')}${pr.cot ? ' · ' + esc(pr.cot) : ''}</h2><table><thead><tr><th>Ítem</th><th>Descripción</th><th class="n">Cantidad</th><th class="n">Valor</th></tr></thead><tbody>
+        ${(pr.caps || []).map((cap) => `<tr class="sec"><td colspan="3">${esc(cap.n)}</td><td class="n">${fmt(suma(cap))}</td></tr>${cap.items.map((it) => `<tr><td>${esc(it.c)}</td><td>${esc(it.d)}</td><td class="n">${esc(String(it.q || '').replace('.', ','))} ${esc(it.u || '')}</td><td class="n">${fmt(it.v)}</td></tr>`).join('')}`).join('')}
+        </tbody></table>
+        <table style="width:55%;margin-left:auto"><tbody>
+        <tr class="tot"><td>Costo directo</td><td class="n">${fmt(pr.directo)}</td></tr><tr><td>Administración</td><td class="n">${fmt(pr.adm)}</td></tr><tr><td>Imprevistos</td><td class="n">${fmt(pr.imp)}</td></tr><tr><td>Utilidad</td><td class="n">${fmt(pr.util)}</td></tr>
+        <tr class="tot"><td>Valor vendido sin IVA</td><td class="n">${fmt((Number(pr.total) || 0) - (Number(pr.iva) || 0))}</td></tr>${pr.iva ? `<tr><td>IVA sobre la utilidad</td><td class="n">${fmt(pr.iva)}</td></tr>` : ''}<tr class="tot"><td>Total de la cotización</td><td class="n">${fmt(pr.total)}</td></tr></tbody></table>`;
+    }
+    const pe = personasDe(x.ccs);
+    if (pe.length) h += `<h2>Personal · ${esc(textoPeriodo())}</h2><table><thead><tr><th>Empleado</th><th>Tipo</th><th class="n">Horas</th><th class="n">Costo</th><th>Dónde se ve</th></tr></thead><tbody>${pe.map((y) => `<tr><td>${esc(y.nombre)}</td><td>${y.comp ? 'Compartido' : 'Fijo del proyecto'}</td><td class="n">${y.h ? (Math.round(y.h * 10) / 10).toLocaleString('es-CO') : '—'}</td><td class="n">${fmt(y.v)}</td><td>${y.comp ? 'Gastos operativos' : P.repartir ? 'Dentro de los rubros' : 'Costo de ventas'}</td></tr>`).join('')}</tbody></table>`;
+    const cc = P.sub ? `Centro de costo ${P.sub}` : P.sel.startsWith('g:') ? `Grupo: ${x.todos.join(', ')}` : `Centro de costo ${P.sel.slice(2)}`;
+    InformePDF.abrir({ titulo: `Informe de obra · ${x.nombre}`, subtitulo: [`${cc}${pr && pr.cliente ? ' · Cliente: ' + pr.cliente : ''}`, textoPeriodo()], cuerpo: h, archivo: `Informe ${x.nombre} ${todayISO()}` });
   }
   function seccionDatosObra(claveObra, obra) {
     return `<section class="proy-caja"><h3>Datos de la obra</h3>
@@ -1286,6 +1345,7 @@ ${serieXml(0, 'E', '002796')}${serieXml(1, 'F', 'E07B00')}${serieXml(2, 'G', '1A
     else if (a === 'personal') abrirPersonal();
     else if (a === 'clasificar') abrirClasificar();
     else if (a === 'excel') excel();
+    else if (a === 'pdf') pdfProyecto();
     else if (a === 'rango-todo') { rangoInicial(); render(); }
     else if (a === 'asis-conexion') abrirConexionAsis();
     else if (a === 'asis-obras') abrirObrasAsis();
