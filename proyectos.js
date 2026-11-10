@@ -10,17 +10,21 @@
 
   // Estructura del PyG (modelo de gerencia)
   const ING = ['FACTURACION TOTAL', 'DESCUENTOS'];
-  const COSTO = ['MANO DE OBRA DIRECTA', 'SEGURIDAD SOCIAL OPERATIVA DIRECTA', 'PREOPERATIVOS', 'ESTRUCTURAS', 'IMPERMEABILIZACIONES', 'REVOQUES Y ENCHAPES', 'PARTE ELECTRICA', 'TUBERIA', 'COMPRA DE EQUIPOS', 'GARANTIAS'];
-  const GASTO = ['SALARIOS OPERATIVOS COMPARTIDOS', 'TRANSPORTES Y VIATICOS', 'SALARIOS OPERATIVOS PROYECTO', 'SEGURIDAD SOCIAL', 'GASTOS ADMINISTRATIVOS'];
+  // Salarios operativos proyecto: personal contratado fijo solo para esa obra (su seguridad social va en
+  // "Seguridad social operativa directa"); van en el costo de ventas. Salarios operativos compartidos: personal
+  // de la empresa que rota entre obras (su seguridad social va en "Seguridad social"); van en gastos.
+  const COSTO = ['MANO DE OBRA DIRECTA', 'SALARIOS OPERATIVOS PROYECTO', 'SEGURIDAD SOCIAL OPERATIVA DIRECTA', 'PREOPERATIVOS', 'ESTRUCTURAS', 'IMPERMEABILIZACIONES', 'REVOQUES Y ENCHAPES', 'PARTE ELECTRICA', 'TUBERIA', 'COMPRA DE EQUIPOS', 'GARANTIAS'];
+  const GASTO = ['SALARIOS OPERATIVOS COMPARTIDOS', 'SEGURIDAD SOCIAL', 'TRANSPORTES Y VIATICOS', 'GASTOS ADMINISTRATIVOS'];
   const SIN = 'SIN CLASIFICAR', NO = 'NO INCLUIR'; // NO INCLUIR: cuentas que no van al PyG del proyecto (renta, ingresos no operacionales)
   const RUBROS = [...ING, ...COSTO, ...GASTO];
   const ACENTOS = { electrica: 'eléctrica', tuberia: 'tubería', garantias: 'garantías', viaticos: 'viáticos', facturacion: 'facturación' };
   const titulo = (r) => { let s = String(r).toLowerCase(); for (const [a, b] of Object.entries(ACENTOS)) s = s.replace(a, b); return s.charAt(0).toUpperCase() + s.slice(1); };
 
   // periodo: 'rango' (fecha de inicio a fecha de corte, las escoge la usuaria) o 'mes'
-  const P = { datos: null, conf: null, sha: null, rrhh: null, sel: '', sub: '', periodo: 'rango', desde: '', hasta: '', mes: '', q: '', cargando: false, leido: 0 };
+  // repartir: la mano de obra se reparte dentro de los rubros (gerencia no quiere "Mano de obra directa" como rubro aparte)
+  const P = { datos: null, conf: null, sha: null, rrhh: null, sel: '', sub: '', periodo: 'rango', desde: '', hasta: '', mes: '', q: '', cargando: false, leido: 0, repartir: true };
   const isAdmin = () => !!A.isAdmin;
-  const confBase = () => ({ mapa: {}, grupos: [], obras: {}, personal: [], obrasAsis: {} });
+  const confBase = () => ({ mapa: {}, grupos: [], obras: {}, personal: [], obrasAsis: {}, presup: {}, actRubro: {} });
 
   // ---------- datos ----------
   async function leerTodo(forzar) {
@@ -206,14 +210,119 @@
   }
   function filasDe(ccs) {
     const set = new Set(ccs);
-    return P.datos.filas.filter((f) => set.has(f[3])).concat(filasPersonal(ccs), filasAsistencia(ccs));
+    const base = P.datos.filas.filter((f) => set.has(f[3])).concat(filasPersonal(ccs), filasAsistencia(ccs));
+    return P.repartir ? repartirMO(base) : base;
   }
+  // Rubro de una fila: el que le dio el reparto de mano de obra (f[9]) o el de su cuenta
+  const rubFila = (f) => f[9] || rubroDe(f[2], f[1]);
+
+  // ---------- mano de obra dentro de cada rubro ----------
+  // La nómina operativa del proyecto (y el personal de la asistencia) se reparte en los rubros de obra:
+  // 1) según las actividades que esa persona marcó en la asistencia ese mes en esa obra;
+  // 2) si ella no marcó, según las actividades de toda la obra ese mes;
+  // 3) lo general (limpieza, "Otra", sin asistencia) en proporción al presupuesto de la obra o, si no hay,
+  //    a los materiales que ya se gastaron en ella.
+  const MO = ['MANO DE OBRA DIRECTA', 'SEGURIDAD SOCIAL OPERATIVA DIRECTA', 'SALARIOS OPERATIVOS PROYECTO'];
+  const OBRA = ['PREOPERATIVOS', 'ESTRUCTURAS', 'IMPERMEABILIZACIONES', 'REVOQUES Y ENCHAPES', 'PARTE ELECTRICA', 'TUBERIA', 'COMPRA DE EQUIPOS', 'GARANTIAS'];
+  const GEN = 'GENERAL';
+  const sinTilde = (s) => String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  function sugerirRubroAct(a) {
+    const s = sinTilde(a);
+    if (/impermeab/.test(s)) return 'IMPERMEABILIZACIONES';
+    if (/enchap|acabad|mamposter|panete|revoque|membrana|piedra|ceramic/.test(s)) return 'REVOQUES Y ENCHAPES';
+    if (/electric|luces|ilumin/.test(s)) return 'PARTE ELECTRICA';
+    if (/hidraul|tuberi|cuarto de (maquinas|bombas)|plomer/.test(s)) return 'TUBERIA';
+    if (/acero|formalet|fundid|concreto|estructur|armad/.test(s)) return 'ESTRUCTURAS';
+    if (/excavac|movimiento de tierra|demolic|replanteo|prelimin|relleno/.test(s)) return 'PREOPERATIVOS';
+    if (/equipo/.test(s)) return 'COMPRA DE EQUIPOS';
+    if (/garantia/.test(s)) return 'GARANTIAS';
+    return GEN; // limpieza, cargue, mantenimiento, "Otra"
+  }
+  const rubroActividad = (a) => (P.conf.actRubro || {})[a] || sugerirRubroAct(a);
+  const actividadesDe = (txt) => { const l = String(txt || '').split('/').map((s) => s.trim()).filter(Boolean); return l.length ? l : ['Otra']; };
+  let cacheAct = null;
+  function indiceActividades() {
+    const clave = P.leido + '|' + JSON.stringify(P.conf.obrasAsis || {}) + JSON.stringify(P.conf.actRubro || {}) + JSON.stringify(P.conf.presup || {}).length + JSON.stringify(P.conf.mapa || {}).length;
+    if (cacheAct && cacheAct.clave === clave) return cacheAct;
+    const per = new Map(), obra = new Map(), vistas = new Map();
+    const suma = (m, k, r, h) => { const x = m.get(k) || new Map(); x.set(r, (x.get(r) || 0) + h); m.set(k, x); };
+    for (const [fecha, c, nomObra, horas, , act] of (P.asis && P.asis.filas) || []) {
+      const h = Number(horas) || 0; if (h <= 0) continue;
+      const l = actividadesDe(act);
+      for (const a of l) vistas.set(a, (vistas.get(a) || 0) + h / l.length);
+      const cc = (P.conf.obrasAsis || {})[nomObra]; if (!cc || cc === 'NO') continue;
+      const mes = String(fecha).slice(0, 7);
+      for (const a of l) { const r = rubroActividad(a); suma(per, cc + '|' + mes + '|' + ced(c), r, h / l.length); suma(obra, cc + '|' + mes, r, h / l.length); }
+    }
+    cacheAct = { clave, per, obra, vistas, gen: new Map() };
+    return cacheAct;
+  }
+  // Presupuesto que aplica a un centro de costo: el suyo o el del grupo que se está mirando
+  function presupDe(cc) {
+    const p = P.conf.presup || {};
+    if (p['c:' + cc]) return p['c:' + cc];
+    if (P.sel.startsWith('g:') && p[P.sel] && ccsDe(P.sel).includes(cc)) return p[P.sel];
+    for (const g of grupos()) if (p['g:' + g.id] && (g.ccs || []).includes(cc)) return p['g:' + g.id];
+    return null;
+  }
+  const pesosPresup = (pr) => { const m = new Map(); for (const cap of pr.caps || []) for (const it of cap.items || []) if (OBRA.includes(it.r)) m.set(it.r, (m.get(it.r) || 0) + (Number(it.v) || 0)); return m; };
+  // Pesos para repartir lo "general" de un centro de costo
+  function pesosGenerales(cc) {
+    const idx = indiceActividades();
+    if (idx.gen.has(cc)) return idx.gen.get(cc);
+    let r = null;
+    const pr = presupDe(cc);
+    if (pr) { const m = pesosPresup(pr); if ([...m.values()].some((v) => v > 0)) r = { m, como: 'según el presupuesto' }; }
+    if (!r) {
+      const m = new Map();
+      for (const f of P.datos.filas) if (f[3] === cc) { const rb = rubroDe(f[2], f[1]); if (OBRA.includes(rb)) m.set(rb, (m.get(rb) || 0) + f[5]); }
+      for (const [k, v] of m) if (v <= 0) m.delete(k);
+      if (m.size) r = { m, como: 'según los materiales de la obra' };
+    }
+    idx.gen.set(cc, r);
+    return r;
+  }
+  // Solo el personal FIJO del proyecto (nómina de Siigo en Mano de obra directa, Salarios operativos proyecto y
+  // Seguridad social operativa directa). El personal compartido (asistencia y asignado a mano) se queda en gastos.
+  const esMO = (f) => f[1] !== 'Asistencia' && !f[2].startsWith('N:') && MO.includes(rubroDe(f[2], f[1]));
+  function repartirMO(filas) {
+    const idx = indiceActividades(), out = [];
+    for (const f of filas) {
+      if (!esMO(f)) { out.push(f); continue; }
+      const mes = f[0].slice(0, 7), cc = f[3];
+      const cedula = f[4] >= 0 ? ced((TER[f[4]] || [])[0]) : ced(f[8]);
+      let base = idx.per.get(cc + '|' + mes + '|' + cedula), como = 'según sus actividades en la asistencia';
+      if (!base) { base = idx.obra.get(cc + '|' + mes); como = 'según las actividades de la obra ese mes'; }
+      const pesos = new Map(); let general = 0;
+      if (base) { for (const [r, h] of base) { if (r === GEN) general += h; else pesos.set(r, (pesos.get(r) || 0) + h); } }
+      else general = 1;
+      if (general > 0) {
+        const g = pesosGenerales(cc);
+        if (g) {
+          const gt = [...g.m.values()].reduce((s, v) => s + v, 0);
+          for (const [r, v] of g.m) pesos.set(r, (pesos.get(r) || 0) + general * v / gt);
+          if (!base) como = g.como;
+        } else pesos.set('MANO DE OBRA DIRECTA', (pesos.get('MANO DE OBRA DIRECTA') || 0) + general);
+      }
+      const tot = [...pesos.values()].reduce((s, v) => s + v, 0);
+      if (!(tot > 0)) { out.push(f); continue; }
+      for (const [r, w] of pesos) {
+        const g = f.slice(); g[5] = f[5] * w / tot; g[9] = r; g[10] = base ? 'act' : 'gen';
+        if (pesos.size > 1) g[6] = `${f[6]} · ${pct(w / tot)} ${como}`;
+        out.push(g);
+      }
+    }
+    return out;
+  }
+
   function calcular(ccs) {
     const filas = filasDe(ccs).filter((f) => enPeriodo(f[0]));
     const r = {}; for (const x of [...RUBROS, SIN]) r[x] = 0;
     const porProv = new Map(), porMes = new Map(), sinCl = new Map();
+    const mo = { total: 0, act: 0, gen: 0, rub: new Map() };
     for (const f of filas) {
-      const rub = rubroDe(f[2], f[1]);
+      const rub = rubFila(f);
+      if (f[10]) { mo.total += f[5]; mo[f[10]] += f[5]; mo.rub.set(rub, (mo.rub.get(rub) || 0) + f[5]); }
       if (rub === NO) continue;
       r[rub] = (r[rub] || 0) + f[5];
       const m = f[0].slice(0, 7), pm = porMes.get(m) || { ing: 0, costo: 0 };
@@ -227,7 +336,7 @@
     const costoVentas = COSTO.reduce((s, x) => s + r[x], 0);
     const gastos = GASTO.reduce((s, x) => s + r[x], 0) + r[SIN];
     const bruta = ventas - costoVentas, operativa = bruta - gastos;
-    return { r, fact, desc, ventas, costoVentas, gastos, costo: costoVentas + gastos, bruta, operativa, porProv, porMes, sinCl, n: filas.length };
+    return { r, fact, desc, ventas, costoVentas, gastos, costo: costoVentas + gastos, bruta, operativa, porProv, porMes, sinCl, mo, n: filas.length };
   }
 
   // ---------- formato ----------
@@ -292,7 +401,7 @@
     const obra = (P.conf.obras || {})[claveObra] || {};
     const m2 = Number(obra.m2) || 0, vendido = Number(obra.valorVenta) || 0;
     // Indicadores por m²: con el acumulado escogido (inicio a corte); si se mira un mes, con todo el proyecto
-    const cTot = P.periodo === 'mes' ? (() => { const s = [P.periodo, P.desde, P.hasta]; P.periodo = 'rango'; P.desde = ''; P.hasta = ''; const x = calcular(ccs); [P.periodo, P.desde, P.hasta] = s; return x; })() : c;
+    const cTot = P.periodo === 'mes' ? calcularTodo(ccs) : c;
     const tiles = [
       ['main', 'Ventas netas', millones(c.ventas), `Facturado ${millones(c.fact)}${c.desc ? ` − notas crédito ${millones(c.desc)}` : ''}`],
       ['', 'Costos y gastos', millones(c.costo), `Costo de ventas ${millones(c.costoVentas)} · gastos ${millones(c.gastos)}`],
@@ -310,18 +419,21 @@
         <div class="quick" role="group" aria-label="Periodo"><button class="qbtn" type="button" data-proy-per="rango" aria-pressed="${P.periodo === 'rango'}">Acumulado (inicio y corte)</button><button class="qbtn" type="button" data-proy-per="mes" aria-pressed="${P.periodo === 'mes'}">Un mes</button></div>
         ${P.periodo === 'mes' ? `<div class="field"><label for="proy-mes">Mes</label><input type="month" id="proy-mes" value="${esc(P.mes)}"></div>`
     : `<div class="field"><label for="proy-desde">Fecha de inicio</label><input type="date" id="proy-desde" value="${esc(P.desde)}" max="${esc(P.hasta)}"></div><div class="field"><label for="proy-hasta">Fecha de corte</label><input type="date" id="proy-hasta" value="${esc(P.hasta)}" min="${esc(P.desde)}"></div><button class="rh-link" type="button" data-proy="rango-todo" title="Desde el primer movimiento del proyecto hasta hoy">Todo el proyecto</button>`}
+        <div class="quick" role="group" aria-label="Mano de obra"><button class="qbtn" type="button" data-proy-mo="1" aria-pressed="${P.repartir}" title="El personal fijo del proyecto se reparte en estructuras, enchape, tubería… según las actividades">Mano de obra dentro de cada rubro</button><button class="qbtn" type="button" data-proy-mo="0" aria-pressed="${!P.repartir}">Mano de obra aparte</button></div>
       </div><div class="grupo">${isAdmin() && P.sel.startsWith('g:') ? '<button class="btn" type="button" data-proy="grupo">Editar grupo</button>' : ''}<button class="btn" type="button" data-proy="excel">Descargar Excel</button></div></div>
       ${subChips}
       <p class="proy-periodo">${esc(textoPeriodo())} · ${esc(P.sub ? `Centro de costo ${P.sub}` : P.sel.startsWith('g:') ? `Grupo: ${todos.join(', ')}` : `Centro de costo ${P.sel.slice(2)}`)}</p>
       ${c.sinCl.size ? `<div class="proy-aviso">⚠ Hay ${c.sinCl.size} ${c.sinCl.size === 1 ? 'cuenta' : 'cuentas'} sin rubro por ${fmt([...c.sinCl.values()].reduce((s, v) => s + v, 0))}: salen en "Sin clasificar". ${isAdmin() ? '<button class="rh-link" type="button" data-proy="clasificar">Clasificarlas</button>' : 'La administradora debe clasificarlas.'}</div>` : ''}
       <section class="rep-sum proy-tiles">${tiles.map(([cl, l, v, s]) => `<div class="tile ${cl}"><span class="lbl">${l}</span><span class="val">${v}</span><span>${s}</span></div>`).join('')}</section>
       ${!m2 || !vendido ? guia(`💡 ${isAdmin() ? 'Escribe los <b>m²</b> y el <b>valor vendido</b> de la obra en "Datos de la obra" (abajo) para ver el costo por m².' : 'Cuando la administradora registre los m² y el valor vendido, aquí verás el costo por m².'}`) : ''}
+      ${seccionPresupuesto(claveObra, ccs, obra)}
       <div class="proy-graficas">
         <section class="proy-caja"><h3>¿En qué se fue la plata?</h3><p class="proy-nota">Costos y gastos por rubro. Toca una barra para ver los proveedores.</p>${barrasRubros(c)}</section>
         <section class="proy-caja"><h3>Mes a mes</h3><p class="proy-nota">Ventas y costos de cada mes.</p>${graficaMeses(ccs)}</section>
       </div>
       <section class="proy-caja"><h3>Acumulado en el tiempo</h3><p class="proy-nota">${P.periodo === 'mes' ? `Cómo se fueron sumando las ventas, los costos y la utilidad del proyecto hasta ${esc(nombreMes(P.mes).toLowerCase())}.` : 'Cómo se fueron sumando las ventas, los costos y la utilidad entre la fecha de inicio y la de corte.'} Pasa el dedo o el mouse por un punto para ver el valor.</p>${graficaLineas(serieMeses(ccs))}</section>
-      <section class="proy-caja"><h3>Estado de resultados (PyG)</h3><p class="proy-nota">Toca un rubro para ver qué proveedores y documentos lo forman.</p>${tablaPyG(c)}</section>
+      <section class="proy-caja"><h3>Estado de resultados (PyG)</h3><p class="proy-nota">Toca un rubro para ver qué proveedores y documentos lo forman.${P.repartir && c.mo.total ? ' El personal fijo del proyecto está dentro de cada rubro; tócalo para ver cada empleado.' : ''}</p>${tablaPyG(c)}</section>
+      ${seccionMO(c)}
       <section class="proy-caja"><h3>Proveedores principales</h3>${topProv(c)}</section>
       ${seccionObra(claveObra, obra, todos)}`;
   }
@@ -345,7 +457,7 @@
     return dibujarMeses(ccs, meses.slice(-36), '');
   }
   function dibujarMeses(ccs, meses, marcado) {
-    const pm = new Map(); for (const f of filasDe(ccs)) { const rb = rubroDe(f[2], f[1]); if (rb === NO) continue; const m = f[0].slice(0, 7); const x = pm.get(m) || { ing: 0, costo: 0 }; if (ING.includes(rb)) x.ing -= f[5]; else x.costo += f[5]; pm.set(m, x); }
+    const pm = new Map(); for (const f of filasDe(ccs)) { const rb = rubFila(f); if (rb === NO) continue; const m = f[0].slice(0, 7); const x = pm.get(m) || { ing: 0, costo: 0 }; if (ING.includes(rb)) x.ing -= f[5]; else x.costo += f[5]; pm.set(m, x); }
     const vals = meses.map((m) => pm.get(m) || { ing: 0, costo: 0 });
     const max = Math.max(1, ...vals.map((v) => Math.max(v.ing, v.costo)));
     const W = 640, H = 220, pad = 28, bw = (W - pad) / meses.length;
@@ -364,7 +476,7 @@
     const pm = new Map();
     for (const f of filasDe(ccs)) {
       if (!dentro(f[0])) continue;
-      const rb = rubroDe(f[2], f[1]); if (rb === NO) continue;
+      const rb = rubFila(f); if (rb === NO) continue;
       const m = f[0].slice(0, 7), x = pm.get(m) || { ing: 0, costo: 0 };
       if (ING.includes(rb)) x.ing -= f[5]; else x.costo += f[5];
       pm.set(m, x);
@@ -415,6 +527,205 @@
     return `<div class="rh-tabla-wrap"><table class="rh-tabla"><thead><tr><th>Proveedor o tercero</th><th class="n">Valor</th><th class="n">% del costo</th></tr></thead><tbody>${l.map(([n, v]) => `<tr class="click" data-proy-prov="${esc(n)}"><td>${esc(n)}</td><td class="n">${fmt(v)}</td><td class="n">${pct(c.costo ? v / c.costo : NaN)}</td></tr>`).join('')}</tbody></table></div>`;
   }
 
+  // ---------- presupuesto contra lo real ----------
+  // Todo el proyecto (sin importar el periodo escogido): el presupuesto es de la obra completa
+  // (hasta hoy: el personal de la asistencia y el asignado se cargan el día 28 de cada mes, como la nómina)
+  function calcularTodo(ccs) { const s = [P.periodo, P.desde, P.hasta]; P.periodo = 'rango'; P.desde = ''; P.hasta = todayISO(); try { return calcular(ccs); } finally { [P.periodo, P.desde, P.hasta] = s; } }
+  function comparativo(pr, cp) {
+    const pres = pesosPresup(pr);
+    const rubros = [...new Set([...OBRA.filter((r) => pres.has(r)), ...COSTO.filter((r) => Math.abs(cp.r[r]) >= 1)])];
+    const filas = rubros.map((r) => { const p = pres.get(r) || 0, v = cp.r[r] || 0; return { r, p, v, dif: p - v, uso: p ? v / p : (v ? Infinity : 0) }; });
+    const pTot = Number(pr.directo) || filas.reduce((s, x) => s + x.p, 0);
+    return { filas, pTot, vTot: cp.costoVentas };
+  }
+  const estadoUso = (u) => (u > 1.0001 ? 'rojo' : u >= 0.8 ? 'amarillo' : 'verde');
+  function seccionPresupuesto(claveObra, ccs, obra) {
+    const pr = (P.conf.presup || {})[claveObra];
+    const cab = '<section class="proy-caja proy-pres"><h3>Presupuesto contra lo real</h3>';
+    if (!pr) {
+      return `${cab}<p class="proy-nota">${isAdmin() ? 'Sube el presupuesto de la obra en PDF (el que hace el área técnica). Cuadra lee los capítulos y sus valores y los compara con lo que se ha gastado en cada rubro.' : 'La administradora aún no ha cargado el presupuesto de esta obra.'}</p>${isAdmin() ? '<button class="btn primary" type="button" data-proy="presupuesto">Subir presupuesto (PDF)</button>' : ''}</section>`;
+    }
+    const cp = calcularTodo(ccs), k = comparativo(pr, cp);
+    const usoTot = k.pTot ? k.vTot / k.pTot : 0;
+    const vendido = Number(obra.valorVenta) || Number(pr.total) - (Number(pr.iva) || 0);
+    const avance = vendido ? cp.ventas / vendido : NaN;
+    const barra = (u) => `<span class="pres-barra ${estadoUso(u)}"><span style="width:${Math.min(100, Math.max(0, (isFinite(u) ? u : 1) * 100)).toFixed(1)}%"></span></span>`;
+    const filas = k.filas.sort((a, b) => b.p - a.p || b.v - a.v).map((x) => `<tr class="click" data-proy-rubro="${esc(x.r)}"><td>${esc(titulo(x.r))}</td><td class="n">${x.p ? fmt(x.p) : '<span class="sub">Sin presupuesto</span>'}</td><td class="n">${fmt(x.v)}</td><td class="n ${x.dif < 0 ? 'neg' : ''}">${x.p ? fmt(x.dif) : '—'}</td><td class="pres-uso">${barra(x.uso)}<b>${x.p ? pct(x.uso) : '—'}</b></td></tr>`).join('');
+    const pasados = k.filas.filter((x) => x.p && x.uso > 1.0001), sinPres = k.filas.filter((x) => !x.p && x.v >= 1);
+    const alertas = [
+      ...pasados.map((x) => `<span class="rojo">● ${esc(titulo(x.r))}: se pasó ${fmt(-x.dif)}</span>`),
+      ...k.filas.filter((x) => x.p && x.uso >= 0.8 && x.uso <= 1.0001).map((x) => `<span class="amarillo">● ${esc(titulo(x.r))}: lleva ${pct(x.uso)}</span>`),
+      ...(sinPres.length ? [`<span class="amarillo">● Sin presupuesto: ${sinPres.map((x) => esc(titulo(x.r))).join(', ')}</span>`] : []),
+    ];
+    const utilEsp = vendido - k.pTot, utilAct = vendido - cp.costo;
+    return `${cab}
+      <p class="proy-nota">${esc(pr.nombre || '')}${pr.cot ? ' · ' + esc(pr.cot) : ''}${pr.version ? ' · versión ' + esc(pr.version) : ''}. Se compara con <b>todo el proyecto</b> (sin importar las fechas escogidas arriba)${P.repartir ? ', con la mano de obra dentro de cada rubro' : ''}. Toca un rubro para ver los proveedores.</p>
+      <section class="rep-sum proy-tiles">
+        <div class="tile main"><span class="lbl">Costo directo presupuestado</span><span class="val">${millones(k.pTot)}</span><span>Valor de la obra ${millones(Number(pr.total) || 0)} (con administración, imprevistos y utilidad)</span></div>
+        <div class="tile ${usoTot > 1 ? 'neg' : ''}"><span class="lbl">Costo real a la fecha</span><span class="val">${millones(k.vTot)}</span><span>${pct(usoTot)} del presupuesto consumido</span></div>
+        <div class="tile"><span class="lbl">Avance facturado</span><span class="val">${pct(avance)}</span><span>${millones(cp.ventas)} de ${millones(vendido)}</span></div>
+        <div class="tile ${k.pTot - k.vTot < 0 ? 'neg' : 'pos'}"><span class="lbl">Queda del presupuesto</span><span class="val">${millones(k.pTot - k.vTot)}</span><span>Utilidad esperada del contrato: ${millones(utilEsp)}${utilAct < utilEsp ? ` · con lo gastado hoy quedarían ${millones(utilAct)}` : ''}</span></div>
+      </section>
+      ${alertas.length ? `<div class="rh-semaforo">${alertas.join('')}</div>` : '<div class="rh-semaforo"><span class="verde">● Todos los rubros van dentro del presupuesto</span></div>'}
+      <div class="rh-tabla-wrap"><table class="rh-tabla"><thead><tr><th>Rubro</th><th class="n">Presupuesto</th><th class="n">Real</th><th class="n">Disponible</th><th>Consumido</th></tr></thead><tbody>${filas}
+        <tr class="tot"><td>Total costo directo</td><td class="n">${fmt(k.pTot)}</td><td class="n">${fmt(k.vTot)}</td><td class="n ${k.pTot - k.vTot < 0 ? 'neg' : ''}">${fmt(k.pTot - k.vTot)}</td><td class="pres-uso">${barra(usoTot)}<b>${pct(usoTot)}</b></td></tr></tbody></table></div>
+      <p class="proy-nota">Verde: menos del 80 % · amarillo: del 80 % al 100 % · rojo: se pasó. Compara el % consumido con el avance de la obra. La administración (${fmt(pr.adm || 0)}) y los imprevistos (${fmt(pr.imp || 0)}) son parte del valor de la piscina; los gastos operativos reales (${fmt(cp.gastos)}) no se restan del costo directo.</p>
+      <details class="pres-det"><summary>Ver los capítulos e ítems del presupuesto</summary>${(pr.caps || []).map((cap) => `<h4>${esc(cap.n)} · ${fmt(cap.items.reduce((s, it) => s + (Number(it.v) || 0), 0))}</h4><ul class="proy-cuentas">${cap.items.map((it) => `<li><span>${esc(it.c)} ${esc(it.d)} <span class="sub">· ${esc(titulo(it.r))}</span></span><b>${fmt(it.v)}</b></li>`).join('')}</ul>`).join('')}</details>
+      ${isAdmin() ? '<div class="rh-card-acc" style="margin-top:10px"><button class="btn" type="button" data-proy="presupuesto">Cambiar presupuesto</button><button class="btn" type="button" data-proy="presupuesto-quitar">Quitar presupuesto</button></div>' : ''}
+    </section>`;
+  }
+
+  // Cómo quedó repartida la mano de obra (periodo escogido)
+  function seccionMO(c) {
+    if (!P.repartir || !(Math.abs(c.mo.total) >= 1)) return '';
+    const l = [...c.mo.rub.entries()].filter(([, v]) => Math.abs(v) >= 1).sort((a, b) => b[1] - a[1]);
+    const idx = indiceActividades();
+    return `<section class="proy-caja"><h3>Mano de obra dentro de los rubros</h3>
+      <p class="proy-nota">El personal fijo del proyecto (salarios operativos proyecto y seguridad social operativa directa: ${fmt(c.mo.total)}) se repartió en los rubros. El personal compartido sigue abajo, en gastos operativos. Reparto: <b>${pct(c.mo.act / c.mo.total)}</b> según las actividades que marcaron en la asistencia y <b>${pct(c.mo.gen / c.mo.total)}</b> en proporción ${Object.keys(P.conf.presup || {}).length ? 'al presupuesto (o a los materiales, si la obra no tiene presupuesto)' : 'a los materiales de la obra'}, para los meses sin asistencia y las labores generales (limpieza, cargue, "Otra").</p>
+      <ul class="proy-cuentas">${l.map(([r, v]) => `<li><span>${esc(titulo(r))}</span><b>${fmt(v)}</b></li>`).join('')}</ul>
+      ${isAdmin() && idx.vistas.size ? '<div class="rh-card-acc" style="margin-top:10px"><button class="btn" type="button" data-proy="actividades">Actividades y rubros</button></div>' : ''}
+    </section>`;
+  }
+  function abrirActividades() {
+    const idx = indiceActividades();
+    const l = [...idx.vistas.entries()].sort((a, b) => b[1] - a[1]);
+    abrirForm('Actividades de la asistencia y rubros', `
+      <p class="full proy-nota" style="margin:0">Escoge el rubro de cada actividad que marcan los trabajadores. Las horas de esa actividad llevan su costo a ese rubro. "General" se reparte en proporción al presupuesto de la obra.</p>
+      <div class="full rh-tabla-wrap"><table class="rh-tabla"><thead><tr><th>Actividad</th><th class="n">Horas</th><th>Rubro</th></tr></thead><tbody>
+      ${l.map(([a, h]) => { const actual = rubroActividad(a); return `<tr><td>${esc(a)}${(P.conf.actRubro || {})[a] ? '' : '<br><span class="sub">Sugerido</span>'}</td><td class="n">${Math.round(h).toLocaleString('es-CO')}</td><td><select data-pact="${esc(a)}"><option value="${GEN}"${actual === GEN ? ' selected' : ''}>General (según el presupuesto)</option>${OBRA.map((r) => `<option value="${esc(r)}"${actual === r ? ' selected' : ''}>${esc(titulo(r))}</option>`).join('')}</select></td></tr>`; }).join('')}
+      </tbody></table></div>`,
+    async () => {
+      const m = {}; document.querySelectorAll('[data-pact]').forEach((s) => { m[s.dataset.pact] = s.value; });
+      await mutarConf((c) => { c.actRubro = Object.assign({}, c.actRubro || {}, m); });
+    }, 'Guardar');
+  }
+
+  // ---------- lectura del presupuesto en PDF ----------
+  // Formato del presupuesto del área técnica: "CAPÍTULO n - NOMBRE", ítems "1.01 Descripción Und Cant. $ P.U. $ Parcial",
+  // "Subtotal …", "Subtotal costos directos", Administración, Imprevistos, Utilidad, IVA sobre utilidad y TOTAL.
+  async function lineasPdf(file) {
+    if (typeof Lector === 'undefined' || !Lector.pdfjs) throw new Error('No cargó el lector de PDF. Recarga la página.');
+    const lib = await Lector.pdfjs();
+    const pdf = await lib.getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false }).promise;
+    const out = [];
+    for (let i = 1; i <= Math.min(pdf.numPages, 20); i++) {
+      const tc = await (await pdf.getPage(i)).getTextContent();
+      const filas = [];
+      for (const it of tc.items) {
+        if (!String(it.str).trim()) continue;
+        const y = it.transform[5], x = it.transform[4];
+        let f = filas.find((z) => Math.abs(z.y - y) <= 2.5);
+        if (!f) { f = { y, xs: [] }; filas.push(f); }
+        f.xs.push([x, it.str]);
+      }
+      filas.sort((a, b) => b.y - a.y).forEach((f) => out.push(f.xs.sort((a, b) => a[0] - b[0]).map((x) => x[1]).join(' ').replace(/\s+/g, ' ').trim()));
+    }
+    return out;
+  }
+  const montoPres = (s) => Number(String(s || '').replace(/[^\d,.-]/g, '').replace(/\./g, '').replace(',', '.')) || 0;
+  function rubroCapitulo(nombre) {
+    const s = sinTilde(nombre);
+    if (/prelimin|preoperat/.test(s)) return 'PREOPERATIVOS';
+    if (/estructur/.test(s)) return 'ESTRUCTURAS';
+    if (/impermeab/.test(s)) return 'IMPERMEABILIZACIONES';
+    if (/panete|revoque|enchap|acabad/.test(s)) return 'REVOQUES Y ENCHAPES';
+    if (/electric/.test(s)) return 'PARTE ELECTRICA';
+    if (/equipo/.test(s)) return 'COMPRA DE EQUIPOS';
+    if (/hidraul|tuberi|instalaciones tecnicas|instalacion/.test(s)) return 'TUBERIA';
+    if (/garantia/.test(s)) return 'GARANTIAS';
+    return 'ESTRUCTURAS';
+  }
+  function rubroItem(capRubro, desc) {
+    const s = sinTilde(desc);
+    if (capRubro === 'TUBERIA' && /electric|luces|regata/.test(s)) return 'PARTE ELECTRICA';
+    return capRubro;
+  }
+  function leerPresupuesto(lineas) {
+    const pr = { caps: [], avisos: [] };
+    const tx = lineas.join('\n');
+    const i0 = lineas.findIndex((l) => /^PRESUPUESTO$/i.test(l));
+    pr.nombre = (i0 >= 0 ? lineas[i0 + 1] : '') || '';
+    pr.cliente = ((/Cliente:\s*(.+?)(?:\s*·|\s+NIT|$)/m.exec(tx) || [])[1] || '').trim();
+    pr.cot = ((/Cotizaci[oó]n\s*N[°º.o]*\s*([\w-]+)/i.exec(tx) || [])[1] || '').trim();
+    pr.version = ((/Versi[oó]n:?\s*([\w-]+)/i.exec(tx) || [])[1] || '').trim();
+    const tomar = (re) => { const m = re.exec(tx); return m ? montoPres(m[m.length - 1]) : 0; };
+    pr.directo = tomar(/Subtotal costos directos\s*\$?\s*([\d.,]+)/i);
+    pr.adm = tomar(/Administraci[oó]n[^$\n]*\$\s*([\d.,]+)/i);
+    pr.imp = tomar(/Imprevistos[^$\n]*\$\s*([\d.,]+)/i);
+    pr.util = tomar(/\nUtilidad[^$\n]*\$\s*([\d.,]+)/i);
+    pr.iva = tomar(/(?:^|\n)\s*IVA\b[^$\n]*\$\s*([\d.,]+)/);
+    pr.total = tomar(/\nTOTAL\s*\$\s*([\d.,]+)/i);
+    // Ítems: se juntan las líneas desde el código hasta el siguiente ítem, capítulo o subtotal
+    let cap = null, buf = '';
+    const ITEM = /^(\d+\.\d+)\s+(.+?)\s+(\S{1,6})\s+([\d.,]+)\s+\$\s*([\d.,]+)\s+\$\s*([\d.,]+)\s*(.*)$/;
+    const cerrar = () => {
+      if (!buf) return;
+      const m = ITEM.exec(buf);
+      if (m && cap) { const d = (m[2] + (m[7] ? ' ' + m[7] : '')).trim(); cap.items.push({ c: m[1], d, u: m[3], q: montoPres(m[4]), pu: montoPres(m[5]), v: montoPres(m[6]), r: rubroItem(cap.r, d) }); }
+      else pr.avisos.push('No pude leer: ' + buf.slice(0, 90));
+      buf = '';
+    };
+    for (const l of lineas) {
+      const capM = /CAP[ÍI]TULO\s+(\d+)\s*[-–:]\s*(.+)$/i.exec(l);
+      if (capM) { cerrar(); cap = { n: capM[2].trim(), r: rubroCapitulo(capM[2]), items: [], sub: 0 }; pr.caps.push(cap); continue; }
+      const sub = /^Subtotal\s+(.+?)\s*\$\s*([\d.,]+)$/i.exec(l);
+      if (sub) { cerrar(); if (cap && !/costos directos/i.test(sub[1])) cap.sub = montoPres(sub[2]); if (/costos directos/i.test(sub[1])) cap = null; continue; }
+      if (/^#\s*Descripci/i.test(l) || /NIT\s*\d|Tel\s*\d/i.test(l)) continue;
+      if (/^\d+\.\d+\s/.test(l)) { cerrar(); buf = l; continue; }
+      if (buf) buf += ' ' + l;
+    }
+    cerrar();
+    // Revisiones de cuadre
+    for (const c of pr.caps) { const s = c.items.reduce((a, it) => a + it.v, 0); if (c.sub && Math.abs(s - c.sub) > 2) pr.avisos.push(`El capítulo ${c.n} suma ${fmt(s)} y su subtotal dice ${fmt(c.sub)}.`); }
+    const sumaItems = pr.caps.reduce((a, c) => a + c.items.reduce((b, it) => b + it.v, 0), 0);
+    if (pr.directo && Math.abs(sumaItems - pr.directo) > 5) pr.avisos.push(`Los ítems suman ${fmt(sumaItems)} y el subtotal de costos directos dice ${fmt(pr.directo)}.`);
+    if (!pr.directo) pr.directo = sumaItems;
+    if (pr.total && Math.abs(pr.directo + pr.adm + pr.imp + pr.util + pr.iva - pr.total) > 5) pr.avisos.push('El total no cuadra con costos directos + administración + imprevistos + utilidad + IVA.');
+    return pr;
+  }
+  function abrirPresupuesto() {
+    const clave = P.sub ? 'c:' + P.sub : P.sel;
+    let leido = null;
+    abrirForm(`Presupuesto · ${P.sub ? nombreCC(P.sub) : nombreSel(P.sel)}`, `
+      <div class="field full"><label for="pr-file">Presupuesto en PDF</label><input type="file" id="pr-file" accept="application/pdf,.pdf"><span class="hint">El que genera el área técnica (capítulos, ítems, subtotal de costos directos, AIU y total).</span></div>
+      <div class="full" id="pr-res"></div>`,
+    async () => {
+      if (!leido) throw new Error('Escoge el PDF del presupuesto.');
+      const items = leido.caps.reduce((a, c) => a + c.items.length, 0);
+      if (!items) throw new Error('No encontré ítems en el PDF.');
+      document.querySelectorAll('[data-pri]').forEach((s) => { const [ci, ii] = s.dataset.pri.split('.').map(Number); leido.caps[ci].items[ii].r = s.value; });
+      const usarValor = $('#pr-valor') && $('#pr-valor').checked;
+      const guardar = { nombre: leido.nombre, cliente: leido.cliente, cot: leido.cot, version: leido.version, archivo: leido.archivo, directo: leido.directo, adm: leido.adm, imp: leido.imp, util: leido.util, iva: leido.iva, total: leido.total, caps: leido.caps.map((c) => ({ n: c.n, items: c.items.map((it) => ({ c: it.c, d: it.d, u: it.u, q: it.q, pu: it.pu, v: it.v, r: it.r })) })), en: new Date().toISOString(), por: A.uid };
+      await mutarConf((c) => {
+        c.presup = c.presup || {}; c.presup[clave] = guardar;
+        if (usarValor) { c.obras = c.obras || {}; c.obras[clave] = Object.assign({}, c.obras[clave] || {}, { valorVenta: Math.round(leido.total - leido.iva) }); }
+      });
+    }, 'Guardar presupuesto');
+    $('#pf-go').disabled = true;
+    $('#pr-file').addEventListener('change', async (ev) => {
+      const file = ev.target.files[0]; const res = $('#pr-res'); leido = null; $('#pf-go').disabled = true;
+      if (!file) { res.innerHTML = ''; return; }
+      res.innerHTML = '<p class="proy-nota">Leyendo el PDF…</p>';
+      try {
+        leido = leerPresupuesto(await lineasPdf(file)); leido.archivo = file.name;
+        const obra = (P.conf.obras || {})[clave] || {};
+        const sinIva = Math.round(leido.total - leido.iva);
+        const opc = (r) => OBRA.map((x) => `<option value="${esc(x)}"${x === r ? ' selected' : ''}>${esc(titulo(x))}</option>`).join('');
+        res.innerHTML = `<div class="rh-asis-res">
+          <p class="rh-asis-resumen"><b>${esc(leido.nombre || file.name)}</b>${leido.cot ? ' · ' + esc(leido.cot) : ''}${leido.version ? ' · ' + esc(leido.version) : ''}<br>Costos directos <b>${fmt(leido.directo)}</b> · administración ${fmt(leido.adm)} · imprevistos ${fmt(leido.imp)} · utilidad ${fmt(leido.util)} · IVA ${fmt(leido.iva)} · <b>total ${fmt(leido.total)}</b></p>
+          ${leido.avisos.length ? `<div class="proy-aviso">⚠ ${leido.avisos.map(esc).join('<br>')}</div>` : '<p class="proy-nota">✔ Los capítulos cuadran con el subtotal de costos directos y el total.</p>'}
+          <p class="proy-nota">Revisa el rubro de cada ítem (la mano de obra de cada ítem va en su mismo rubro):</p>
+          <div class="rh-tabla-wrap"><table class="rh-tabla"><thead><tr><th>Ítem</th><th class="n">Valor</th><th>Rubro</th></tr></thead><tbody>
+          ${leido.caps.map((c, ci) => `<tr class="sec"><td colspan="3">${esc(c.n)} · <select data-prc="${ci}" aria-label="Rubro de todo el capítulo">${opc(c.r)}</select></td></tr>${c.items.map((it, ii) => `<tr><td>${esc(it.c)} ${esc(it.d)}</td><td class="n">${fmt(it.v)}</td><td><select data-pri="${ci}.${ii}">${opc(it.r)}</select></td></tr>`).join('')}`).join('')}
+          </tbody></table></div>
+          ${leido.total ? `<label class="check" style="margin-top:8px"><input type="checkbox" id="pr-valor" ${!obra.valorVenta || Math.round(obra.valorVenta) !== sinIva ? 'checked' : ''}> Usar ${fmt(sinIva)} (total sin el IVA) como valor vendido de la obra${obra.valorVenta ? ` (hoy dice ${fmt(obra.valorVenta)})` : ''}</label>` : ''}
+        </div>`;
+        res.querySelectorAll('[data-prc]').forEach((s) => s.addEventListener('change', () => res.querySelectorAll(`[data-pri^="${s.dataset.prc}."]`).forEach((x) => { x.value = s.value; })));
+        $('#pf-go').disabled = false;
+      } catch (e) { leido = null; res.innerHTML = `<p class="rh-asis-falta">No pude leer el PDF: ${esc(e.message || e)}</p>`; }
+    });
+  }
+
   // Personal según la app de asistencia, en este proyecto y periodo
   function seccionAsistencia(ccs) {
     const cab = `<section class="proy-caja"><h3>Personal según la asistencia</h3>`;
@@ -425,7 +736,7 @@
     const total = l.filter((x) => !x.enSiigo).reduce((s, x) => s + x.costo, 0);
     const avisoObras = r.sinCentro.size ? `<div class="proy-aviso">⚠ ${r.sinCentro.size} ${r.sinCentro.size === 1 ? 'obra de la asistencia no está relacionada' : 'obras de la asistencia no están relacionadas'} con un centro de costo (${[...r.sinCentro.keys()].slice(0, 3).map(esc).join(', ')}${r.sinCentro.size > 3 ? '…' : ''}). Sus horas todavía no se cargan a ningún proyecto. ${isAdmin() ? '<button class="rh-link" type="button" data-proy="asis-obras">Relacionarlas</button>' : ''}</div>` : '';
     const fecha = P.asis.actualizado ? new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' }).format(new Date(P.asis.actualizado)) : '';
-    return `${cab}<p class="proy-nota">Horas que cada empleado marcó en esta obra. Su costo del mes (salario, auxilio, prestaciones y seguridad social) se reparte entre las obras según esas horas y va a <b>Salarios operativos compartidos</b> y <b>Seguridad social</b>. Datos de la asistencia actualizados el ${esc(fecha)}${/\.$/.test(fecha) ? '' : '.'}${r.fuera.size ? ` No se ${r.fuera.size === 1 ? 'carga' : 'cargan'} ${r.fuera.size} ${r.fuera.size === 1 ? 'persona que marca' : 'personas que marcan'} y no ${r.fuera.size === 1 ? 'está' : 'están'} en Recursos humanos (subcontratados o pendientes de registrar).` : ''}</p>
+    return `${cab}<p class="proy-nota">Horas que cada empleado marcó en esta obra. Su costo del mes (salario, auxilio, prestaciones y seguridad social) se reparte entre las obras según esas horas y va a <b>Salarios operativos compartidos</b> y <b>Seguridad social</b> (personal de la empresa que rota entre obras)${P.repartir ? '. Sus <b>actividades</b> también sirven para repartir al personal fijo del proyecto en los rubros' : ''}. Datos de la asistencia actualizados el ${esc(fecha)}${/\.$/.test(fecha) ? '' : '.'}${r.fuera.size ? ` No se ${r.fuera.size === 1 ? 'carga' : 'cargan'} ${r.fuera.size} ${r.fuera.size === 1 ? 'persona que marca' : 'personas que marcan'} y no ${r.fuera.size === 1 ? 'está' : 'están'} en Recursos humanos (subcontratados o pendientes de registrar).` : ''}</p>
       ${avisoObras}
       ${l.length ? `<div class="rh-tabla-wrap"><table class="rh-tabla"><thead><tr><th>Empleado</th><th>Mes</th><th class="n">Horas en la obra</th><th class="n">% de su mes</th><th class="n">Costo cargado</th></tr></thead><tbody>
         ${l.map((x) => `<tr><td><span class="emp">${esc(x.nombre)}</span>${ccs.length > 1 ? `<br><span class="sub">${esc(x.cc)}</span>` : ''}</td><td>${esc(nombreMes(x.mes))}</td><td class="n">${String(Math.round(x.horas * 10) / 10).replace('.', ',')} de ${String(Math.round(x.totalMes * 10) / 10).replace('.', ',')}</td><td class="n">${pct(x.horas / x.totalMes)}</td><td class="n">${x.enSiigo ? '<span class="sub" title="Su nómina de ese mes ya está cargada a este proyecto en Siigo">Ya está en Siigo</span>' : `<b>${fmt(x.costo)}</b>`}</td></tr>`).join('')}
@@ -488,7 +799,7 @@
   // ---------- detalle: proveedores de un rubro y documentos ----------
   function abrirDetalle(rubro, prov) {
     const ccs = P.sub ? [P.sub] : ccsDe(P.sel);
-    const filas = filasDe(ccs).filter((f) => enPeriodo(f[0]) && (rubro ? rubroDe(f[2], f[1]) === rubro : rubroDe(f[2], f[1]) !== NO));
+    const filas = filasDe(ccs).filter((f) => enPeriodo(f[0]) && (rubro ? rubFila(f) === rubro : rubFila(f) !== NO));
     const terc = (f) => (f[4] >= 0 ? (TER[f[4]] || [])[1] || 'Sin tercero' : f[7]);
     const signo = rubro && ING.includes(rubro) && rubro !== 'DESCUENTOS' ? -1 : 1;
     let html;
@@ -498,7 +809,22 @@
       const total = l.reduce((s, [, x]) => s + x.v, 0);
       // Cuentas que forman el rubro
       const cu = new Map(); for (const f of filas) cu.set(f[2], (cu.get(f[2]) || 0) + f[5] * signo);
-      html = `<p class="proy-nota">${esc(textoPeriodo())} · ${l.length} ${l.length === 1 ? 'tercero' : 'terceros'} · total <b>${fmt(total)}</b>. Toca uno para ver sus documentos.</p>
+      // Personal fijo del proyecto que quedó dentro de este rubro, con sus horas en esas actividades
+      const per = new Map(), idx = indiceActividades();
+      for (const f of filas) {
+        if (!f[9] || !OBRA.includes(f[9])) continue;
+        const cedula = f[4] >= 0 ? ced((TER[f[4]] || [])[0]) : ced(f[8]);
+        const x = per.get(cedula) || { n: terc(f), v: 0, meses: new Set(), act: 0 };
+        x.v += f[5]; x.meses.add(f[3] + '|' + f[0].slice(0, 7)); if (f[10] === 'act') x.act += f[5]; per.set(cedula, x);
+      }
+      const pl = [...per.entries()].map(([cedula, x]) => {
+        let h = 0; for (const k of x.meses) { const m = idx.per.get(k + '|' + cedula); if (m) h += m.get(rubro) || 0; }
+        return { ...x, h };
+      }).sort((a, b) => b.v - a.v);
+      const bloquePer = pl.length ? `<h4 style="margin:4px 0 4px">Personal del proyecto en este rubro</h4>
+        <div class="rh-tabla-wrap"><table class="rh-tabla"><thead><tr><th>Empleado</th><th class="n">Horas en estas actividades</th><th class="n">Costo</th><th>Cómo se calculó</th></tr></thead><tbody>${pl.map((x) => `<tr class="click" data-det-prov="${esc(x.n)}"><td>${esc(x.n)}</td><td class="n">${x.h ? Math.round(x.h).toLocaleString('es-CO') : '—'}</td><td class="n">${fmt(x.v)}</td><td>${x.act >= x.v * 0.99 ? 'Por sus actividades en la asistencia' : x.act > 0 ? 'Actividades + reparto general' : 'Reparto según el presupuesto o los materiales (sin asistencia ese mes)'}</td></tr>`).join('')}</tbody></table></div>
+        <p class="proy-nota">Incluye salario, prestaciones y seguridad social que Siigo cargó a la obra. Toca un empleado para ver mes a mes.</p>` : '';
+      html = `${bloquePer}<p class="proy-nota">${esc(textoPeriodo())} · ${l.length} ${l.length === 1 ? 'tercero' : 'terceros'} · total <b>${fmt(total)}</b>. Toca uno para ver sus documentos.</p>
         <div class="rh-tabla-wrap"><table class="rh-tabla"><thead><tr><th>Proveedor o tercero</th><th class="n">Docs.</th><th class="n">Valor</th><th class="n">%</th></tr></thead><tbody>${l.map(([n, x]) => `<tr class="click" data-det-prov="${esc(n)}"><td>${esc(n)}</td><td class="n">${x.n}</td><td class="n">${fmt(x.v)}</td><td class="n">${pct(total ? x.v / total : NaN)}</td></tr>`).join('')}</tbody></table></div>
         <h4 style="margin:14px 0 4px">Cuentas contables del rubro</h4>
         <ul class="proy-cuentas">${[...cu.entries()].sort((a, b) => b[1] - a[1]).map(([k, v]) => `<li><span>${esc(k.startsWith('P:') || k.startsWith('N:') ? '' : k + ' · ')}${esc(nombreCuenta(k))}</span><b>${fmt(v)}</b></li>`).join('')}</ul>`;
@@ -657,7 +983,7 @@
     const nombre = P.sub ? nombreCC(P.sub) : nombreSel(P.sel);
     const claveObra = P.sub ? 'c:' + P.sub : P.sel, obra = (P.conf.obras || {})[claveObra] || {};
     const m2 = Number(obra.m2) || 0, vendido = Number(obra.valorVenta) || 0;
-    const cTot = P.periodo === 'mes' ? (() => { const s = [P.periodo, P.desde, P.hasta]; P.periodo = 'rango'; P.desde = ''; P.hasta = ''; const x = calcular(ccs); [P.periodo, P.desde, P.hasta] = s; return x; })() : c;
+    const cTot = P.periodo === 'mes' ? calcularTodo(ccs) : c;
     const serie = serieMeses(ccs);
     const DIN = '"$" #,##0', PCT = '0.0%';
     // Resumen
@@ -693,7 +1019,7 @@
       ...GASTO.map((r) => [titulo(r), c.r[r]]), ...(Math.abs(c.r[SIN]) >= 1 ? [['Sin clasificar', c.r[SIN]]] : []), ['TOTAL GASTOS OPERATIVOS', c.gastos], ['UTILIDAD OPERATIVA', c.operativa]];
     pyg.forEach((f) => { if (typeof f[1] === 'number' && c.ventas) f[2] = f[1] / c.ventas; });
     const det = [['Fecha', 'Documento', 'Centro de costo', 'Cuenta / concepto', 'Rubro', 'Tercero', 'Detalle', 'Valor']].concat(
-      filasDe(ccs).filter((f) => enPeriodo(f[0]) && rubroDe(f[2], f[1]) !== NO).map((f) => [f[0], f[1], f[3], (f[2].startsWith('P:') || f[2].startsWith('N:') ? '' : f[2] + ' ') + nombreCuenta(f[2]), titulo(rubroDe(f[2], f[1])), f[4] >= 0 ? (TER[f[4]] || [])[1] : f[7], f[6], Math.round(f[5])]));
+      filasDe(ccs).filter((f) => enPeriodo(f[0]) && rubFila(f) !== NO).map((f) => [f[0], f[1], f[3], (f[2].startsWith('P:') || f[2].startsWith('N:') ? '' : f[2] + ' ') + nombreCuenta(f[2]), titulo(rubFila(f)), f[4] >= 0 ? (TER[f[4]] || [])[1] : f[7], f[6], Math.round(f[5])]));
     const hPyg = XLSX.utils.aoa_to_sheet(pyg);
     pyg.forEach((f, i) => { if (typeof f[1] === 'number') { hPyg[XLSX.utils.encode_cell({ r: i, c: 1 })].z = DIN; if (typeof f[2] === 'number') hPyg[XLSX.utils.encode_cell({ r: i, c: 2 })].z = PCT; } });
     hPyg['!cols'] = [{ wch: 38 }, { wch: 20 }, { wch: 12 }];
@@ -703,6 +1029,22 @@
     XLSX.utils.book_append_sheet(wb, hRes, 'Resumen');
     XLSX.utils.book_append_sheet(wb, hMes, 'Mes a mes');
     XLSX.utils.book_append_sheet(wb, hPyg, 'PyG');
+    // Presupuesto contra lo real (todo el proyecto)
+    const pr = (P.conf.presup || {})[claveObra];
+    if (pr) {
+      const k = comparativo(pr, calcularTodo(ccs));
+      const pp = [[`PRESUPUESTO CONTRA LO REAL · ${nombre}`], [`${pr.nombre || ''}${pr.cot ? ' · ' + pr.cot : ''}${pr.version ? ' · versión ' + pr.version : ''} · todo el proyecto${P.repartir ? ' · mano de obra dentro de cada rubro' : ''}`], [],
+        ['Rubro', 'Presupuesto', 'Real', 'Disponible', '% consumido', 'Estado'],
+        ...k.filas.sort((a, b) => b.p - a.p || b.v - a.v).map((x) => [titulo(x.r), x.p, x.v, x.p ? x.dif : '', x.p ? x.uso : '', x.p ? { rojo: 'Se pasó', amarillo: 'Ojo (80 % o más)', verde: 'Bien' }[estadoUso(x.uso)] : 'Sin presupuesto']),
+        ['TOTAL COSTO DIRECTO', k.pTot, k.vTot, k.pTot - k.vTot, k.pTot ? k.vTot / k.pTot : '', ''], [],
+        ['Administración (parte del valor)', pr.adm || 0], ['Imprevistos (parte del valor)', pr.imp || 0], ['Utilidad', pr.util || 0], ['IVA sobre utilidad', pr.iva || 0], ['VALOR TOTAL DEL PRESUPUESTO', pr.total || 0], [],
+        ['DETALLE DEL PRESUPUESTO'], ['Ítem', 'Descripción', 'Und', 'Cantidad', 'Precio unitario', 'Parcial', 'Rubro'],
+        ...(pr.caps || []).flatMap((c) => [[c.n], ...c.items.map((it) => [it.c, it.d, it.u, it.q, it.pu, it.v, titulo(it.r)])])];
+      const hPre = XLSX.utils.aoa_to_sheet(pp);
+      pp.forEach((f, i) => f.forEach((v, j) => { if (typeof v !== 'number') return; const cel = hPre[XLSX.utils.encode_cell({ r: i, c: j })]; if (!cel) return; const det = i > 4 + k.filas.length + 8; cel.z = !det && j === 4 ? PCT : det && j === 3 ? 'General' : DIN; }));
+      hPre['!cols'] = [{ wch: 34 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 16 }, { wch: 18 }, { wch: 26 }];
+      XLSX.utils.book_append_sheet(wb, hPre, 'Presupuesto');
+    }
     XLSX.utils.book_append_sheet(wb, hDet, 'Movimientos');
     let datos = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
     // Gráfico de líneas nativo de Excel (se puede editar), en la hoja Resumen, con los datos de "Mes a mes"
@@ -768,8 +1110,9 @@ ${serieXml(0, 'E', '002796')}${serieXml(1, 'F', 'E07B00')}${serieXml(2, 'G', '1A
 
   // ---------- eventos ----------
   $('#view-proy').addEventListener('click', (ev) => {
-    const t = ev.target.closest('[data-proy-sel], [data-proy-sub], [data-proy-per], [data-proy], [data-proy-rubro], [data-proy-prov], [data-proy-quitar], #proy-volver-lista');
+    const t = ev.target.closest('[data-proy-sel], [data-proy-sub], [data-proy-per], [data-proy-mo], [data-proy], [data-proy-rubro], [data-proy-prov], [data-proy-quitar], #proy-volver-lista');
     if (!t) return;
+    if (t.dataset.proyMo) { P.repartir = t.dataset.proyMo === '1'; render(); return; }
     if (t.id === 'proy-volver-lista') { P.sel = ''; P.sub = ''; render(); window.scrollTo({ top: 0 }); return; }
     if (t.dataset.proySel) { P.sel = t.dataset.proySel; P.sub = ''; rangoInicial(); render(); window.scrollTo({ top: 0 }); return; }
     if ('proySub' in t.dataset) { P.sub = t.dataset.proySub; render(); return; }
@@ -790,6 +1133,13 @@ ${serieXml(0, 'E', '002796')}${serieXml(1, 'F', 'E07B00')}${serieXml(2, 'G', '1A
     else if (a === 'rango-todo') { rangoInicial(); render(); }
     else if (a === 'asis-conexion') abrirConexionAsis();
     else if (a === 'asis-obras') abrirObrasAsis();
+    else if (a === 'presupuesto') abrirPresupuesto();
+    else if (a === 'actividades') abrirActividades();
+    else if (a === 'presupuesto-quitar') {
+      if (!t.dataset.sure) { t.dataset.sure = '1'; t.textContent = '¿Quitar el presupuesto? Toca de nuevo'; return; }
+      const clave = P.sub ? 'c:' + P.sub : P.sel;
+      mutarConf((c) => { if (c.presup) delete c.presup[clave]; }).then(() => { render(); toast('Presupuesto quitado.'); }).catch((e) => toast(msgGitHub(e)));
+    }
   });
   $('#view-proy').addEventListener('input', (ev) => { if (ev.target.id === 'proy-buscar') { P.q = ev.target.value; const pos = ev.target.selectionStart; renderLista(); const i = $('#proy-buscar'); i.focus(); i.setSelectionRange(pos, pos); } });
   $('#view-proy').addEventListener('change', (ev) => {

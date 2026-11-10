@@ -291,5 +291,5 @@ Reglas:
     return { datos, fuente, faltan, error, texto };
   }
 
-  return { leer, interpretar };
+  return { leer, interpretar, pdfjs: cargarPdfJs };
 })();

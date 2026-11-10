@@ -553,3 +553,18 @@ label .rh-num { width: 22px; height: 22px; font-size: .78rem; margin-right: 4px;
 .proy-ley .l-ven { background: var(--accent); margin-left: 0; } .proy-ley .l-cos { background: #e07b00; } .proy-ley .l-uti { background: var(--ok); }
 .proy-ley b { font-family: var(--font-num); color: var(--ink); margin-right: 6px; }
 .proy-ley { flex-wrap: wrap; }
+
+/* Presupuesto contra lo real */
+.proy-pres .rh-semaforo > span.verde { background: var(--ok-soft); color: var(--ok); border-color: transparent; }
+.proy-pres .rh-semaforo > span.amarillo { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
+.proy-pres .rh-semaforo > span.rojo { background: var(--bad-soft); color: var(--bad); border-color: transparent; }
+.pres-uso { min-width: 150px; white-space: nowrap; }
+.pres-uso b { font-family: var(--font-num); font-size: .85rem; margin-left: 8px; }
+.pres-barra { display: inline-block; vertical-align: middle; width: 90px; height: 8px; border-radius: 4px; background: var(--surface-2); border: 1px solid var(--line); overflow: hidden; }
+.pres-barra > span { display: block; height: 100%; background: var(--ok); }
+.pres-barra.amarillo > span { background: #e0a100; }
+.pres-barra.rojo > span { background: var(--bad); }
+.rh-tabla td.n.neg { color: var(--bad); font-weight: 700; }
+.pres-det { margin-top: 10px; }
+.pres-det summary { cursor: pointer; font-weight: 600; color: var(--accent); }
+.pres-det h4 { margin: 12px 0 4px; font-size: .95rem; }
