@@ -6,7 +6,7 @@
   const A = window.ODESA;
   if (!A) return;
   const { $, esc, fmt, fmtDate, toast, mostrarError, msgGitHub, nuevoId, todayISO } = A;
-  const R_DATOS = 'datos/proyectos.enc', R_CONF = 'datos/proyectos-conf.enc', R_RRHH = 'datos/rrhh.enc';
+  const R_DATOS = 'datos/proyectos.enc', R_CONF = 'datos/proyectos-conf.enc', R_RRHH = 'datos/rrhh.enc', R_ASIS = 'datos/asistencia.enc';
 
   // Estructura del PyG (modelo de gerencia)
   const ING = ['FACTURACION TOTAL', 'DESCUENTOS'];
@@ -20,16 +20,18 @@
   // periodo: 'rango' (fecha de inicio a fecha de corte, las escoge la usuaria) o 'mes'
   const P = { datos: null, conf: null, sha: null, rrhh: null, sel: '', sub: '', periodo: 'rango', desde: '', hasta: '', mes: '', q: '', cargando: false, leido: 0 };
   const isAdmin = () => !!A.isAdmin;
-  const confBase = () => ({ mapa: {}, grupos: [], obras: {}, personal: [] });
+  const confBase = () => ({ mapa: {}, grupos: [], obras: {}, personal: [], obrasAsis: {} });
 
   // ---------- datos ----------
   async function leerTodo(forzar) {
     if (P.datos && !forzar && Date.now() - P.leido < 10 * 60e3) return;
-    const [fd, fc, fr] = await Promise.all([GH.leer(R_DATOS), GH.leer(R_CONF), GH.leer(R_RRHH)]);
+    const [fd, fc, fr, fa] = await Promise.all([GH.leer(R_DATOS), GH.leer(R_CONF), GH.leer(R_RRHH), GH.leer(R_ASIS)]);
     P.datos = fd ? await Cripto.descifrarJSON(A.maestra, fd.bytes) : null;
     P.sha = fc ? fc.sha : null;
     P.conf = Object.assign(confBase(), fc ? await Cripto.descifrarJSON(A.maestra, fc.bytes) : {});
     P.rrhh = fr ? await Cripto.descifrarJSON(A.maestra, fr.bytes) : { empleados: [], param: {} };
+    // Horas por obra de la app de asistencia (las sube el computador de contabilidad)
+    P.asis = fa ? await Cripto.descifrarJSON(A.maestra, fa.bytes) : null;
     P.leido = Date.now();
     prepararIndices();
   }
@@ -100,12 +102,14 @@
     return out;
   }
   function filasPersonal(ccs) {
-    const out = [];
+    const out = [], conAsis = mesesConAsistencia();
     for (const a of P.conf.personal || []) {
       if (!ccs.includes(a.cc)) continue;
       const e = ((P.rrhh && P.rrhh.empleados) || []).find((x) => x.id === a.empId) || a.snap || {};
       const c = costoMensual(e);
       for (const [mes, f] of repartoMeses(a)) {
+        // Si ese mes la persona ya tiene horas en la app de asistencia, manda la asistencia (no se cuenta dos veces)
+        if (conAsis.has(ced(e.cedula) + '|' + mes)) continue;
         const fecha = mes + '-28', comp = 'Personal asignado', t = -1, nombre = e.nombre || a.nombre;
         out.push([fecha, comp, 'N:sal', a.cc, t, c.sal * f, `${nombre}: ${f < 1 ? f.toFixed(2).replace('.', ',') + ' mes' : '1 mes'} de salario y auxilio`, nombre, e.cedula]);
         out.push([fecha, comp, 'N:pre', a.cc, t, c.pre * f, `${nombre}: prima, cesantías, intereses y vacaciones`, nombre, e.cedula]);
@@ -115,6 +119,72 @@
     }
     return out;
   }
+  // ---------- personal según la app de asistencia ----------
+  // Cada mes, el costo de cada empleado (salario, auxilio, prestaciones y seguridad social) se reparte entre
+  // las obras según sus "horas a pagar". Solo empleados que están en Recursos humanos (los subcontratados no).
+  const ced = (v) => String(v == null ? '' : v).replace(/\D/g, '');
+  let cacheAsis = null;
+  function resumenAsistencia() {
+    const clave = P.leido + '|' + JSON.stringify(P.conf.obrasAsis || {});
+    if (cacheAsis && cacheAsis.clave === clave) return cacheAsis;
+    const emps = new Map(((P.rrhh && P.rrhh.empleados) || []).map((e) => [ced(e.cedula), e]));
+    const meses = new Map(); // "cedula|AAAA-MM" -> { total, obras: Map(obra -> horas) }
+    const fuera = new Map(); // cédulas que marcan pero no están en Recursos humanos -> horas
+    for (const [fecha, c, obra, horas] of (P.asis && P.asis.filas) || []) {
+      const h = Number(horas) || 0; if (h <= 0) continue;
+      if (!emps.has(c)) { fuera.set(c, (fuera.get(c) || 0) + h); continue; }
+      const k = c + '|' + String(fecha).slice(0, 7), x = meses.get(k) || { total: 0, obras: new Map() };
+      x.total += h; x.obras.set(obra, (x.obras.get(obra) || 0) + h); meses.set(k, x);
+    }
+    // Nómina que Siigo ya cargó a un centro de costo para esa persona ese mes
+    const enSiigo = new Set();
+    for (const f of P.datos.filas) if (/^(72|5105)/.test(f[2]) && TER[f[4]]) enSiigo.add(ced(TER[f[4]][0]) + '|' + f[3] + '|' + f[0].slice(0, 7));
+    const sinCentro = new Map(); // obras de la asistencia sin centro de costo -> horas
+    const filas = [];
+    for (const [k, x] of meses) {
+      const [c, mes] = k.split('|'), e = emps.get(c);
+      const costo = costoMensual(e), frac = fraccionMes(e, mes);
+      for (const [obra, h] of x.obras) {
+        const cc = (P.conf.obrasAsis || {})[obra];
+        if (!cc) { sinCentro.set(obra, (sinCentro.get(obra) || 0) + h); continue; }
+        if (cc === 'NO') continue;
+        const parte = h / x.total * frac;
+        const base = { mes, cc, cedula: c, nombre: e.nombre, horas: h, totalMes: x.total, parte, enSiigo: enSiigo.has(c + '|' + cc + '|' + mes) };
+        base.costo = (costo.sal + costo.pre + costo.ss) * parte;
+        filas.push(Object.assign(base, { sal: costo.sal * parte, pre: costo.pre * parte, ss: costo.ss * parte }));
+      }
+    }
+    cacheAsis = { clave, filas, meses, fuera, sinCentro, obras: (P.asis && P.asis.obras) || [] };
+    return cacheAsis;
+  }
+  // Parte del mes en que la persona estuvo vinculada (mes comercial de 30 días)
+  function fraccionMes(e, mes) {
+    const ini = mes + '-01', fin = mes + '-' + String(new Date(Number(mes.slice(0, 4)), Number(mes.slice(5, 7)), 0).getDate()).padStart(2, '0');
+    if ((e.ingreso && e.ingreso > fin) || (e.retiro && e.retiro < ini)) return 0;
+    const d1 = e.ingreso && e.ingreso > ini ? Math.min(30, Number(e.ingreso.slice(8))) : 1;
+    const d2 = e.retiro && e.retiro < fin ? Math.min(30, Number(e.retiro.slice(8))) : 30;
+    return Math.max(0, d2 - d1 + 1) / 30;
+  }
+  function mesesConAsistencia() { const r = resumenAsistencia(); return new Set([...r.meses.keys()]); }
+  function filasAsistencia(ccs) {
+    const out = [];
+    for (const x of resumenAsistencia().filas) {
+      if (!ccs.includes(x.cc) || x.enSiigo) continue;
+      const fecha = x.mes + '-28', comp = 'Asistencia', pc = Math.round(x.horas / x.totalMes * 100);
+      out.push([fecha, comp, 'N:sal', x.cc, -1, x.sal, `${x.nombre}: ${x.horas} de ${x.totalMes} horas del mes (${pc} %) · salario y auxilio`, x.nombre, x.cedula]);
+      out.push([fecha, comp, 'N:pre', x.cc, -1, x.pre, `${x.nombre}: ${pc} % de prima, cesantías, intereses y vacaciones`, x.nombre, x.cedula]);
+      out.push([fecha, comp, 'N:ss', x.cc, -1, x.ss, `${x.nombre}: ${pc} % de pensión, ARL y caja`, x.nombre, x.cedula]);
+    }
+    return out;
+  }
+  // Sugerencia de centro de costo para una obra de la asistencia, por palabras en común con el nombre
+  function sugerirCentro(obra) {
+    const pal = (s) => new Set(String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !['contrato', 'piscina', 'construccion', 'mano', 'obra'].includes(w)));
+    const p = pal(obra); let mejor = '', puntos = 0;
+    for (const c of P.datos.centros.filter((x) => x.mov)) { const q = pal(c.name); let n = 0; for (const w of p) if (q.has(w)) n++; if (n > puntos) { puntos = n; mejor = c.code; } }
+    return mejor;
+  }
+
   // Nómina que Siigo ya cargó al proyecto para esa persona (para no contarla dos veces)
   function nominaSiigo(cedula, ccs) {
     const meses = new Set();
@@ -136,7 +206,7 @@
   }
   function filasDe(ccs) {
     const set = new Set(ccs);
-    return P.datos.filas.filter((f) => set.has(f[3])).concat(filasPersonal(ccs));
+    return P.datos.filas.filter((f) => set.has(f[3])).concat(filasPersonal(ccs), filasAsistencia(ccs));
   }
   function calcular(ccs) {
     const filas = filasDe(ccs).filter((f) => enPeriodo(f[0]));
@@ -345,6 +415,52 @@
     return `<div class="rh-tabla-wrap"><table class="rh-tabla"><thead><tr><th>Proveedor o tercero</th><th class="n">Valor</th><th class="n">% del costo</th></tr></thead><tbody>${l.map(([n, v]) => `<tr class="click" data-proy-prov="${esc(n)}"><td>${esc(n)}</td><td class="n">${fmt(v)}</td><td class="n">${pct(c.costo ? v / c.costo : NaN)}</td></tr>`).join('')}</tbody></table></div>`;
   }
 
+  // Personal según la app de asistencia, en este proyecto y periodo
+  function seccionAsistencia(ccs) {
+    const cab = `<section class="proy-caja"><h3>Personal según la asistencia</h3>`;
+    const botones = isAdmin() ? `<div class="rh-card-acc" style="margin-top:10px"><button class="btn" type="button" data-proy="asis-conexion">Conexión con la asistencia</button>${P.asis ? '<button class="btn" type="button" data-proy="asis-obras">Relacionar obras con centros de costo</button>' : ''}</div>` : '';
+    if (!P.asis) return `${cab}<p class="proy-nota">Aún no hay datos de la app de asistencia. ${isAdmin() ? 'Cuando tu compañero instale la conexión, escribe aquí la clave que te dé y el computador de contabilidad traerá las horas automáticamente.' : 'La administradora la está conectando.'}</p>${botones}</section>`;
+    const r = resumenAsistencia();
+    const l = r.filas.filter((x) => ccs.includes(x.cc) && enPeriodo(x.mes + '-28')).sort((a, b) => b.mes.localeCompare(a.mes) || String(a.nombre).localeCompare(String(b.nombre)));
+    const total = l.filter((x) => !x.enSiigo).reduce((s, x) => s + x.costo, 0);
+    const avisoObras = r.sinCentro.size ? `<div class="proy-aviso">⚠ ${r.sinCentro.size} ${r.sinCentro.size === 1 ? 'obra de la asistencia no está relacionada' : 'obras de la asistencia no están relacionadas'} con un centro de costo (${[...r.sinCentro.keys()].slice(0, 3).map(esc).join(', ')}${r.sinCentro.size > 3 ? '…' : ''}). Sus horas todavía no se cargan a ningún proyecto. ${isAdmin() ? '<button class="rh-link" type="button" data-proy="asis-obras">Relacionarlas</button>' : ''}</div>` : '';
+    const fecha = P.asis.actualizado ? new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' }).format(new Date(P.asis.actualizado)) : '';
+    return `${cab}<p class="proy-nota">Horas que cada empleado marcó en esta obra. Su costo del mes (salario, auxilio, prestaciones y seguridad social) se reparte entre las obras según esas horas y va a <b>Salarios operativos compartidos</b> y <b>Seguridad social</b>. Datos de la asistencia actualizados el ${esc(fecha)}${/\.$/.test(fecha) ? '' : '.'}${r.fuera.size ? ` No se ${r.fuera.size === 1 ? 'carga' : 'cargan'} ${r.fuera.size} ${r.fuera.size === 1 ? 'persona que marca' : 'personas que marcan'} y no ${r.fuera.size === 1 ? 'está' : 'están'} en Recursos humanos (subcontratados o pendientes de registrar).` : ''}</p>
+      ${avisoObras}
+      ${l.length ? `<div class="rh-tabla-wrap"><table class="rh-tabla"><thead><tr><th>Empleado</th><th>Mes</th><th class="n">Horas en la obra</th><th class="n">% de su mes</th><th class="n">Costo cargado</th></tr></thead><tbody>
+        ${l.map((x) => `<tr><td><span class="emp">${esc(x.nombre)}</span>${ccs.length > 1 ? `<br><span class="sub">${esc(x.cc)}</span>` : ''}</td><td>${esc(nombreMes(x.mes))}</td><td class="n">${String(Math.round(x.horas * 10) / 10).replace('.', ',')} de ${String(Math.round(x.totalMes * 10) / 10).replace('.', ',')}</td><td class="n">${pct(x.horas / x.totalMes)}</td><td class="n">${x.enSiigo ? '<span class="sub" title="Su nómina de ese mes ya está cargada a este proyecto en Siigo">Ya está en Siigo</span>' : `<b>${fmt(x.costo)}</b>`}</td></tr>`).join('')}
+        <tr class="tot"><td>Total cargado</td><td colspan="3"></td><td class="n">${fmt(total)}</td></tr></tbody></table></div>` : '<p class="proy-nota"><i>Nadie marcó horas en esta obra en el periodo.</i></p>'}
+      ${botones}</section>`;
+  }
+  function abrirConexionAsis() {
+    const a = P.conf.asistencia || {};
+    abrirForm('Conexión con la app de asistencia', `
+      <p class="full proy-nota" style="margin:0">Tu compañero instala en su motor de Google el archivo "Cuadra.gs" y te pasa una clave. Escríbela aquí. El computador de contabilidad traerá solo fecha, cédula, obra y horas a pagar (sin fotos ni ubicaciones).</p>
+      <div class="field full"><label for="pa-url">Enlace del motor (termina en /exec)</label><input id="pa-url" value="${esc(a.url || 'https://script.google.com/macros/s/AKfycbz0hLqOp6tHmlSybmM3jXsxAgqrFu4GnLdluG3HuKSqSfonG2LNaqGutg1sPNMdMB99Kw/exec')}" autocomplete="off"></div>
+      <div class="field full"><label for="pa-clave">Clave que te dio tu compañero</label><input id="pa-clave" type="password" autocomplete="off" placeholder="${a.clave ? 'Ya hay una clave guardada; escribe otra solo si cambió' : 'Pega aquí la clave'}"></div>
+      <p class="hint full">${P.asis ? `Última actualización: ${esc(new Date(P.asis.actualizado).toLocaleString('es-CO'))} · ${(P.asis.filas || []).length} jornadas.` : a.clave ? 'La clave está guardada. Los datos llegan en la próxima actualización automática (máximo una hora).' : ''}${a.error ? ` <b>Último error:</b> ${esc(a.error)}` : ''}</p>`,
+    async () => {
+      const url = $('#pa-url').value.trim(), clave = $('#pa-clave').value.trim();
+      if (!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(url)) throw new Error('El enlace debe ser el del motor de Google y terminar en /exec.');
+      if (!clave && !a.clave) throw new Error('Pega la clave que te dio tu compañero.');
+      await mutarConf((c) => { c.asistencia = { url, clave: clave || (c.asistencia || {}).clave, en: new Date().toISOString() }; });
+    });
+  }
+  function abrirObrasAsis() {
+    const horas = new Map(); for (const [, , obra, h] of P.asis.filas || []) horas.set(obra, (horas.get(obra) || 0) + (Number(h) || 0));
+    const obras = [...new Set([...(P.asis.obras || []), ...horas.keys()])].filter(Boolean).sort((a, b) => (horas.get(b) || 0) - (horas.get(a) || 0));
+    const centros = P.datos.centros.filter((c) => c.mov || Object.values(P.conf.obrasAsis || {}).includes(c.code)).sort((a, b) => a.code.localeCompare(b.code));
+    abrirForm('Obras de la asistencia y centros de costo', `
+      <p class="full proy-nota" style="margin:0">Escoge el centro de costo de Siigo de cada obra. Las que no son proyecto (oficina, bodega) márcalas como "No es un proyecto". Si aparece una obra nueva en la asistencia, Cuadra te avisa.</p>
+      <div class="full rh-tabla-wrap"><table class="rh-tabla"><thead><tr><th>Obra en la asistencia</th><th class="n">Horas</th><th>Centro de costo</th></tr></thead><tbody>
+      ${obras.map((o) => { const actual = (P.conf.obrasAsis || {})[o]; const sug = actual ? '' : sugerirCentro(o); return `<tr><td>${esc(o)}${!actual ? '<br><span class="sub">Sin relacionar' + (sug ? ' · te sugiero ' + esc(sug) : '') + '</span>' : ''}</td><td class="n">${Math.round(horas.get(o) || 0).toLocaleString('es-CO')}</td><td><select data-pao="${esc(o)}"><option value="">Sin relacionar</option><option value="NO"${actual === 'NO' ? ' selected' : ''}>No es un proyecto</option>${centros.map((c) => `<option value="${esc(c.code)}"${(actual || sug) === c.code ? ' selected' : ''}>${esc(c.code)} · ${esc(c.name.slice(0, 50))}</option>`).join('')}</select></td></tr>`; }).join('')}
+      </tbody></table></div>`,
+    async () => {
+      const m = {}; document.querySelectorAll('[data-pao]').forEach((s) => { if (s.value) m[s.dataset.pao] = s.value; });
+      await mutarConf((c) => { c.obrasAsis = Object.assign({}, c.obrasAsis || {}, m); for (const s of document.querySelectorAll('[data-pao]')) if (!s.value) delete c.obrasAsis[s.dataset.pao]; });
+    }, 'Guardar');
+  }
+
   // Datos de la obra (m², valor vendido) y personal asignado
   function seccionObra(claveObra, obra, todos) {
     const ccs = P.sub ? [P.sub] : todos;
@@ -361,6 +477,7 @@
         <div class="proy-obra"><div><span class="lbl">Metros cuadrados</span><b>${obra.m2 ? Number(obra.m2).toLocaleString('es-CO') + ' m²' : '—'}</b></div><div><span class="lbl">Valor vendido (sin IVA)</span><b>${obra.valorVenta ? fmt(obra.valorVenta) : '—'}</b></div>${obra.nota ? `<div><span class="lbl">Nota</span><span>${esc(obra.nota)}</span></div>` : ''}
         ${isAdmin() ? `<button class="btn" type="button" data-proy="obra">${obra.m2 || obra.valorVenta ? 'Cambiar' : 'Escribir m² y valor vendido'}</button>` : ''}</div>
       </section>
+      ${seccionAsistencia(ccs)}
       <section class="proy-caja"><h3>Personal operativo asignado</h3>
         <p class="proy-nota">Personal compartido que no tiene centro de costo en Siigo y que se carga a este proyecto por meses: va a <b>Salarios operativos compartidos</b> y su seguridad social a <b>Seguridad social</b>. El costo incluye salario, auxilio de transporte, prestaciones sociales (prima, cesantías, intereses y vacaciones) y la seguridad social que paga la empresa (pensión 12 %, ARL según el riesgo y caja 4 %).</p>
         ${filas ? `<div class="rh-tabla-wrap"><table class="rh-tabla"><thead><tr><th>Trabajador</th><th>Centro</th><th>Meses</th><th class="n">Cantidad</th><th class="n">Costo por mes</th><th class="n">Total</th><th></th></tr></thead><tbody>${filas}</tbody></table></div>` : '<p class="proy-nota"><i>No hay personal asignado.</i></p>'}
@@ -671,6 +788,8 @@ ${serieXml(0, 'E', '002796')}${serieXml(1, 'F', 'E07B00')}${serieXml(2, 'G', '1A
     else if (a === 'clasificar') abrirClasificar();
     else if (a === 'excel') excel();
     else if (a === 'rango-todo') { rangoInicial(); render(); }
+    else if (a === 'asis-conexion') abrirConexionAsis();
+    else if (a === 'asis-obras') abrirObrasAsis();
   });
   $('#view-proy').addEventListener('input', (ev) => { if (ev.target.id === 'proy-buscar') { P.q = ev.target.value; const pos = ev.target.selectionStart; renderLista(); const i = $('#proy-buscar'); i.focus(); i.setSelectionRange(pos, pos); } });
   $('#view-proy').addEventListener('change', (ev) => {
