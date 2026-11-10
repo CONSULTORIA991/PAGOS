@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="estilos.css?v=37">
+<link rel="stylesheet" href="estilos.css?v=38">
 </head>
 <body>
 
@@ -168,7 +168,35 @@
           </svg>
         </span>
       </button>
+      <button class="puerta proy" type="button" data-view="proy">
+        <span class="txt">
+          <span><span class="ptit">Informes de proyectos</span><span class="pdesc">Estado de resultados por obra o centro de costo, con los datos de Siigo: costos por rubro, proveedores y costo por m².</span></span>
+          <span class="pdato" id="i-proy-dato"></span>
+          <span class="ir">Entrar →</span>
+        </span>
+        <span class="ilus" aria-hidden="true">
+          <svg viewBox="0 0 140 150">
+            <rect x="0" y="118" width="140" height="32" fill="#dbe4f7"/>
+            <rect x="18" y="86" width="18" height="32" rx="2" fill="#7fa2ff"/>
+            <rect x="44" y="64" width="18" height="54" rx="2" fill="#003ed9"/>
+            <rect x="70" y="46" width="18" height="72" rx="2" fill="#002796"/>
+            <rect x="96" y="28" width="18" height="90" rx="2" fill="#0d1d5c"/>
+            <path d="M14 80 L40 58 L66 44 L92 26 L120 14" stroke="#f2c063" stroke-width="4" fill="none" stroke-linecap="round"/>
+            <circle cx="120" cy="14" r="5" fill="#f2c063"/>
+          </svg>
+        </span>
+      </button>
     </div>
+  </div>
+
+  <!-- Informes de proyectos -->
+  <div class="view" id="view-proy" hidden>
+    <nav class="views" aria-label="Informes de proyectos">
+      <button class="vbtn volver" type="button" data-view="inicio" id="proy-volver-inicio">← Inicio</button>
+      <button class="vbtn volver" type="button" id="proy-volver-lista" hidden>← Volver a proyectos</button>
+      <h2 class="rh-titulo" id="proy-titulo">Informes de proyectos</h2>
+    </nav>
+    <div id="proy-cuerpo"><div class="empty"><h3>Cargando…</h3></div></div>
   </div>
 
   <!-- Recursos humanos -->
@@ -456,6 +484,24 @@
     </div>
     <input type="file" id="docs-firmado" accept=".pdf,image/*" hidden>
     <div class="err" id="docs-err" hidden></div>
+  </div>
+</dialog>
+
+<!-- Informes de proyectos: detalle de un rubro y formulario de configuración -->
+<dialog id="dlg-proy-det">
+  <div class="dlg">
+    <div class="dlg-head"><h2 id="proy-det-titulo">Detalle</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
+    <div id="proy-det-res"></div>
+  </div>
+</dialog>
+<dialog id="dlg-proy-form">
+  <div class="dlg">
+    <div class="dlg-head"><h2 id="pf-titulo">Proyecto</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
+    <form class="grid" id="pf-form" novalidate>
+      <div class="full grid" id="pf-campos" style="display:contents"></div>
+      <div class="err full" id="pf-err" hidden></div>
+      <div class="form-actions full"><button class="btn" type="button" data-close>Cancelar</button><button class="btn primary" type="submit" id="pf-go">Guardar</button></div>
+    </form>
   </div>
 </dialog>
 
@@ -852,11 +898,12 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="cripto.js?v=37"></script>
-<script src="github.js?v=37"></script>
-<script src="lector.js?v=37"></script>
-<script src="app.js?v=37"></script>
-<script src="rrhh-docs.js?v=37"></script>
-<script src="rrhh.js?v=37"></script>
+<script src="cripto.js?v=38"></script>
+<script src="github.js?v=38"></script>
+<script src="lector.js?v=38"></script>
+<script src="app.js?v=38"></script>
+<script src="rrhh-docs.js?v=38"></script>
+<script src="rrhh.js?v=38"></script>
+<script src="proyectos.js?v=38"></script>
 </body>
 </html>
