@@ -336,8 +336,9 @@
   };
 
   // ---------- Word ----------
-  function aWord(doc, X) {
-    const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType, BorderStyle, PageBreak, Footer, PageNumber, ShadingType } = X;
+  function aWord(doc, X, op) {
+    op = op || {};
+    const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType, BorderStyle, PageBreak, Header, Footer, PageNumber, ShadingType, ImageRun } = X;
     const FUENTE = 'Arial', TAM = 21; // 10,5 pt
     // **negrilla** y ⟦falta⟧ (resaltado amarillo)
     function runs(txt, base) {
@@ -378,10 +379,12 @@
       }
     }
     return new Document({
-      creator: 'Pagos ODESA', title: doc.nombre,
+      creator: (op.emp || EMPRESAS.odesa).razon, title: doc.nombre,
       styles: { default: { document: { run: { font: FUENTE, size: TAM } } } },
       sections: [{
         properties: { page: { size: { width: 12240, height: 15840 }, margin: { top: 1300, bottom: 1200, left: 1500, right: 1500 } } },
+        // Logo de ODESA arriba a la izquierda (si cargó)
+        ...(op.logo && ImageRun ? { headers: { default: new Header({ children: [new Paragraph({ children: [new ImageRun({ data: op.logo.data, transformation: { width: op.logo.w, height: op.logo.h } })] })] }) } } : {}),
         footers: { default: new Footer({ children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ children: ['Página ', PageNumber.CURRENT, ' de ', PageNumber.TOTAL_PAGES], font: FUENTE, size: 16, color: '777777' })] })] }) },
         children: hijos,
       }],
@@ -392,10 +395,28 @@
     return t.fn({ fechaDoc: new Date().toISOString().slice(0, 10), ...x });
   }
   const crearDocumento = aWord;
+  // Logo de ODESA (logo-odesa.svg) convertido a PNG en el navegador; si falla, el documento sale sin logo
+  let logoCache = null;
+  async function cargarLogo() {
+    if (logoCache !== null) return logoCache;
+    try {
+      if (typeof document === 'undefined') throw new Error('sin navegador');
+      const svg = await (await fetch('logo-odesa.svg', { cache: 'force-cache' })).text();
+      const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+      const img = await new Promise((ok, mal) => { const i = new Image(); i.onload = () => ok(i); i.onerror = mal; i.src = url; });
+      const W = 1092, H = Math.round(W * 1686 / 5462);
+      const c = document.createElement('canvas'); c.width = W; c.height = H; c.getContext('2d').drawImage(img, 0, 0, W, H);
+      URL.revokeObjectURL(url);
+      const png = await new Promise((ok) => c.toBlob(ok, 'image/png'));
+      logoCache = { data: new Uint8Array(await png.arrayBuffer()), w: 160, h: Math.round(160 * 1686 / 5462) };
+    } catch (e) { logoCache = false; }
+    return logoCache;
+  }
   async function blob(tipo, x) {
     const X = raiz.docx; if (!X) throw new Error('No cargó el generador de Word. Recarga la página.');
     const d = documento(tipo, x);
-    return { nombre: d.nombre, blob: await X.Packer.toBlob(crearDocumento(d, X)) };
+    const op = { emp: empresaDoc(((x || {}).e || {}).empresa), logo: await cargarLogo() };
+    return { nombre: d.nombre, blob: await X.Packer.toBlob(crearDocumento(d, X, op)) };
   }
   async function buffer(tipo, x, X) {
     const d = documento(tipo, x);
