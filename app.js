@@ -198,9 +198,12 @@
     return 'No se pudo conectar con GitHub. Revisa la conexión e inténtalo de nuevo.';
   }
 
+  // Las cajas menores se revisan en su sección; pasan a Proveedores cuando las dejan pendientes (o las aprueban).
+  const enProveedores = (p) => !(p.tipoDoc === 'caja' && (p.estado === 'revisar' || p.estado === 'rechazado'));
+  const pagosProv = () => S.pagos.filter(enProveedores);
   function totals() {
-    const sum = (st) => S.pagos.filter((p) => p.estado === st).reduce((a, p) => a + (Number(p.valor) || 0), 0);
-    const cnt = (st) => S.pagos.filter((p) => p.estado === st).length;
+    const sum = (st) => pagosProv().filter((p) => p.estado === st).reduce((a, p) => a + (Number(p.valor) || 0), 0);
+    const cnt = (st) => pagosProv().filter((p) => p.estado === st).length;
     return { aprob: sum('aprobado'), revisar: sum('revisar'), nAprob: cnt('aprobado'), nRevisar: cnt('revisar') };
   }
 
@@ -246,14 +249,15 @@
   }
 
   function renderTabs() {
-    const counts = { todos: S.pagos.length };
-    for (const k of Object.keys(ESTADOS)) counts[k] = S.pagos.filter((p) => p.estado === k).length;
+    const lista = pagosProv();
+    const counts = { todos: lista.length };
+    for (const k of Object.keys(ESTADOS)) counts[k] = lista.filter((p) => p.estado === k).length;
     $('#tabs').innerHTML = TABS.map(([k, l]) => `<button class="tab" role="tab" type="button" data-tab="${k}" aria-selected="${S.tab === k}">${l}<span class="c">${counts[k] || 0}</span></button>`).join('');
   }
 
   function visible() {
     const q = S.q.trim().toLowerCase();
-    let arr = S.pagos.filter((p) => (S.tab === 'todos' || p.estado === S.tab));
+    let arr = pagosProv().filter((p) => (S.tab === 'todos' || p.estado === S.tab));
     if (S.aprobador) arr = arr.filter((p) => { const a = aprobacion(p); return a && a.por === S.aprobador && (p.estado === 'aprobado' || p.estado === 'pagado'); });
     if (q) arr = arr.filter((p) => [p.proveedor, p.concepto, p.factura].some((x) => String(x || '').toLowerCase().includes(q)));
     if (isAdmin && S.siigoVer) arr = arr.filter((p) => {
@@ -276,6 +280,12 @@
     const dis = busy.has(p.id) ? ' disabled' : '';
     if (p.estado === 'pagado') return '';
     const out = [];
+    // Caja menor sin revisar: se revisa en Cajas y se pasa a Proveedores (queda pendiente de pago)
+    if (p.tipoDoc === 'caja' && p.estado === 'revisar') {
+      out.push(`<button class="btn go${cls}" type="button" data-act="pendiente" data-id="${p.id}"${dis}>Revisada: pasar a pagos</button>`);
+      if (!small) out.push(`<button class="btn no${cls}" type="button" data-act="rechazado" data-id="${p.id}"${dis}>Rechazar</button>`);
+      return out.join('');
+    }
     if (p.estado !== 'aprobado') out.push(`<button class="btn go${cls}" type="button" data-act="aprobado" data-id="${p.id}"${dis}>Aprobar</button>`);
     if (p.estado !== 'pendiente') out.push(`<button class="btn hold${cls}" type="button" data-act="pendiente" data-id="${p.id}"${dis}>Dejar pendiente</button>`);
     if (!small && p.estado !== 'rechazado') out.push(`<button class="btn no${cls}" type="button" data-act="rechazado" data-id="${p.id}"${dis}>Rechazar</button>`);
@@ -1059,8 +1069,45 @@
     $('#i-queda').classList.toggle('ok', !(q != null && q < 0));
     $('#i-prov-dato').textContent = S.loaded ? (t.nRevisar ? `${t.nRevisar} por revisar · ${millones(t.revisar)}` : 'Nada por revisar') : '';
     $('#i-cli-dato').textContent = C.loaded && C.items.length ? `Por cobrar · ${millones(totalesCartera().total)}` : '';
+    const cjRev = S.pagos.filter((p) => p.tipoDoc === 'caja' && p.estado === 'revisar');
+    $('#i-cajas-dato').textContent = S.loaded ? (cjRev.length ? `${cjRev.length} por revisar · ${millones(cjRev.reduce((s, p) => s + (Number(p.valor) || 0), 0))}` : 'Nada por revisar') : '';
+    renderTareas(saldo, t);
     renderPendSiigo();
   }
+  // "Para hacer hoy": lo urgente de cada sección, en palabras, con un toque para ir allá
+  function renderTareas(saldo, t) {
+    const box = $('#i-tareas');
+    if (!S.loaded) { box.hidden = true; return; }
+    const hoy = todayISO(), out = [];
+    const suma = (a) => a.reduce((s, p) => s + (Number(p.valor) || 0), 0);
+    const plural = (n, uno, varios) => `${n} ${n === 1 ? uno : varios}`;
+    const rev = S.pagos.filter((p) => p.estado === 'revisar' && p.tipoDoc !== 'caja');
+    if (rev.length) {
+      const venc = rev.filter((p) => p.vence && p.vence < hoy).length;
+      out.push([venc ? 'rojo' : 'amarillo', `${plural(rev.length, 'factura o cuenta de cobro', 'facturas o cuentas de cobro')} por revisar (${millones(suma(rev))})${venc ? `, ${plural(venc, 'vencida', 'vencidas')}` : ''}`, 'Proveedores', 'aprob:revisar']);
+    }
+    const cj = S.pagos.filter((p) => p.tipoDoc === 'caja' && p.estado === 'revisar');
+    if (cj.length) out.push(['amarillo', `${plural(cj.length, 'caja menor espera', 'cajas menores esperan')} revisión (${millones(suma(cj))})`, 'Cajas menores', 'cajas']);
+    if (t.nAprob) {
+      const falta = saldo != null && saldo - t.aprob < 0;
+      out.push([falta ? 'rojo' : 'azul', `${plural(t.nAprob, 'pago aprobado', 'pagos aprobados')} por hacer (${millones(t.aprob)})${falta ? ': no alcanza el saldo en banco' : ''}`, 'Proveedores', 'aprob:aprobado']);
+    }
+    if (C.loaded && C.items.length) {
+      const tc = totalesCartera();
+      if (tc.vencido >= 1) out.push(['amarillo', `${millones(tc.vencido)} vencidos en cartera (${Math.round(tc.vencido / tc.total * 100)} % de lo que nos deben)`, 'Clientes', 'cart']);
+    }
+    box.innerHTML = `<h2>Para hacer hoy</h2>${out.length
+      ? `<ul>${out.map(([cl, txt, area, ir]) => `<li><button type="button" data-tarea="${ir}"><i class="${cl}" aria-hidden="true"></i><span><b>${esc(txt)}</b><small>${esc(area)}</small></span><span class="ir">Ir →</span></button></li>`).join('')}</ul>`
+      : '<p class="ok">✓ Nada urgente por ahora.</p>'}`;
+    box.hidden = false;
+  }
+  $('#i-tareas').addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-tarea]');
+    if (!b) return;
+    const [v, tab] = b.dataset.tarea.split(':');
+    if (v === 'aprob') { S.tab = tab; S.siigoVer = ''; const f = $('#f-siigo'); if (f) f.value = ''; setView('aprob'); renderTabs(); renderList(); return; }
+    setView(v);
+  });
   let siigoAbierto = false; // la lista de pendientes con Siigo empieza recogida
   // Avisos al entrar (solo administradora): lo que falta por enviar a Siigo o no cuadra
   function renderPendSiigo() {
@@ -2552,7 +2599,14 @@
   // Cada relación llega del enlace del responsable, la tarea del PC lee los soportes y la deja como un pago
   // tipoDoc "caja" (Por revisar) con sus soportes. Se aprueba completa; el reembolso es el pago (13300502 vs banco)
   // y la legalización se exporta a Siigo como comprobante 14.
-  const CJ_TABS = [['revisar', 'Por revisar'], ['aprobado', 'Aprobadas'], ['pendiente', 'Pendientes'], ['pagado', 'Reembolsadas'], ['rechazado', 'Rechazadas'], ['todos', 'Todas']];
+  const CJ_TABS = [['revisar', 'Por revisar'], ['pendiente', 'En pagos: por aprobar'], ['aprobado', 'En pagos: aprobadas'], ['pagado', 'Reembolsadas'], ['rechazado', 'Rechazadas'], ['todos', 'Todas']];
+  const CJ_GUIA = {
+    revisar: 'Cajas que enviaron los responsables desde el celular. Revisa los soportes y, si todo está bien, toca <b>Revisada: pasar a pagos</b>: la caja aparece en Proveedores como un pago más.',
+    pendiente: 'Cajas ya revisadas que están en <b>Proveedores</b> esperando aprobación.',
+    aprobado: 'Cajas aprobadas en Proveedores que falta pagarle al responsable.',
+    pagado: 'Cajas ya pagadas al responsable. En cada una puedes descargar la relación en PDF.',
+    rechazado: 'Cajas devueltas al responsable.', todos: 'Todas las cajas menores, de la más nueva a la más antigua.',
+  };
   const CJ_CUENTA = { '22050501': 'Factura a nombre de ODESA', '51959502': 'Factura a nombre de otro', '13300501': 'Recibo / cuenta de cobro' };
   const CJ = { tab: 'revisar', editando: null };
   const ddmmDe = (iso) => { const m = String(iso || '').match(/^\d{4}-(\d{2})-(\d{2})/); return m ? m[2] + m[1] : ''; };
@@ -2580,7 +2634,12 @@
       return;
     }
     const arr = todas.filter((p) => CJ.tab === 'todos' || p.estado === CJ.tab).sort((a, b) => String(b.creado || '').localeCompare(String(a.creado || '')));
-    $('#cj-list').innerHTML = arr.length ? arr.map((p) => {
+    const n = (st) => todas.filter((p) => p.estado === st).length;
+    const paso = { revisar: 2, pendiente: 3, aprobado: 3, pagado: 4 }[CJ.tab] || 0;
+    const P4 = [['El responsable la envía', 'Desde su celular, con la foto de cada soporte.', ''], ['Contabilidad la revisa', 'Mira los soportes y corrige datos si falta algo.', `${n('revisar')} por revisar`], ['Pasa a Proveedores', 'Queda pendiente y entra a la lista de pagos para aprobar.', `${n('pendiente') + n('aprobado')} en pagos`], ['Se reembolsa', 'Al pagarla en Proveedores, aquí queda reembolsada.', `${n('pagado')} reembolsadas`]];
+    const camino = `<section class="cj-camino" aria-label="Cómo funciona una caja menor"><h3>El camino de una caja menor</h3><ol>${P4.map(([t, d, c], i) => `<li class="${i + 1 === paso ? 'act' : i + 1 < paso ? 'hecho' : ''}"><b><span>${i + 1}</span>${t}</b><small>${d}</small>${c ? `<em>${c}</em>` : ''}</li>`).join('')}</ol></section>
+      <p class="proy-intro">${CJ_GUIA[CJ.tab] || ''}</p>`;
+    $('#cj-list').innerHTML = camino + (arr.length ? arr.map((p) => {
       const st = ESTADOS[p.estado] ? p.estado : 'revisar';
       const c = p.caja || {};
       const malos = (p.soportes || []).filter((s) => s.revisar).length;
@@ -2588,9 +2647,9 @@
         <div class="r-main"><div class="r-prov">Caja No. ${esc(c.numero || '')} · ${esc(c.responsable || p.proveedor)}</div><div class="r-sub">${(p.soportes || []).length} soportes · enviada el ${esc(fmtDate(c.fecha || p.vence))}${malos ? ` · <span class="warn" style="color:var(--warn)">${malos} por revisar datos</span>` : ''}${chipsSiigo(p)}</div></div>
         <div class="r-due"><span>${etiquetaDecision(p) ? esc(etiquetaDecision(p)) : ''}</span></div>
         <div class="r-amt">${fmt(p.valor)}</div>
-        <div class="r-act"><span class="pill st-${st}">${st === 'pagado' ? 'Reembolsada' : ESTADOS[st].label}</span></div>
+        <div class="r-act"><span class="pill st-${st}">${st === 'pagado' ? 'Reembolsada' : st === 'pendiente' ? 'En pagos' : ESTADOS[st].label}</span>${st === 'revisar' && isAdmin ? `<div class="decide">${decisionButtons(p, true)}</div>` : ''}</div>
       </article>`;
-    }).join('') : `<div class="empty"><h3>No hay cajas en este estado</h3><p>${isAdmin ? 'Cuando un responsable envíe su relación desde su enlace, aparecerá aquí con sus soportes leídos.' : 'Aquí aparecen las relaciones de caja menor para aprobar.'}</p></div>`;
+    }).join('') : `<div class="empty"><h3>No hay cajas en este estado</h3><p>${isAdmin ? 'Cuando un responsable envíe su relación desde su enlace, aparecerá aquí con sus soportes leídos.' : 'Aquí aparecen las relaciones de caja menor.'}</p></div>`);
   }
   function enlaceCaja(r) {
     const t = Cripto.b64(Cripto.enc.encode(JSON.stringify({ i: r.id, n: r.nombre, s: r.secreto }))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');

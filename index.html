@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="estilos.css?v=44">
+<link rel="stylesheet" href="estilos.css?v=45">
 </head>
 <body>
 
@@ -111,6 +111,7 @@
       <div><span class="lbl">Aprobado por pagar</span><span class="v" id="i-aprob">—</span></div>
       <div><span class="lbl">Quedaría</span><span class="v ok" id="i-queda">—</span></div>
     </section>
+    <section class="tareas" id="i-tareas" aria-label="Para hacer hoy" hidden></section>
     <section class="avisos" id="i-avisos" aria-label="Pendientes con Siigo" hidden></section>
     <div class="puertas">
       <button class="puerta prov" type="button" data-view="aprob">
@@ -150,6 +151,23 @@
             <rect x="14" y="108" width="112" height="30" rx="10" fill="#4fb3d9"/>
             <path d="M22 120c8-5 14 5 22 0s14 5 22 0 14 5 22 0 14 5 22 0" stroke="#bfe8f5" stroke-width="3" fill="none"/>
             <path d="M110 108v-14h8" stroke="#8a96a0" stroke-width="3" fill="none"/>
+          </svg>
+        </span>
+      </button>
+      <button class="puerta caja" type="button" data-view="cajas">
+        <span class="txt">
+          <span><span class="ptit">Cajas menores</span><span class="pdesc">Soportes que envían los responsables desde el celular: revisión, pago y reembolso.</span></span>
+          <span class="pdato" id="i-cajas-dato"></span>
+          <span class="ir">Entrar →</span>
+        </span>
+        <span class="ilus" aria-hidden="true">
+          <svg viewBox="0 0 140 150">
+            <rect x="0" y="118" width="140" height="32" fill="#f3e3c4"/>
+            <rect x="26" y="58" width="88" height="60" rx="8" fill="#c27c0e"/>
+            <rect x="26" y="58" width="88" height="18" rx="8" fill="#935600"/>
+            <rect x="60" y="70" width="20" height="14" rx="3" fill="#f2c063"/>
+            <g transform="rotate(-10 52 40)"><rect x="34" y="18" width="34" height="44" rx="3" fill="#fff" stroke="#c9b48a"/><rect x="40" y="26" width="22" height="3" fill="#c9b48a"/><rect x="40" y="33" width="16" height="3" fill="#e3d3b4"/><rect x="40" y="46" width="12" height="5" fill="#1a7343"/></g>
+            <g transform="rotate(8 92 36)"><rect x="76" y="16" width="32" height="40" rx="3" fill="#fff" stroke="#c9b48a"/><rect x="82" y="24" width="20" height="3" fill="#c9b48a"/><rect x="82" y="31" width="14" height="3" fill="#e3d3b4"/></g>
           </svg>
         </span>
       </button>
@@ -898,13 +916,13 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="cripto.js?v=44"></script>
-<script src="github.js?v=44"></script>
-<script src="lector.js?v=44"></script>
-<script src="app.js?v=44"></script>
-<script src="rrhh-docs.js?v=44"></script>
-<script src="rrhh.js?v=44"></script>
-<script src="informe-pdf.js?v=44"></script>
-<script src="proyectos.js?v=44"></script>
+<script src="cripto.js?v=45"></script>
+<script src="github.js?v=45"></script>
+<script src="lector.js?v=45"></script>
+<script src="app.js?v=45"></script>
+<script src="rrhh-docs.js?v=45"></script>
+<script src="rrhh.js?v=45"></script>
+<script src="informe-pdf.js?v=45"></script>
+<script src="proyectos.js?v=45"></script>
 </body>
 </html>

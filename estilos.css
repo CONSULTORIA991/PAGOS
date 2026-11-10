@@ -354,6 +354,31 @@ details.repo .field { margin-top: 8px; }
 .puerta.prov .ilus { background: #f4ead7; }
 .puerta.cli .ilus { background: #d9ecf2; }
 .puerta.rh .ilus { background: #efe7f7; }
+.puerta.caja .ilus { background: #f6ecd9; }
+/* Inicio: para hacer hoy */
+.tareas { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; box-shadow: var(--shadow); }
+.tareas h2 { margin: 0 0 6px; font-family: var(--font-display); font-size: 1.15rem; }
+.tareas ul { list-style: none; margin: 0; padding: 0; }
+.tareas li + li { border-top: 1px solid var(--line); }
+.tareas button { all: unset; box-sizing: border-box; cursor: pointer; width: 100%; min-height: 52px; display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 8px 6px; border-radius: 8px; }
+.tareas button:hover { background: var(--accent-soft); } .tareas button:focus-visible { outline: 3px solid var(--accent); }
+.tareas i { width: 12px; height: 12px; border-radius: 999px; background: var(--info); }
+.tareas i.rojo { background: var(--bad); } .tareas i.amarillo { background: #e0a100; } .tareas i.azul { background: var(--accent); }
+.tareas b { display: block; font-weight: 600; } .tareas small { color: var(--muted); font-size: .82rem; }
+.tareas .ir { color: var(--accent); font-weight: 600; white-space: nowrap; }
+.tareas p.ok { margin: 0; color: var(--ok); font-weight: 600; }
+/* Cajas menores: el camino en 4 pasos */
+.cj-camino { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; margin-bottom: 12px; box-shadow: var(--shadow); }
+.cj-camino h3 { margin: 0 0 10px; font-family: var(--font-display); font-size: 1.1rem; }
+.cj-camino ol { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+.cj-camino li { border: 1.5px solid var(--line); border-radius: 12px; padding: 10px 12px; display: grid; gap: 3px; }
+.cj-camino li b { display: flex; align-items: center; gap: 8px; }
+.cj-camino li b span { width: 26px; height: 26px; border-radius: 999px; background: #9aa4bd; color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: .85rem; flex: none; }
+.cj-camino li small { color: var(--muted); font-size: .84rem; }
+.cj-camino li em { font-style: normal; font-weight: 600; color: var(--accent); font-size: .84rem; }
+.cj-camino li.act { border-color: var(--accent); background: var(--accent-soft); }
+.cj-camino li.act b span, .cj-camino li.hecho b span { background: var(--accent); }
+#cj-list .r-act .decide { margin-top: 6px; display: flex; gap: 6px; justify-content: flex-end; }
 /* Recursos humanos */
 .rh-barra { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; justify-content: space-between; margin: 14px 0; }
 .rh-barra .grupo { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
