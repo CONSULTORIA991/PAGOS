@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="estilos.css?v=45">
+<link rel="stylesheet" href="estilos.css?v=46">
 </head>
 <body>
 
@@ -171,6 +171,23 @@
           </svg>
         </span>
       </button>
+      <button class="puerta conc" type="button" data-view="conc">
+        <span class="txt">
+          <span><span class="ptit">Conciliación bancaria</span><span class="pdesc">Movimientos del banco contra Siigo: qué ya está registrado y qué falta, cuenta por cuenta.</span></span>
+          <span class="pdato" id="i-conc-dato"></span>
+          <span class="ir">Entrar →</span>
+        </span>
+        <span class="ilus" aria-hidden="true">
+          <svg viewBox="0 0 140 150">
+            <rect x="0" y="118" width="140" height="32" fill="#d8eee4"/>
+            <path d="M20 52 70 26l50 26z" fill="#1a7343"/>
+            <rect x="26" y="56" width="88" height="8" fill="#14593a"/>
+            <g fill="#2e8b5e"><rect x="32" y="66" width="10" height="40"/><rect x="54" y="66" width="10" height="40"/><rect x="76" y="66" width="10" height="40"/><rect x="98" y="66" width="10" height="40"/></g>
+            <rect x="22" y="106" width="96" height="10" fill="#14593a"/>
+            <circle cx="112" cy="30" r="14" fill="#fff" stroke="#1a7343" stroke-width="3"/><path d="M105 30l5 5 9-10" stroke="#1a7343" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+          </svg>
+        </span>
+      </button>
       <button class="puerta rh" type="button" data-view="rrhh">
         <span class="txt">
           <span><span class="ptit">Recursos humanos</span><span class="pdesc">Empleados activos, nómina quincenal, novedades y planilla de seguridad social.</span></span>
@@ -215,6 +232,15 @@
       <h2 class="rh-titulo" id="proy-titulo">Informes de proyectos</h2>
     </nav>
     <div id="proy-cuerpo"><div class="empty"><h3>Cargando…</h3></div></div>
+  </div>
+
+  <!-- Conciliación bancaria -->
+  <div class="view" id="view-conc" hidden>
+    <nav class="views" aria-label="Conciliación bancaria">
+      <button class="vbtn volver" type="button" data-view="inicio">← Inicio</button>
+      <h2 class="rh-titulo">Conciliación bancaria</h2>
+    </nav>
+    <div id="conc-cuerpo"><div class="empty"><h3>Cargando…</h3></div></div>
   </div>
 
   <!-- Recursos humanos -->
@@ -506,6 +532,12 @@
 </dialog>
 
 <!-- Informes de proyectos: detalle de un rubro y formulario de configuración -->
+<dialog id="dlg-conc">
+  <div class="dlg">
+    <div class="dlg-head"><h2 id="conc-dlg-titulo">Conciliación</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
+    <div id="conc-dlg-res" class="conc-dlg"></div>
+  </div>
+</dialog>
 <dialog id="dlg-proy-det">
   <div class="dlg">
     <div class="dlg-head"><h2 id="proy-det-titulo">Detalle</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
@@ -916,13 +948,14 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="cripto.js?v=45"></script>
-<script src="github.js?v=45"></script>
-<script src="lector.js?v=45"></script>
-<script src="app.js?v=45"></script>
-<script src="rrhh-docs.js?v=45"></script>
-<script src="rrhh.js?v=45"></script>
-<script src="informe-pdf.js?v=45"></script>
-<script src="proyectos.js?v=45"></script>
+<script src="cripto.js?v=46"></script>
+<script src="github.js?v=46"></script>
+<script src="lector.js?v=46"></script>
+<script src="app.js?v=46"></script>
+<script src="rrhh-docs.js?v=46"></script>
+<script src="rrhh.js?v=46"></script>
+<script src="informe-pdf.js?v=46"></script>
+<script src="proyectos.js?v=46"></script>
+<script src="conciliacion.js?v=46"></script>
 </body>
 </html>

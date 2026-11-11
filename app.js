@@ -1031,12 +1031,13 @@
   $('#r-desde').addEventListener('change', onDateInput);
   $('#r-hasta').addEventListener('change', onDateInput);
   // Secciones: Inicio · Proveedores (aprob, rep, prov) · Clientes (cart, cli)
-  const VISTAS = ['inicio', 'aprob', 'cajas', 'rep', 'prov', 'cart', 'cli', 'rrhh', 'proy'];
+  const VISTAS = ['inicio', 'aprob', 'cajas', 'rep', 'prov', 'cart', 'cli', 'rrhh', 'proy', 'conc'];
   function setView(v) {
     S.view = VISTAS.includes(v) ? v : 'inicio';
     const grupo = ['aprob', 'cajas', 'rep', 'prov'].includes(S.view) ? 'prov' : ['cart', 'cli'].includes(S.view) ? 'cli' : S.view;
     if (S.view === 'rrhh' && window.RRHH) window.RRHH.abrir();
     if (S.view === 'proy' && window.PROY) window.PROY.abrir();
+    if (S.view === 'conc' && window.CONC) window.CONC.abrir();
     document.querySelectorAll('.vbtn[data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === S.view)));
     for (const x of VISTAS) $('#view-' + x).hidden = S.view !== x;
     $('#nav-prov').hidden = grupo !== 'prov';
