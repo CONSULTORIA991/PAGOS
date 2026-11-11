@@ -14,12 +14,18 @@
   const CUENTAS_BASE = [{ id: '2278', numero: '548-820522-78', nombre: 'Bancolombia ···2278', siigo: ['11100501'], formas: [3687, 3685, 3684], nitBanco: '890903938', ccGastos: 'ADMON-1' }];
   const concBase = () => ({ cuentas: CUENTAS_BASE.map((c) => ({ ...c })), movs: {}, cargues: [], reg: {} });
   // Cuentas de gastos bancarios en Siigo (las que ODESA ya usa en el comprobante 11)
-  const GASTO_CTA = { gmf: ['53050506', 'Gravamen financiero (4 x 1.000)'], comision: ['53050503', 'Comisiones bancarias'], interes: ['53052001', 'Intereses'] };
-  const tipoGasto = (m) => (/4X1000|GRAVAMEN|GMF/i.test(m.desc) || m.cod === '3339' ? 'gmf' : /INTERES/i.test(m.desc) || m.cod === '7251' ? 'interes' : 'comision');
+  // (tomadas del historial: GMF 53050506, comisiones 53050503, IVA de comisiones 24081501, intereses de sobregiro 53052003)
+  const GASTO_CTA = { gmf: ['53050506', 'Gravamen financiero (4 x 1.000)'], comision: ['53050503', 'Comisiones bancarias'], iva: ['24081501', 'IVA descontable por servicios'], interes: ['53052003', 'Intereses de sobregiro'] };
+  const tipoGasto = (m) => (/4X1000|GRAVAMEN|GMF/i.test(m.desc) || m.cod === '3339' ? 'gmf' : /\bIVA\b/i.test(m.desc) || m.cod === '1233' ? 'iva' : /INTERES/i.test(m.desc) || m.cod === '7251' ? 'interes' : 'comision');
 
+  // Clave de una descripción del banco (misma regla que bancos-siigo.js)
+  const clave = (s) => String(s || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Z0-9]+/g, ' ').trim();
+  // Lo aprendido: primero lo que registró la administradora en Cuadra, luego el historial de Siigo
+  const aprendidoDe = (desc) => { const k = clave(desc); return (K.conc.aprendido || {})[k] || ((K.siigo && K.siigo.aprendido) || {})[k] || null; };
   async function leer(forzar) {
     if (K.conc && !forzar && Date.now() - K.leido < 5 * 60e3) return;
-    const [fb, fc] = await Promise.all([GH.leer(R_BANCOS), GH.leer(R_CONC)]);
+    const [fb, fc, fr] = await Promise.all([GH.leer(R_BANCOS), GH.leer(R_CONC), GH.leer('datos/rrhh.enc')]);
+    try { const r = fr ? await Cripto.descifrarJSON(A.maestra, fr.bytes) : null; K.emps = ((r && r.empleados) || []).map((e) => ({ nombre: e.nombre, nit: String(e.cedula || e.documento || '').replace(/\D/g, '') })).filter((e) => e.nombre && e.nit); } catch (e) { K.emps = []; }
     K.siigo = fb ? await Cripto.descifrarJSON(A.maestra, fb.bytes) : null;
     K.sha = fc ? fc.sha : null;
     K.conc = Object.assign(concBase(), fc ? await Cripto.descifrarJSON(A.maestra, fc.bytes) : {});
@@ -88,7 +94,7 @@
   // ---------- sugerencias por código de transacción (Bancolombia) o por la descripción ----------
   const SUG = [
     [/^(3339)$/, /4X1000|GRAVAMEN|GMF/, 'gmf', '4 x 1.000 (GMF)'],
-    [/^(7251|1102|1103)$/, /INTERES(ES)? DE SOBREGIRO|COMISION|CUOTA DE MANEJO|IVA COMIS/, 'banco', 'Gasto bancario'],
+    [/^(7251|1102|1103|1233|7371|9837|609|7522)$/, /INTERES(ES)? DE SOBREGIRO|COMISION|CUOTA DE MANEJO|COBRO IVA|IVA COMIS|SERVICIO (POR )?PAGO/, 'banco', 'Comisiones, IVA e intereses del banco'],
     [/^(742)$/, /PAGO AUTOM TC|TARJETA|TC VISA|TC MASTER/, 'tc', 'Pago de tarjeta de crédito'],
     [/^(9278)$/, /NOMIN/, 'nomina', 'Pago de nómina'],
     [/^(3286)$/, /APORTES EN LINEA|PILA|SOI /, 'pila', 'Seguridad social (planilla)'],
@@ -133,7 +139,13 @@
     K.cargando = true;
     if (!K.mes) K.mes = todayISO().slice(0, 7);
     $('#conc-cuerpo').innerHTML = '<div class="empty"><h3>Cargando la conciliación…</h3></div>';
-    try { await leer(); await refrescarEnvios(); render(); }
+    try {
+      await leer();
+      // Si el mes escogido no tiene movimientos cargados, abre en el último mes que sí tenga
+      const todos = Object.values(K.conc.movs || {}).flat();
+      if (todos.length && !todos.some((m) => m.fecha.slice(0, 7) === K.mes)) K.mes = todos.reduce((x, m) => (m.fecha > x ? m.fecha : x), '').slice(0, 7);
+      await refrescarEnvios(); render();
+    }
     catch (e) { $('#conc-cuerpo').innerHTML = `<div class="empty"><h3>No se pudo cargar</h3><p>${esc(msgGitHub(e))}</p></div>`; }
     K.cargando = false;
   }
@@ -155,7 +167,9 @@
     const faltaV = suma(r.faltan, (x) => x.m.valor);
     let cuerpo;
     if (!r.banco.length) {
-      cuerpo = `<div class="empty"><h3>No hay movimientos del banco cargados para ${esc(mesTxt(K.mes))}</h3><p>${isAdmin() ? 'Descarga el CSV de la Sucursal Virtual Negocios y súbelo con "Cargar movimientos".' : 'La administradora aún no ha cargado los movimientos de este mes.'}${ult ? ` Lo último cargado de esta cuenta llega hasta el ${esc(fmtDate(ult))}.` : ''}</p></div>`;
+      const meses = [...new Set((K.conc.movs[cta.id] || []).map((m) => m.fecha.slice(0, 7)))].sort().reverse();
+      cuerpo = `<div class="empty"><h3>No hay movimientos del banco cargados para ${esc(mesTxt(K.mes))}</h3><p>${isAdmin() ? 'Descarga el CSV de la Sucursal Virtual Negocios y súbelo con "Cargar movimientos".' : 'La administradora aún no ha cargado los movimientos de este mes.'}${ult ? ` Lo último cargado de esta cuenta llega hasta el ${esc(fmtDate(ult))}.` : ''}</p>
+        ${meses.length ? `<p>Meses con movimientos cargados:</p><div class="quick" style="justify-content:center">${meses.map((m) => `<button class="qbtn" type="button" data-conc-mes="${m}">${esc(mesTxt(m))}</button>`).join('')}</div>` : ''}</div>`;
     } else {
       const estado = r.faltan.length ? (r.faltan.length > r.banco.length / 4 ? 'rojo' : 'amarillo') : 'verde';
       const grupos = new Map();
@@ -174,9 +188,10 @@
         <nav class="quick" role="group" aria-label="Ver">${[['faltan', `Faltan en Siigo (${r.faltan.length})`], ['registrados', `Registrados, subiendo a Siigo (${r.registrados.length})`], ['transito', `En Siigo y no en el banco (${r.transito.length})`], ['cruzados', `Ya cruzados (${r.cruzados.length})`]].map(([k, t]) => `<button class="qbtn" type="button" data-conc-ver="${k}" aria-pressed="${K.vista === k}">${t}</button>`).join('')}</nav>
         ${K.vista === 'faltan' ? (gl.length ? gl.map((g) => {
           const k = g.l[0].sug.k, lote = (k === 'gmf' || k === 'banco') && isAdmin();
-          return `<section class="proy-caja"><div class="pr-cab"><div><h3>${esc(g.t)} · ${g.l.length}</h3><p class="proy-nota">Total ${fmt(suma(g.l, (x) => x.m.valor))}. ${{ gmf: 'Se registran todos juntos: un comprobante por día, a la cuenta 53050506.', banco: 'Comisiones e intereses: se registran todos juntos a gastos bancarios.', cobro: 'Entró plata de un cliente. Por ahora márcalo como revisado; el registro del recibo de caja viene en el siguiente paso.', proveedor: 'Toca "Registrar": si es un pago que ya está en Cuadra lo reconozco; si no, escoges si es pago de factura o anticipo.', nomina: 'Pago a un empleado: márcalo como revisado (la nómina se registra en Siigo Nómina).', reintegro: 'El banco devolvió un pago: márcalo como revisado junto con el pago original.' }[k] || 'Toca "Registrar" para escoger qué es.'}</p></div>
-              ${lote ? `<button class="btn primary" type="button" data-conc="gastos" data-grupo="${esc(k)}">Registrar los ${g.l.length} en Siigo</button>` : ''}</div>
-            <div class="rh-tabla-wrap"><table class="rh-tabla"><thead><tr><th>Fecha</th><th>En el banco dice</th><th class="n">Valor</th>${isAdmin() ? '<th></th>' : ''}</tr></thead><tbody>${g.l.map((f) => `<tr><td>${esc(fCorta(f.m.fecha))}</td><td>${esc(f.m.desc)}</td><td class="n ${f.m.valor < 0 ? 'neg' : 'okv'}">${fmt(f.m.valor)}</td>${isAdmin() ? `<td class="n"><button class="btn sm${lote ? '' : ' primary'}" type="button" data-conc-reg="${esc(f.m.id)}">${lote ? 'Otro' : 'Registrar'}</button></td>` : ''}</tr>`).join('')}</tbody></table></div></section>`;
+          const conocidos = !lote && isAdmin() ? g.l.filter((f) => f.m.valor < 0 && conocidoSimple(f.m)) : [];
+          return `<section class="proy-caja"><div class="pr-cab"><div><h3>${esc(g.t)} · ${g.l.length}</h3><p class="proy-nota">Total ${fmt(suma(g.l, (x) => x.m.valor))}. ${{ gmf: 'Se registran todos juntos: un comprobante por día, a la cuenta 53050506.', banco: 'Comisiones (53050503), IVA de las comisiones (24081501) e intereses de sobregiro (53052003): se registran todos juntos, un comprobante por día.', cobro: 'Entró plata de un cliente. Por ahora márcalo como revisado; el registro del recibo de caja viene en el siguiente paso.', proveedor: 'Toca "Registrar": si es un pago que ya está en Cuadra lo reconozco; si no, escoges si es pago de factura o anticipo.', nomina: 'Pago a un empleado: va a 25050501 Salarios por pagar con su cédula.', reintegro: 'El banco devolvió un pago: márcalo como revisado junto con el pago original.' }[k] || 'Toca "Registrar" para escoger qué es.'}</p></div>
+              ${lote ? `<button class="btn primary" type="button" data-conc="gastos" data-grupo="${esc(k)}">Registrar los ${g.l.length} en Siigo</button>` : conocidos.length > 1 ? `<button class="btn primary" type="button" data-conc="conocidos" data-grupo="${esc(k)}">Registrar los ${conocidos.length} que ya conozco</button>` : ''}</div>
+            <div class="rh-tabla-wrap"><table class="rh-tabla"><thead><tr><th>Fecha</th><th>En el banco dice</th><th class="n">Valor</th>${isAdmin() ? '<th></th>' : ''}</tr></thead><tbody>${g.l.map((f) => { const ap = aprendidoDe(f.m.desc); return `<tr><td>${esc(fCorta(f.m.fecha))}</td><td>${esc(f.m.desc)}${ap ? `<br><span class="sub">→ ${esc(ap.nombre || ap.nit)} · ${esc(ap.cuenta)}${ap.cc ? ' · ' + esc(ap.cc) : ''}</span>` : ''}</td><td class="n ${f.m.valor < 0 ? 'neg' : 'okv'}">${fmt(f.m.valor)}</td>${isAdmin() ? `<td class="n"><button class="btn sm${lote ? '' : ' primary'}" type="button" data-conc-reg="${esc(f.m.id)}">${lote ? 'Otro' : 'Registrar'}</button></td>` : ''}</tr>`; }).join('')}</tbody></table></div></section>`;
         }).join('') : '<p class="proy-nota">✓ Todos los movimientos del banco de este mes están en Siigo o ya se registraron.</p>')
         : K.vista === 'registrados' ? seccionRegistrados(r)
         : K.vista === 'transito' ? `<section class="proy-caja"><h3>En Siigo pero no en el banco</h3><p class="proy-nota">Registrados en Siigo en esta cuenta (o con su forma de pago) que no aparecen en lo cargado del banco. Pueden ser de otro día, de otra cuenta o un error de cuenta en Siigo.</p>${r.transito.length ? `<div class="rh-tabla-wrap"><table class="rh-tabla"><thead><tr><th>Fecha</th><th>Comprobante</th><th>Tercero</th><th class="n">Valor</th></tr></thead><tbody>${r.transito.map((s) => `<tr><td>${esc(fCorta(s.fecha))}</td><td>${esc(s.comp)}</td><td>${esc(s.nombre || s.nit || s.det)}</td><td class="n">${fmt(s.valor)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="proy-nota">Nada.</p>'}</section>`
@@ -202,8 +217,12 @@
       }).join('')}</tbody></table></div></section>`;
   }
   async function refrescarEnvios() { try { K.envios = await B().envios(); } catch (e) { /* sin conexión: se reintenta luego */ } }
-  async function marcarReg(movIds, datos) {
-    await mutar((c) => { c.reg = c.reg || {}; for (const id of movIds) c.reg[id] = { ...datos, en: new Date().toISOString(), por: A.uid }; });
+  // aprender: { desc, cuenta, nit, nombre, cc } → la próxima vez que el banco diga lo mismo, se llena solo
+  async function marcarReg(movIds, datos, aprender) {
+    await mutar((c) => {
+      c.reg = c.reg || {}; for (const id of movIds) c.reg[id] = { ...datos, en: new Date().toISOString(), por: A.uid };
+      if (aprender && aprender.desc) { c.aprendido = c.aprendido || {}; const { desc, ...x } = aprender; c.aprendido[clave(desc)] = { ...x, n: ((c.aprendido[clave(desc)] || {}).n || 0) + 1, ult: new Date().toISOString().slice(0, 10), deCuadra: true }; }
+    });
   }
   const movDe = (id) => { for (const l of Object.values(K.conc.movs || {})) { const m = l.find((x) => x.id === id); if (m) return m; } return null; };
   const ctaActual = () => (K.conc.cuentas || []).find((c) => c.id === K.cuenta);
@@ -218,23 +237,30 @@
     if (!m || !cta) return;
     const sale = m.valor < 0, v = Math.abs(m.valor), sug = sugerencia(m);
     const cands = sale ? B().pagosAbiertos().filter((p) => Math.abs((Number(p.valor) || 0) - v) < 1) : [];
-    const prov = sale ? provSugerido(m) : null;
     const centros = B().centros();
+    // Lo aprendido manda; si no hay, se sugiere por el tipo de movimiento y el nombre que trae el banco
+    const ap = aprendidoDe(m.desc);
+    const tipo0 = ap ? tipoDeCuenta(ap.cuenta) : sug.k === 'nomina' ? 'nomina' : 'factura';
+    const ter0 = ap ? { nombre: ap.nombre, nit: ap.nit } : (tipo0 === 'nomina' ? empSugerido(m) : provSugerido(m)) || {};
+    const cc0 = ap && ap.cc ? (centros.find((c) => c.codigo === ap.cc) ? ap.cc + ' · ' + centros.find((c) => c.codigo === ap.cc).nombre : ap.cc) : tipo0 === 'nomina' ? 'ADMON-1' : '';
+    const terceros = [...(K.emps || []), ...B().proveedores()];
     const listo = B().siigoListo();
     $('#conc-dlg-titulo').textContent = `Registrar: ${m.desc}`;
     $('#conc-dlg-res').innerHTML = `<p class="proy-nota">${esc(cta.nombre)} · ${esc(fmtDate(m.fecha))} · <b class="${sale ? 'neg' : 'pos'}">${fmt(m.valor)}</b>. ${esc(sug.t)}.</p>
       ${!listo ? '<p class="proy-aviso">Faltan las credenciales de Siigo (Usuarios → Conexión con Siigo): se guarda en Cuadra pero no sube.</p>' : ''}
       ${cands.length ? `<section class="proy-caja"><h3>¿Es uno de estos pagos de Cuadra?</h3><p class="proy-nota">Tienen el mismo valor y aún no están pagados. Si es uno, queda pagado con la fecha del banco y sube a Siigo.</p>
         ${cands.map((p) => `<div class="conc-cand"><span><b>${esc(p.proveedor)}</b><br><span class="sub">${esc(p.concepto || '')}${p.factura ? ' · ' + esc(p.factura) : ''} · ${esc({ aprobado: 'aprobado', pendiente: 'pendiente', revisar: 'por revisar' }[p.estado] || p.estado)}</span></span><button class="btn primary" type="button" data-conc="existente" data-pago="${esc(p.id)}" data-mov="${esc(m.id)}">Sí, es este</button></div>`).join('')}</section>` : ''}
-      ${sale ? `<section class="proy-caja"><h3>${cands.length ? 'No, es un pago nuevo' : 'Pago hecho fuera de Cuadra'}</h3>
+      ${sale ? `<section class="proy-caja"><h3>${cands.length ? 'No, es otro movimiento' : 'Registrar este movimiento'}</h3>
+        ${ap ? `<p class="proy-aviso conc-aprendido">Lo llené con lo aprendido${ap.deCuadra ? ' de tus registros en Cuadra' : ` del historial de Siigo (${ap.n} ${ap.n === 1 ? 'vez' : 'veces'}, la última el ${esc(fmtDate(ap.ult))})`}. Revísalo y cambia lo que haga falta: Cuadra lo recuerda para la próxima.</p>` : ''}
         <div class="grid">
-          <div class="field"><label for="cr-tipo">¿Qué fue?</label><select id="cr-tipo"><option value="factura">Pago de una factura</option><option value="anticipo">Anticipo</option></select></div>
-          <div class="field"><label for="cr-prov">Proveedor</label><input id="cr-prov" list="cr-provs" value="${esc(prov ? prov.nombre : '')}" autocomplete="off"><datalist id="cr-provs">${B().proveedores().map((x) => `<option value="${esc(x.nombre)}">${esc(x.nit)}</option>`).join('')}</datalist></div>
-          <div class="field"><label for="cr-nit">NIT o cédula</label><input id="cr-nit" inputmode="numeric" value="${esc(prov ? prov.nit : '')}" autocomplete="off"></div>
+          <div class="field"><label for="cr-tipo">¿Qué fue?</label><select id="cr-tipo">${Object.entries(TIPOS_REG).map(([k, t]) => `<option value="${k}"${k === tipo0 ? ' selected' : ''}>${esc(t[0])}</option>`).join('')}</select></div>
+          <div class="field" data-solo="otra"><label for="cr-cuenta">Cuenta contable (débito)</label><input id="cr-cuenta" inputmode="numeric" value="${esc(ap && tipo0 === 'otra' ? ap.cuenta : '')}" placeholder="Ej. 23700501"></div>
+          <div class="field"><label for="cr-prov" id="cr-prov-lbl">Proveedor</label><input id="cr-prov" list="cr-provs" value="${esc(ter0.nombre || '')}" autocomplete="off"><datalist id="cr-provs">${terceros.map((x) => `<option value="${esc(x.nombre)}">${esc(x.nit)}</option>`).join('')}</datalist></div>
+          <div class="field"><label for="cr-nit">NIT o cédula</label><input id="cr-nit" inputmode="numeric" value="${esc(ter0.nit || '')}" autocomplete="off"></div>
           <div class="field" data-solo="factura"><label for="cr-fact">Factura (prefijo-número)</label><input id="cr-fact" placeholder="Ej. FE-2210" autocomplete="off"></div>
           <div class="field" data-solo="factura"><label for="cr-vence">Vencimiento de la factura</label><input id="cr-vence" type="date" value="${esc(m.fecha)}"></div>
-          <div class="field"><label for="cr-cc">Obra (centro de costo)</label><input id="cr-cc" list="cr-ccs" autocomplete="off" placeholder="Ej. 100068-1 · LAGOMAR"><datalist id="cr-ccs">${centros.map((c) => `<option value="${esc(c.codigo + ' · ' + c.nombre)}"></option>`).join('')}</datalist></div>
-          <div class="field full"><label for="cr-concepto">Concepto</label><input id="cr-concepto" value="${esc(m.desc.replace(/^PAGO A PROVE?\s*/i, 'Pago a '))}"></div>
+          <div class="field"><label for="cr-cc">Obra (centro de costo)</label><input id="cr-cc" list="cr-ccs" autocomplete="off" value="${esc(cc0)}" placeholder="Ej. 100068-1 · LAGOMAR"><datalist id="cr-ccs">${centros.map((c) => `<option value="${esc(c.codigo + ' · ' + c.nombre)}"></option>`).join('')}</datalist></div>
+          <div class="field full"><label for="cr-concepto">Concepto</label><input id="cr-concepto" value="${esc(m.desc)}"></div>
           <div class="field full"><label for="cr-sop">Soporte del pago (opcional)</label><input id="cr-sop" type="file" accept="application/pdf,image/*"></div>
         </div>
         <p class="proy-nota" id="cr-asi"></p>
@@ -245,12 +271,16 @@
       <p class="proy-aviso" id="cr-err" hidden></p>`;
     const asiento = () => {
       const t = $('#cr-tipo'); if (!t) return;
-      const ant = t.value === 'anticipo';
-      document.querySelectorAll('[data-solo="factura"]').forEach((x) => { x.hidden = ant; });
-      $('#cr-asi').innerHTML = `Así queda en Siigo (comprobante de pagos): débito <b>${ant ? '13300501 Anticipos a proveedores' : '22050501 Proveedores'}</b>${ant ? '' : ' cruzando la factura'} · crédito <b>${esc((cta.siigo || [])[0] || '')} ${esc(cta.nombre)}</b> · ${fmt(v)}.`;
+      const tp = t.value, [nom, cta0] = TIPOS_REG[tp];
+      document.querySelectorAll('[data-solo]').forEach((x) => { x.hidden = x.dataset.solo !== tp; });
+      $('#cr-prov-lbl').textContent = tp === 'nomina' ? 'Empleado' : tp === 'otra' ? 'Tercero' : 'Proveedor';
+      if (tp === 'nomina' && !$('#cr-cc').value.trim()) $('#cr-cc').value = 'ADMON-1';
+      const deb = tp === 'otra' ? ($('#cr-cuenta').value.trim() || '(escribe la cuenta)') : cta0;
+      $('#cr-asi').innerHTML = `Así queda en Siigo: débito <b>${esc(deb)}</b>${tp === 'factura' ? ' cruzando la factura' : tp === 'anticipo' ? ` (documento CC-${docAnticipo(m.fecha)})` : ''} · crédito <b>${esc((cta.siigo || [])[0] || '')} ${esc(cta.nombre)}</b> · ${fmt(v)} · tercero: el ${tp === 'nomina' ? 'empleado' : 'mismo de arriba'}.`;
     };
     const t = $('#cr-tipo'); if (t) { t.addEventListener('change', asiento); asiento(); }
-    const pv = $('#cr-prov'); if (pv) pv.addEventListener('change', () => { const x = B().proveedores().find((y) => y.nombre === pv.value); if (x) $('#cr-nit').value = x.nit; });
+    const cu = $('#cr-cuenta'); if (cu) cu.addEventListener('input', asiento);
+    const pv = $('#cr-prov'); if (pv) pv.addEventListener('change', () => { const x = terceros.find((y) => y.nombre === pv.value); if (x) $('#cr-nit').value = x.nit; });
     if (!$('#dlg-conc').open) $('#dlg-conc').showModal();
   }
   const errReg = (msg) => { const e = $('#cr-err'); if (e) { e.textContent = msg; e.hidden = !msg; } };
@@ -260,15 +290,43 @@
     await marcarReg([movId], { tipo: 'existente', pagoId, envioId: r.envioId || '', error: r.error || '', texto: r.caja ? 'Caja menor marcada como reembolsada (se sube con el comprobante 14)' : 'Pago de Cuadra marcado como pagado' });
     terminarReg(r.error);
   }
+  // Tipos de registro de una salida del banco: [nombre, cuenta débito]
+  const TIPOS_REG = { factura: ['Pago de una factura (22050501)', '22050501 Proveedores'], anticipo: ['Anticipo a proveedor (13300501)', '13300501 Anticipos a proveedores'], nomina: ['Pago de nómina (25050501)', '25050501 Salarios por pagar'], otra: ['Otra cuenta', ''] };
+  const tipoDeCuenta = (c) => ({ 22050501: 'factura', 13300501: 'anticipo', 25050501: 'nomina' }[c] || 'otra');
+  // Documento del anticipo como lo hace ODESA en Siigo: CC + día y mes (1 de octubre → CC-110)
+  const docAnticipo = (fecha) => String(Number(fecha.slice(8, 10) + fecha.slice(5, 7)));
+  function empSugerido(m) {
+    const p = palabras(m.desc); let mejor = null, pts = 0;
+    for (const e of K.emps || []) { let n = 0; for (const w of palabras(e.nombre)) if (p.has(w)) n++; if (n > pts) { pts = n; mejor = e; } }
+    return pts >= 2 ? mejor : null;
+  }
   async function registrarNuevo(movId) {
-    const m = movDe(movId), cta = ctaActual();
-    const tipo = $('#cr-tipo').value, proveedor = $('#cr-prov').value.trim(), nit = $('#cr-nit').value.replace(/\D/g, '');
-    const factura = $('#cr-fact').value.trim().toUpperCase(), vence = $('#cr-vence').value, cc = $('#cr-cc').value.trim(), concepto = $('#cr-concepto').value.trim();
-    if (!proveedor || nit.length < 5) return errReg('Escribe el proveedor y su NIT o cédula.');
+    const m = movDe(movId), cta = ctaActual(), banco = (cta.siigo || [])[0];
+    const tipo = $('#cr-tipo').value, nombre = $('#cr-prov').value.trim(), nit = $('#cr-nit').value.replace(/\D/g, '');
+    const factura = $('#cr-fact').value.trim().toUpperCase(), vence = $('#cr-vence').value, cc = $('#cr-cc').value.trim(), concepto = $('#cr-concepto').value.trim() || m.desc;
+    const cuentaOtra = ($('#cr-cuenta').value || '').replace(/\D/g, '');
+    if (!nombre || nit.length < 5) return errReg(`Escribe el ${tipo === 'nomina' ? 'empleado' : 'tercero'} y su NIT o cédula.`);
     if (tipo === 'factura' && !/^[A-Z0-9]{1,6}-?\d+$/.test(factura.replace(/\s+/g, ''))) return errReg('Escribe la factura con prefijo y número, por ejemplo FE-2210.');
+    if (tipo === 'otra' && !/^\d{6,10}$/.test(cuentaOtra)) return errReg('Escribe la cuenta contable (solo números, por ejemplo 23700501).');
+    if (tipo === 'otra' && /^(22050501|23359501|13300501)$/.test(cuentaOtra)) return errReg('Esa cuenta cruza documentos: escoge "Pago de una factura" o "Anticipo".');
     const file = $('#cr-sop').files[0] || null;
-    const r = await B().nuevoPago({ tipo, proveedor, nit, factura, vence, cc, concepto, valor: Math.abs(m.valor), fecha: m.fecha, movId, cuentaBanco: (cta.siigo || [])[0] }, file);
-    await marcarReg([movId], { tipo, pagoId: r.id, envioId: r.envioId || '', error: r.error || '', texto: `${tipo === 'anticipo' ? 'Anticipo' : 'Pago de factura ' + factura} a ${proveedor}` });
+    const valor = Math.abs(m.valor);
+    let r, texto;
+    if (tipo === 'factura' || tipo === 'anticipo') {
+      r = await B().nuevoPago({ tipo, proveedor: nombre, nit, factura: tipo === 'anticipo' ? 'CC-' + docAnticipo(m.fecha) : factura, vence: tipo === 'anticipo' ? m.fecha : vence, cc, concepto, valor, fecha: m.fecha, movId, cuentaBanco: banco }, file);
+      texto = `${tipo === 'anticipo' ? 'Anticipo' : 'Pago de factura ' + factura} a ${nombre}`;
+    } else {
+      const cuenta = tipo === 'nomina' ? '25050501' : cuentaOtra;
+      const adj = file ? await B().subirSoporte(file) : null;
+      const envioId = await B().comprobante([{ fecha: m.fecha, observaciones: `${concepto} (conciliación bancaria, Cuadra)`, lineas: [
+        { cuenta, nit, cc, prefijo: '', numero: '', vence: '', descripcion: m.desc.slice(0, 100), debito: Math.round(valor), credito: 0 },
+        { cuenta: banco, nit, cc, prefijo: '', numero: '', vence: '', descripcion: m.desc.slice(0, 100), debito: 0, credito: Math.round(valor) }] }]);
+      r = { envioId, error: '', soporte: adj };
+      texto = `${tipo === 'nomina' ? 'Nómina' : 'Cuenta ' + cuenta} · ${nombre}`;
+    }
+    const cuentaAp = { factura: '22050501', anticipo: '13300501', nomina: '25050501' }[tipo] || cuentaOtra;
+    await marcarReg([movId], { tipo, pagoId: r.id || '', envioId: r.envioId || '', error: r.error || '', texto, ...(r.soporte ? { soporte: r.soporte } : {}) },
+      { desc: m.desc, cuenta: cuentaAp, nit, nombre, cc: cc.split('·')[0].trim() });
     terminarReg(r.error);
   }
   async function registrarRevisado(movId) {
@@ -282,6 +340,36 @@
     await refrescarEnvios();
     render();
   }
+  // Conocidos "simples": lo aprendido va a una cuenta que no cruza documentos (nómina, aportes, préstamos…)
+  const CRUZAN = /^(22050501|23359501|13300501)$/;
+  const conocidoSimple = (m) => { const ap = aprendidoDe(m.desc); return ap && ap.cuenta && ap.nit && !CRUZAN.test(ap.cuenta) ? ap : null; };
+  function abrirConocidos(grupo) {
+    const cta = ctaActual();
+    const l = cruzar(cta, K.mes).faltan.filter((f) => f.sug.k === grupo && f.m.valor < 0 && conocidoSimple(f.m));
+    if (!l.length) return;
+    $('#conc-dlg-titulo').textContent = `Registrar ${l.length} movimientos que Cuadra ya conoce`;
+    $('#conc-dlg-res').innerHTML = `<p class="proy-nota">Cada uno se registra como se ha hecho antes (historial de Siigo o tus registros en Cuadra): débito a la cuenta y tercero de la tabla, crédito a ${esc((cta.siigo || [])[0])} ${esc(cta.nombre)}. Un comprobante por día.</p>
+      <div class="rh-tabla-wrap" style="max-height:340px;overflow:auto"><table class="rh-tabla"><thead><tr><th>Fecha</th><th>En el banco dice</th><th>Tercero</th><th>Cuenta</th><th class="n">Valor</th></tr></thead><tbody>${l.map((f) => { const ap = conocidoSimple(f.m); return `<tr><td>${esc(fCorta(f.m.fecha))}</td><td>${esc(f.m.desc)}</td><td>${esc(ap.nombre || '')}<br><span class="sub">${esc(ap.nit)}</span></td><td>${esc(ap.cuenta)}${ap.cc ? '<br><span class="sub">' + esc(ap.cc) + '</span>' : ''}</td><td class="n">${fmt(-f.m.valor)}</td></tr>`; }).join('')}</tbody></table></div>
+      <p class="proy-nota">Si alguno no es correcto, cancela y regístralo uno por uno con "Registrar".</p>
+      <p class="proy-aviso" id="cr-err" hidden></p>
+      <div class="form-actions"><button class="btn" type="button" data-close>Cancelar</button><button class="btn primary" type="button" data-conc="conocidos-ok" data-grupo="${esc(grupo)}"${B().siigoListo() ? '' : ' disabled'}>Subir los ${l.length} a Siigo</button></div>`;
+    if (!$('#dlg-conc').open) $('#dlg-conc').showModal();
+  }
+  async function registrarConocidos(grupo) {
+    const cta = ctaActual(), banco = (cta.siigo || [])[0];
+    const l = cruzar(cta, K.mes).faltan.filter((f) => f.sug.k === grupo && f.m.valor < 0 && conocidoSimple(f.m));
+    const dias = new Map();
+    for (const f of l) { const d = dias.get(f.m.fecha) || []; d.push(f); dias.set(f.m.fecha, d); }
+    const comps = [...dias.entries()].map(([fecha, fs]) => ({ fecha, observaciones: `Movimientos de ${cta.nombre} del ${fmtDate(fecha)} (conciliación bancaria, Cuadra)`, lineas: fs.flatMap((f) => {
+      const ap = conocidoSimple(f.m), v = Math.round(-f.m.valor);
+      return [{ cuenta: ap.cuenta, nit: ap.nit, cc: ap.cc || '', prefijo: '', numero: '', vence: '', descripcion: f.m.desc.slice(0, 100), debito: v, credito: 0 },
+        { cuenta: banco, nit: ap.nit, cc: ap.cc || '', prefijo: '', numero: '', vence: '', descripcion: f.m.desc.slice(0, 100), debito: 0, credito: v }];
+    }) }));
+    const envioId = await B().comprobante(comps);
+    await marcarReg(l.map((f) => f.m.id), { tipo: 'conocido', envioId, texto: 'Registrado con lo aprendido' });
+    terminarReg('');
+  }
+
   // Gastos bancarios del mes (4 x 1.000, comisiones, intereses): un comprobante por día
   function abrirGastos(grupo) {
     const cta = ctaActual();
@@ -425,13 +513,15 @@
 
   // ---------- eventos ----------
   $('#view-conc').addEventListener('click', (ev) => {
-    const t = ev.target.closest('[data-conc], [data-conc-cta], [data-conc-ver], [data-conc-reg]');
+    const t = ev.target.closest('[data-conc], [data-conc-cta], [data-conc-ver], [data-conc-reg], [data-conc-mes]');
     if (!t) return;
+    if (t.dataset.concMes) { K.mes = t.dataset.concMes; render(); return; }
     if (t.dataset.concCta) { K.cuenta = t.dataset.concCta; render(); return; }
     if (t.dataset.concVer) { K.vista = t.dataset.concVer; if (K.vista === 'registrados') refrescarEnvios().then(render); render(); return; }
     if (t.dataset.concReg) { abrirRegistro(t.dataset.concReg); return; }
     const a = t.dataset.conc;
     if (a === 'gastos') abrirGastos(t.dataset.grupo);
+    else if (a === 'conocidos') abrirConocidos(t.dataset.grupo);
     else if (a === 'cargar') abrirCarga();
     else if (a === 'cuenta-nueva') abrirCuenta(false);
     else if (a === 'cuenta-editar') abrirCuenta(true);
@@ -450,6 +540,7 @@
     if (a === 'nuevo') run(() => registrarNuevo(t.dataset.mov));
     if (a === 'revisado') run(() => registrarRevisado(t.dataset.mov));
     if (a === 'gastos-ok') run(() => registrarGastos(t.dataset.grupo));
+    if (a === 'conocidos-ok') run(() => registrarConocidos(t.dataset.grupo));
   });
 
   window.CONC = { abrir };

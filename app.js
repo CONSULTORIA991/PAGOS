@@ -2886,7 +2886,7 @@
       const id = nuevoId(), anticipo = x.tipo === 'anticipo';
       await mutar((d) => {
         let factura = x.factura;
-        if (anticipo) { d.cobros = d.cobros || { cc: 0, an: 0 }; factura = 'AN-' + (++d.cobros.an); }
+        if (anticipo && !factura) { d.cobros = d.cobros || { cc: 0, an: 0 }; factura = 'AN-' + (++d.cobros.an); }
         d.pagos.push({
           id, tipoDoc: anticipo ? 'anticipo' : undefined, proveedor: x.proveedor, nit: String(x.nit || '').replace(/\D/g, ''), concepto: String(x.concepto || '').slice(0, 120),
           factura, valor: Math.round(x.valor), vence: x.vence || x.fecha, estado: 'pagado', fechaPago: x.fecha, cc: x.cc || '', nota: x.nota || '',
@@ -2909,6 +2909,7 @@
       return envio.id;
     },
     async envios() { await leerEnvios(); return SE.datos.envios; },
+    subirSoporte: (file) => subirFactura(file),
   };
   async function cancelarEnvio(id) {
     let marca = null;
