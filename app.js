@@ -1416,23 +1416,24 @@
     return S.pagos
       .filter((p) => p.estado === 'pagado' && !p.siigoEnvio && fechaPagoDe(p) && (!a || fechaPagoDe(p) >= a) && (!b || fechaPagoDe(p) <= b) && (incluir || !p.siigo))
       .sort((x, y) => fechaPagoDe(x).localeCompare(fechaPagoDe(y)) || String(x.proveedor || '').localeCompare(String(y.proveedor || ''), 'es'))
-      .map((p) => {
-        const { prefijo, numero } = partirFactura(p.factura);
-        const cuenta = p.cuenta || siigoConf().cuentaProv;
-        const errores = [], avisos = [];
-        if (!p.nit) errores.push('NIT');
-        // Prefijo y número solo son obligatorios en cuentas que cruzan documentos (con vencimiento)
-        if (CUENTAS_CON_VENCIMIENTO.has(cuenta)) {
-          if (!prefijo) errores.push('prefijo');
-          else if (prefijo.length > 6) errores.push('prefijo de más de 6 caracteres');
-          if (!numero) errores.push('n.º de factura');
-        }
-        if (CUENTAS_CON_VENCIMIENTO.has(cuenta) && !p.vence) errores.push('vencimiento');
-        if (!(Number(p.valor) > 0)) errores.push('valor');
-        if (!p.cc) avisos.push('centro de costo');
-        if (p.siigo) avisos.push(`ya exportado (comp. ${p.siigo.comprobante})`);
-        return { p, prefijo, numero, cuenta, errores, avisos };
-      });
+      .map(filaSiigoDe);
+  }
+  function filaSiigoDe(p) {
+    const { prefijo, numero } = partirFactura(p.factura);
+    const cuenta = p.cuenta || siigoConf().cuentaProv;
+    const errores = [], avisos = [];
+    if (!p.nit) errores.push('NIT');
+    // Prefijo y número solo son obligatorios en cuentas que cruzan documentos (con vencimiento)
+    if (CUENTAS_CON_VENCIMIENTO.has(cuenta)) {
+      if (!prefijo) errores.push('prefijo');
+      else if (prefijo.length > 6) errores.push('prefijo de más de 6 caracteres');
+      if (!numero) errores.push('n.º de factura');
+    }
+    if (CUENTAS_CON_VENCIMIENTO.has(cuenta) && !p.vence) errores.push('vencimiento');
+    if (!(Number(p.valor) > 0)) errores.push('valor');
+    if (!p.cc) avisos.push('centro de costo');
+    if (p.siigo) avisos.push(`ya exportado (comp. ${p.siigo.comprobante})`);
+    return { p, prefijo, numero, cuenta, errores, avisos };
   }
 
   // Un comprobante por día de pago: todos los pagos de la misma fecha comparten el consecutivo
@@ -2838,7 +2839,77 @@
     try { await mutarEnvios((d) => { d.envios = [envio, ...d.envios].slice(0, 30); }); }
     catch (e) { try { await mutar((d) => { for (const x of d.pagos) if (x[campo] && x[campo].id === id) delete x[campo]; }); } catch (e2) {} throw e; }
     vigilarEnvios();
+    return id;
   }
+  // ---------- desde la conciliación bancaria (conciliacion.js) ----------
+  // Siguiente consecutivo del comprobante de pagos: el último subido o el más alto que esté en la cola
+  async function siguienteConsec11() {
+    await leerEnvios();
+    let n = Number(S.siigo && S.siigo.ultimo) || 0;
+    for (const e of SE.datos.envios) if (e.marca !== 'siigo14' && e.marca !== 'ds') for (const c of e.comprobantes || []) n = Math.max(n, Number(c.consec) || 0);
+    return n + 1;
+  }
+  // Deja en la cola de Siigo el comprobante de UN pago, con el crédito a la cuenta del banco de donde salió
+  async function encolarPagoBanco(id, cuentaBanco) {
+    const p = S.pagos.find((x) => x.id === id);
+    if (!p) return { error: 'No se encontró el pago.' };
+    if (!(conf && conf.siigoApi)) return { error: 'Faltan las credenciales de Siigo (Usuarios → Conexión con Siigo).' };
+    const f = filaSiigoDe(p);
+    if (f.errores.length) return { error: 'Para subirlo a Siigo falta: ' + f.errores.join(', ') + '. Complétalo en Pagos realizados → Exportar a Siigo.' };
+    const sc = { ...siigoConf(), cuentaBanco: cuentaBanco || siigoConf().cuentaBanco };
+    return { error: '', envioId: await subirASiigo('siigo', comprobantesPagos([f], await siguienteConsec11(), sc.tipo, sc)) };
+  }
+  const nota = (estado, txt) => ({ estado, por: uid, en: new Date().toISOString(), nota: txt });
+  const BancoApi = {
+    // Pagos de Cuadra que aún no están pagados (para reconocer un pago hecho en el banco)
+    pagosAbiertos: () => S.pagos.filter((p) => ['aprobado', 'pendiente', 'revisar'].includes(p.estado) && enProveedores(p)),
+    proveedores: () => { const m = new Map(); for (const p of S.pagos) if (p.nit && p.tipoDoc !== 'caja') m.set(String(p.nit).replace(/\D/g, ''), p.proveedor); return [...m.entries()].map(([nit, nombre]) => ({ nit, nombre })); },
+    centros: () => siigoConf().centros || [],
+    siigoListo: () => !!(conf && conf.siigoApi),
+    // Un pago de Cuadra que se hizo en el banco: queda pagado con la fecha del banco y se sube a Siigo
+    async pagarExistente(id, { fecha, cuentaBanco, movId }, file) {
+      const adj = file ? await subirFactura(file) : null;
+      await mutar((d) => {
+        const p = d.pagos.find((x) => x.id === id);
+        if (!p) return false;
+        p.estado = 'pagado'; p.fechaPago = fecha; p.banco = { movId, cuenta: cuentaBanco };
+        if (adj) p.soportePago = adj;
+        p.historial = [...(p.historial || []), nota('pagado', `Pagado en el banco el ${fmtDate(fecha)} (conciliación bancaria)`)];
+      });
+      render();
+      const p = S.pagos.find((x) => x.id === id);
+      return p && p.tipoDoc === 'caja' ? { error: '', caja: true } : encolarPagoBanco(id, cuentaBanco);
+    },
+    // Pago o anticipo que se hizo fuera de Cuadra: se crea ya pagado y se sube a Siigo
+    async nuevoPago(x, file) {
+      const adj = file ? await subirFactura(file) : {};
+      const id = nuevoId(), anticipo = x.tipo === 'anticipo';
+      await mutar((d) => {
+        let factura = x.factura;
+        if (anticipo) { d.cobros = d.cobros || { cc: 0, an: 0 }; factura = 'AN-' + (++d.cobros.an); }
+        d.pagos.push({
+          id, tipoDoc: anticipo ? 'anticipo' : undefined, proveedor: x.proveedor, nit: String(x.nit || '').replace(/\D/g, ''), concepto: String(x.concepto || '').slice(0, 120),
+          factura, valor: Math.round(x.valor), vence: x.vence || x.fecha, estado: 'pagado', fechaPago: x.fecha, cc: x.cc || '', nota: x.nota || '',
+          cuenta: anticipo ? '13300501' : '22050501', ...adj, banco: { movId: x.movId, cuenta: x.cuentaBanco }, creado: new Date().toISOString(), creadoPor: uid,
+          historial: [nota('pagado', `${anticipo ? 'Anticipo' : 'Pago'} registrado desde la conciliación bancaria (pagado el ${fmtDate(x.fecha)})`)],
+        });
+      });
+      render();
+      return { id, ...(await encolarPagoBanco(id, x.cuentaBanco)) };
+    },
+    // Comprobante contable directo (gastos bancarios, 4 x 1.000): lineas [{cuenta, nit, cc, descripcion, debito, credito}]
+    async comprobante(comps) {
+      if (!(conf && conf.siigoApi)) throw new Error('Faltan las credenciales de Siigo (Usuarios → Conexión con Siigo).');
+      let n = await siguienteConsec11();
+      const tipo = siigoConf().tipo;
+      const lista = comps.map((c) => ({ tipo, consec: n++, fecha: c.fecha, ids: [], lineas: c.lineas, observaciones: String(c.observaciones || '').slice(0, 300) }));
+      const yo = conf.usuarios && conf.usuarios[uid];
+      const envio = { id: nuevoId(), estado: 'pendiente', pedido: new Date().toISOString(), porNombre: yo ? (yo.nombre || yo.usuario) : '', marca: 'conc', tipo, comprobantes: lista, hechos: [] };
+      await mutarEnvios((d) => { d.envios = [envio, ...d.envios].slice(0, 30); });
+      return envio.id;
+    },
+    async envios() { await leerEnvios(); return SE.datos.envios; },
+  };
   async function cancelarEnvio(id) {
     let marca = null;
     const ok = await mutarEnvios((d) => {
@@ -3461,6 +3532,7 @@
     $, esc, fmt, fmtDate, dtFmt, toast, mostrarError, msgGitHub, nuevoId, personName, parseMonto, todayISO, localISO, setView,
     // Aviso al celular de los jefes (ntfy), solo si el canal está activado. Sin nombres ni valores.
     async avisar(titulo, mensaje) { if (conf && conf.avisos && conf.avisos.canal) { await enviarNtfy(titulo, mensaje); return true; } return false; },
+    banco: BancoApi,
   };
   iniciar();
 })();

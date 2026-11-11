@@ -360,6 +360,10 @@ details.repo .field { margin-top: 8px; }
 .conc-dlg { display: grid; gap: 12px; }
 .conc-dlg fieldset { border: 0; padding: 0; margin: 0; } .conc-dlg legend { font-weight: 600; margin-bottom: 4px; }
 #view-conc .proy-tabs { margin-top: 0; }
+.conc-cand { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; justify-content: space-between; padding: 8px 0; border-top: 1px solid var(--line); }
+.conc-dlg .proy-caja { margin-bottom: 0; }
+.conc-dlg .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+.conc-dlg .grid .full { grid-column: 1 / -1; }
 /* Inicio: para hacer hoy */
 .tareas { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; box-shadow: var(--shadow); }
 .tareas h2 { margin: 0 0 6px; font-family: var(--font-display); font-size: 1.15rem; }
