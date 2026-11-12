@@ -1031,13 +1031,14 @@
   $('#r-desde').addEventListener('change', onDateInput);
   $('#r-hasta').addEventListener('change', onDateInput);
   // Secciones: Inicio · Proveedores (aprob, rep, prov) · Clientes (cart, cli)
-  const VISTAS = ['inicio', 'aprob', 'cajas', 'rep', 'prov', 'cart', 'cli', 'rrhh', 'proy', 'conc'];
+  const VISTAS = ['inicio', 'aprob', 'cajas', 'rep', 'prov', 'cart', 'cli', 'rrhh', 'proy', 'conc', 'fcomp'];
   function setView(v) {
     S.view = VISTAS.includes(v) ? v : 'inicio';
     const grupo = ['aprob', 'cajas', 'rep', 'prov'].includes(S.view) ? 'prov' : ['cart', 'cli'].includes(S.view) ? 'cli' : S.view;
     if (S.view === 'rrhh' && window.RRHH) window.RRHH.abrir();
     if (S.view === 'proy' && window.PROY) window.PROY.abrir();
     if (S.view === 'conc' && window.CONC) window.CONC.abrir();
+    if (S.view === 'fcomp' && window.FCOMP) window.FCOMP.abrir();
     document.querySelectorAll('.vbtn[data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === S.view)));
     for (const x of VISTAS) $('#view-' + x).hidden = S.view !== x;
     $('#nav-prov').hidden = grupo !== 'prov';
@@ -2932,6 +2933,41 @@
     async envios() { await leerEnvios(); return SE.datos.envios; },
     subirSoporte: (file) => subirFactura(file),
   };
+  // ---------- desde Facturas de compra (compras.js) ----------
+  const ComprasApi = {
+    pagos: () => S.pagos,
+    centros: () => siigoConf().centros || [],
+    ccTexto, ccDeInput, matchCentro, partirFactura,
+    siigoListo: () => !!(conf && conf.siigoApi),
+    subirArchivo: (file) => subirFactura(file),
+    envios: () => BancoApi.envios(),
+    // Anticipos pagados por Cuadra a este proveedor que aún tienen saldo por cruzar
+    anticipos: (nit) => anticiposDe({ nit }).filter((x) => !x.manual).map((x) => ({ id: x.a.id, factura: x.a.factura, prefijo: x.prefijo, numero: x.numero, saldo: x.saldo, fecha: fechaPagoDe(x.a) || '', vence: x.a.vence || fechaPagoDe(x.a) || '' })),
+    // Factura de compra a la cola de Siigo (la crea el computador de la oficina: siigo-api.js procesarFC)
+    async encolar(x) {
+      if (!(conf && conf.siigoApi)) throw new Error('Faltan las credenciales de Siigo (Usuarios → Conexión con Siigo).');
+      const yo = conf.usuarios && conf.usuarios[uid];
+      const envio = { id: nuevoId(), estado: 'pendiente', pedido: new Date().toISOString(), porNombre: yo ? (yo.nombre || yo.usuario) : '', porUid: uid, comprobantes: [], hechos: [], ...x };
+      await mutarEnvios((d) => { d.envios = [envio, ...d.envios].slice(0, 30); });
+      return envio.id;
+    },
+    // Facturas que se deben en Siigo: entran a Proveedores por revisar (no se vuelven a subir a Siigo: la deuda ya está allá)
+    async pasarAProveedores(lista) {
+      let n = 0;
+      const ahora = new Date().toISOString();
+      await mutar((d) => {
+        n = 0;
+        for (const x of lista) {
+          if (d.pagos.some((p) => String(p.nit || '').replace(/\D/g, '') === x.nit && partirFactura(p.factura).numero === partirFactura(x.factura).numero)) continue;
+          d.pagos.push({ id: nuevoId(), proveedor: x.proveedor, nit: x.nit, concepto: String(x.concepto || '').slice(0, 120), factura: x.factura, valor: x.valor, vence: x.vence, estado: 'revisar', cc: x.cc || '', cuenta: '22050501',
+            nota: x.fc ? 'Siigo ' + x.fc : '', fc: x.fc || '', creado: ahora, creadoPor: uid, historial: [nota('revisar', `Pasada desde Facturas de compra: en Siigo ${x.fc || ''} con saldo ${fmt(x.valor)}`)] });
+          n++;
+        }
+      });
+      render();
+      return n;
+    },
+  };
   async function cancelarEnvio(id) {
     let marca = null;
     const ok = await mutarEnvios((d) => {
@@ -3555,6 +3591,7 @@
     // Aviso al celular de los jefes (ntfy), solo si el canal está activado. Sin nombres ni valores.
     async avisar(titulo, mensaje) { if (conf && conf.avisos && conf.avisos.canal) { await enviarNtfy(titulo, mensaje); return true; } return false; },
     banco: BancoApi,
+    compras: ComprasApi,
   };
   iniciar();
 })();

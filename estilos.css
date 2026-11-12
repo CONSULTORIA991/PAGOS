@@ -683,3 +683,13 @@ label .rh-num { width: 22px; height: 22px; font-size: .78rem; margin-right: 4px;
 .det-comp > span.p { background: #7fa2ff; color: #04102e; }
 .det-comp-l { display: flex; flex-wrap: wrap; gap: 4px 24px; margin: 6px 0 4px; font-size: .86rem; color: var(--muted); }
 .det-comp-l b { font-family: var(--font-num); color: var(--ink); }
+
+/* Facturas de compra (compras.js) */
+.puerta.fcomp .ilus { background: #f8e9e4; }
+.fr-linea { display: grid; grid-template-columns: minmax(220px, 2fr) minmax(160px, 1.5fr) minmax(130px, 1fr) minmax(110px, .8fr) auto; gap: 10px; align-items: start; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.fr-linea .btn { align-self: center; }
+.fr-linea .hint.neg { color: var(--bad); }
+#dlg-fcomp { width: min(1000px, calc(100vw - 32px)); }
+#dlg-fcomp .grid { min-width: 0; }
+#dlg-fcomp .fr-linea input, #dlg-fcomp .fr-linea select { width: 100%; min-width: 0; }
+@media (max-width: 760px) { .fr-linea { grid-template-columns: 1fr 1fr; } .fr-linea .field:first-child { grid-column: 1 / -1; } }
