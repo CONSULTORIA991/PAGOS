@@ -131,11 +131,89 @@
     const fechas = Object.values(r.docs).map((x) => x.d).filter(Boolean).sort();
     await mutar((d) => {
       nuevos = 0;
-      for (const [k, x] of Object.entries(r.docs)) { if (!d.docs[k]) nuevos++; d.docs[k] = x; }
+      // Se conserva lo que dejó la descarga de la DIAN (XML y PDF guardados)
+      for (const [k, x] of Object.entries(r.docs)) { if (!d.docs[k]) nuevos++; d.docs[k] = { ...(d.docs[k] || {}), ...x }; }
       d.cargues = [{ en: new Date().toISOString(), por: A.uid, archivo: file.name.slice(0, 80), docs: n, nuevos, desde: fechas[0], hasta: fechas[fechas.length - 1] }, ...(d.cargues || [])].slice(0, 60);
     });
     F.mes = fechas[fechas.length - 1].slice(0, 7);
     toast(`${plural(n, 'factura o nota recibida', 'facturas y notas recibidas')}: ${nuevos ? plural(nuevos, 'nueva', 'nuevas') : 'ninguna nueva'} (lo repetido no se duplica).`);
+  }
+
+  // ---------- descarga desde la DIAN con el enlace del token ----------
+  // El enlace se guarda cifrado en datos/dian-solicitud.enc; el computador de la oficina lo usa una vez y lo borra.
+  const R_SOL = 'datos/dian-solicitud.enc', DIR_DIAN = 'datos/facturas-dian';
+  async function leerSol() { try { const f = await GH.leer(R_SOL); F.sol = f ? await Cripto.descifrarJSON(A.maestra, f.bytes) : { solicitudes: [] }; } catch (e) { F.sol = F.sol || { solicitudes: [] }; } }
+  function estadoDescarga() {
+    const s = ((F.sol && F.sol.solicitudes) || [])[0];
+    if (!s) return '';
+    const cuando = new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(s.fin || s.inicio || s.pedido));
+    if (s.estado === 'pendiente') return '<p class="proy-aviso">Descarga de la DIAN pedida: el computador de la oficina empieza en 1–2 minutos.</p>';
+    if (s.estado === 'descargando') return `<p class="proy-aviso">Descargando las facturas de la DIAN${s.avance ? `: ${s.avance.hechos} de ${s.avance.total}` : '…'} (tarda unos segundos por factura).</p>`;
+    if (s.estado === 'error') return `<p class="proy-aviso">La descarga de la DIAN del ${esc(cuando)} no se pudo hacer: ${esc(s.error || '')}</p>`;
+    const r = s.res || {};
+    return `<p class="proy-nota">Última descarga de la DIAN (${esc(cuando)}, del ${esc(fmtDate(s.desde))} al ${esc(fmtDate(s.hasta))}): ${plural(r.hechos || 0, 'factura descargada', 'facturas descargadas')}${r.yaEstaban ? `, ${r.yaEstaban} ya estaban` : ''}${r.fallos ? `, ${r.fallos} no se pudieron bajar` : ''}. ${esc(r.aviso || '')}</p>`;
+  }
+  function abrirDescarga() {
+    const [y, m] = (F.mes || todayISO().slice(0, 7)).split('-').map(Number);
+    const mm = String(m).padStart(2, '0'), ultimo = `${y}-${mm}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;
+    const desde = `${y}-${mm}-01`, hasta = ultimo > todayISO() ? todayISO() : ultimo;
+    $('#fcomp-dlg-titulo').textContent = 'Traer facturas de la DIAN';
+    $('#fcomp-dlg-res').innerHTML = `
+      <ol class="proy-nota" style="margin:0;padding-left:20px">
+        <li>Entra a la DIAN (catálogo de factura electrónica) y pide el <b>token</b> como siempre: te llega un correo con un enlace.</li>
+        <li>Copia ese enlace (el botón o vínculo del correo: empieza por <b>https://catalogo-vpfe.dian.gov.co/User/AuthToken</b>). No lo abras antes: sirve una sola vez.</li>
+        <li>Pégalo aquí, escoge las fechas y toca "Traer facturas". El computador de la oficina descarga cada factura (XML y PDF) y borra el enlace.</li>
+      </ol>
+      <div class="grid">
+        <div class="field full"><label for="fd-url">Enlace del token de la DIAN</label><input id="fd-url" type="password" autocomplete="off" placeholder="https://catalogo-vpfe.dian.gov.co/User/AuthToken?…"><span class="hint">Se guarda cifrado y se borra apenas se usa. El enlace dura unos 60 minutos.</span></div>
+        <div class="field"><label for="fd-desde">Desde</label><input id="fd-desde" type="date" value="${desde}"></div>
+        <div class="field"><label for="fd-hasta">Hasta</label><input id="fd-hasta" type="date" value="${hasta}"></div>
+      </div>
+      <p class="proy-nota">Lo que ya se descargó antes no se vuelve a bajar. Si la DIAN no entrega la lista, se bajan las facturas del Excel que ya cargaste en esas fechas.</p>
+      <p class="proy-aviso" id="fd-err" hidden></p>
+      <div class="form-actions"><button class="btn primary" type="button" data-fd="pedir">Traer facturas</button></div>`;
+    if (!$('#dlg-fcomp').open) $('#dlg-fcomp').showModal();
+  }
+  async function pedirDescarga(btn) {
+    const url = $('#fd-url').value.trim(), desde = $('#fd-desde').value, hasta = $('#fd-hasta').value, err = $('#fd-err');
+    const mal = (m) => { err.textContent = m; err.hidden = false; };
+    let u; try { u = new URL(url); } catch (e) { return mal('Pega el enlace completo del correo de la DIAN.'); }
+    if (!/^catalogo-vpfe(-hab)?\.dian\.gov\.co$/.test(u.hostname) || !/\/User\/AuthToken/i.test(u.pathname) || !u.searchParams.get('token')) return mal('Ese no es el enlace del token: debe empezar por https://catalogo-vpfe.dian.gov.co/User/AuthToken');
+    if (!desde || !hasta || desde > hasta) return mal('Revisa las fechas.');
+    btn.disabled = true;
+    try {
+      for (let i = 0; i < 4; i++) {
+        const f = await GH.leer(R_SOL);
+        const d = f ? await Cripto.descifrarJSON(A.maestra, f.bytes) : { solicitudes: [] };
+        if ((d.solicitudes || []).some((x) => x.estado === 'pendiente' || x.estado === 'descargando')) { mal('Ya hay una descarga en curso: espera a que termine.'); btn.disabled = false; return; }
+        d.solicitudes = [{ id: A.nuevoId(), estado: 'pendiente', url: u.toString(), desde, hasta, pedido: new Date().toISOString(), por: A.uid }, ...(d.solicitudes || []).map((x) => { const { url: _u, ...r } = x; return r; })].slice(0, 20);
+        try { await GH.escribir(R_SOL, await Cripto.cifrarJSON(A.maestra, d), f ? f.sha : null); F.sol = d; break; }
+        catch (e) { if (i === 3 || !e.conflicto) throw e; await new Promise((ok) => setTimeout(ok, 700)); }
+      }
+      $('#dlg-fcomp').close();
+      toast('Listo: el computador de la oficina empieza a descargar en 1–2 minutos.');
+      render(); vigilar();
+    } catch (e) { mal(msgGitHub(e)); }
+    btn.disabled = false;
+  }
+  async function archivoDian(doc, ext) {
+    const k = ext === 'xml' ? doc.x : doc.pdf;
+    if (!k) return null;
+    const f = await GH.leer(`${DIR_DIAN}/${k}.${ext}.enc`);
+    if (!f) return null;
+    const bytes = await Cripto.descifrar(A.maestra, f.bytes);
+    return new File([bytes], `${factDe(doc)}.${ext}`, { type: ext === 'xml' ? 'text/xml' : 'application/pdf' });
+  }
+  async function verFactura(cufe) {
+    const doc = F.d.docs[cufe]; if (!doc) return;
+    const w = window.open('', '_blank');
+    try {
+      let file = await archivoDian(doc, 'pdf');
+      if (!file) { const p = enCuadra(doc).pago; file = p && p.archivo ? await C().leerArchivo(p) : null; }
+      if (!file) { if (w) w.close(); toast('Esta factura no tiene PDF guardado.'); return; }
+      const url = URL.createObjectURL(new Blob([await file.arrayBuffer()], { type: file.type || 'application/pdf' }));
+      if (w) w.location = url; else window.location = url;
+    } catch (e) { if (w) w.close(); toast('No pude abrir la factura.'); }
   }
 
   // ---------- pantalla ----------
@@ -145,7 +223,7 @@
     $('#fcomp-cuerpo').innerHTML = '<div class="empty"><h3>Cargando las facturas de compra…</h3></div>';
     try {
       await leer();
-      await refrescarEnvios();
+      await Promise.all([refrescarEnvios(), leerSol()]);
       const meses = mesesCon();
       if (!F.mes || !meses.includes(F.mes)) F.mes = meses[0] || todayISO().slice(0, 7);
       render();
@@ -161,8 +239,9 @@
     F.timer = setInterval(async () => {
       if ($('#view-fcomp').hidden) { clearInterval(F.timer); return; }
       const sub = Object.values(F.d.reg || {}).some((r) => r.estado === 'enviando' && !['listo', 'error'].includes((F.envios.find((e) => e.id === r.envioId) || {}).estado));
-      if (!sub) return;
-      await refrescarEnvios();
+      const bajando = ((F.sol && F.sol.solicitudes) || []).some((s) => s.estado === 'pendiente' || s.estado === 'descargando');
+      if (!sub && !bajando) return;
+      await Promise.all([refrescarEnvios(), leerSol()]);
       try { await leer(true); } catch (e) { return; }
       if (!$('#dlg-fcomp').open) render();
     }, 15000);
@@ -193,7 +272,8 @@
     const cab = `
       <div class="rh-barra"><div class="grupo">${meses.length ? `<div class="field"><label for="fc-mes">Mes</label><select id="fc-mes">${meses.map((m) => `<option value="${m}"${m === F.mes ? ' selected' : ''}>${esc(mesTxt(m))}</option>`).join('')}</select></div>` : ''}
         <div class="field"><label for="fc-q">Buscar</label><input id="fc-q" type="search" value="${esc(F.q)}" placeholder="Proveedor, NIT o factura"></div></div>
-        <div class="grupo">${isAdmin() ? '<button class="btn primary" type="button" data-fc="cargar">Subir Excel de la DIAN</button><input type="file" id="fc-file" accept=".xlsx,.xls" hidden>' : ''}</div></div>
+        <div class="grupo">${isAdmin() ? '<button class="btn" type="button" data-fc="cargar">Subir Excel de la DIAN</button><input type="file" id="fc-file" accept=".xlsx,.xls" hidden><button class="btn primary" type="button" data-fc="dian">Traer facturas de la DIAN</button>' : ''}</div></div>
+      ${estadoDescarga()}
       <section class="cj-camino" aria-label="Cómo funciona"><h3>Así se trabaja</h3><ol>${pasos.map(([t, d], i) => `<li class="hecho"><b><span>${i + 1}</span>${t}</b><small>${d}</small></li>`).join('')}</ol></section>`;
     if (!meses.length) {
       $('#fcomp-cuerpo').innerHTML = cab + `<div class="empty"><h3>Aún no hay facturas cargadas</h3><p>${isAdmin() ? 'Sube el Excel de documentos recibidos de la DIAN de un mes (por ejemplo octubre).' : 'La administradora aún no ha cargado el Excel de la DIAN.'}</p></div>`;
@@ -238,7 +318,7 @@
       <div class="rh-tabla-wrap"><table class="rh-tabla"><thead><tr><th>Fecha</th><th>Proveedor</th><th>Factura</th><th class="n">Total</th><th>Sugerido</th>${isAdmin() ? '<th></th>' : ''}</tr></thead><tbody>${l.map((r) => {
         const s = sugerido(r.doc), rb = rubroDe(s.cuenta);
         const sug = s.cuenta ? `${esc(s.cuenta)} ${rb ? '→ ' + esc(titulo(rb)) : '<span class="neg">sin rubro</span>'}${s.cc ? '<br><span class="sub">' + esc(C().ccTexto(s.cc)) + '</span>' : ''}` : '<span class="sub">Proveedor nuevo: escoges la cuenta</span>';
-        return `<tr>${filaDoc(r)}<td>${sug}${r.st.pago ? '<br><span class="pr-chip azul">Ya está en Proveedores</span>' : ''}</td>${isAdmin() ? `<td class="n"><button class="btn sm primary" type="button" data-fc="registrar" data-cufe="${esc(r.cufe)}">Registrar compra</button></td>` : ''}</tr>`;
+        return `<tr>${filaDoc(r)}<td>${sug}${r.doc.pdf ? `<br><button class="rh-link" type="button" data-fc="ver" data-cufe="${esc(r.cufe)}">Ver factura</button>` : ''}${r.st.pago ? `<br><span class="pr-chip azul">Ya está en Proveedores${r.st.pago.archivo ? ' · con la factura' : ''}</span>` : ''}</td>${isAdmin() ? `<td class="n"><button class="btn sm primary" type="button" data-fc="registrar" data-cufe="${esc(r.cufe)}">Registrar compra</button></td>` : ''}</tr>`;
       }).join('')}</tbody></table></div></section>`;
   }
   function seccionSiigo(l, conSaldo) {
@@ -267,6 +347,57 @@
   }
   const pctIVA = (id) => (taxes('IVA').find((t) => t.id === Number(id)) || {}).pct || 0;
   // Renglones a partir de los valores de la DIAN: separa lo gravado al 19 % (o 5 %) de lo que no tiene IVA
+  // ---------- cuenta sugerida para cada ítem de la factura ----------
+  // 1) lo que la administradora escogió antes para un ítem igual o parecido; 2) palabras del ítem; 3) lo que propuso Claude
+  const normI = (s) => String(s || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Z0-9 ]+/g, ' ').replace(/\b\d+([.,]\d+)?\b/g, ' ').replace(/\s+/g, ' ').trim();
+  const VACIAS = new Set(['DE', 'LA', 'EL', 'EN', 'CON', 'PARA', 'POR', 'UND', 'UN', 'KG', 'KILOS', 'MTS', 'MT', 'GL', 'GALON', 'X', 'Y', 'A', 'SACO', 'BULTO', 'PZA', 'PULG']);
+  const palabrasI = (s) => normI(s).split(' ').filter((w) => w.length > 2 && !VACIAS.has(w));
+  const claveItem = (s) => palabrasI(s).slice(0, 4).join(' ');
+  const REGLAS = [
+    [/\b(CODO|UNION|TUBO|TUBERIA|PVC|CPVC|TEE|BUJE|ADAPTADOR|NIPLE|REDUCCION|REDUCIDO|SIFON|VALVULA|REGISTRO|SOLDADURA LIQUIDA|LIMPIADOR|TAPON|COPLA|ACOPLE|UNIVERSAL|MANGUERA|CHEQUE|FLANCHE|BRIDA|ABRAZADERA)/, '61303206'],
+    [/\b(CABLE|ALAMBRE DE COBRE|BREAKER|TOTALIZADOR|TOMA(CORRIENTE)?|INTERRUPTOR|CONDUIT|CAJA OCTAGONAL|CAJA DE PASO|BOMBILL|LED|REFLECTOR|LUMINARIA|CINTA AISLANTE|CONTACTOR|TABLERO|TERMINAL|CLAVIJA|EMT|THHN|ENCAUCHETADO)/, '61303204'],
+    [/\b(IMPERMEABILIZ|SIKA ?TOP|SIKALASTIC|MANTO|EMULSION ASFALT|SIKA ?1|SIKAFLEX|VULKEM|IGOL)/, '61303210'],
+    [/\b(PEGACOR|PEGOPERFECTO|PEGO PERFECTO|PEGANTE (CERAMIC|PARA CERAMIC|PORCELAN)|PORCELANATO|CERAMIC|BALDOSA|BOQUILLA|ENCHAPE|MOSAICO|TABLETA|GRES|VENECIANO|PIEDRA MUNECA|CENEFA|REMATE)/, '61303205'],
+    [/\b(PINTURA|ESTUCO|VINILO|SELLADOR|ESMALTE|ANTICORROSIV|THINNER|LACA|ACABADO)/, '61303211'],
+    [/\b(CEMENTO|VARILLA|HIERRO|ARENA|TRITURADO|GRAVA|BLOQUE|LADRILLO|ALAMBRE NEGRO|ALAMBRE RECOCIDO|MALLA ELECTRO|CONCRETO|MORTERO|PUNTILLA|FORMALETA|ESTRIBO|PERFIL|LAMINA|ANGULO|PLATINA|SOLDADURA|ELECTRODO|ADITIVO|PLASTIFICANTE)/, '61303209'],
+    [/\b(CLORO|ACIDO|ALGUICIDA|CLARIFICADOR|QUIMIC|HIPOCLORITO|PH)/, '61303207'],
+    [/\b(TALADRO|PULIDORA|DISCO|BROCA|PALA|CARRETILLA|MARTILLO|NIVEL|PALUSTRE|LLANA|SEGUETA|HERRAMIENTA|ESCALERA|MEZCLADORA|VIBRADOR|BOMBA)/, '61303202'],
+    [/\b(ALQUILER)/, '61303201'],
+    [/\b(ACPM|GASOLINA|DIESEL|COMBUSTIBLE)/, '51953501'],
+    [/\b(FLETE|TRANSPORTE|ACARREO|DOMICILIO)/, '61303106'],
+  ];
+  function cuentaItem(desc, deClaude, deHist) {
+    const k = claveItem(desc), apr = (F.d.apr && F.d.apr.items) || {};
+    if (apr[k] && CUENTAS.has(apr[k])) return { cuenta: apr[k], por: 'Lo escogiste antes para este ítem' };
+    // Parecido: comparte 2 o más palabras con un ítem que ya escogiste
+    const p = new Set(palabrasI(desc)); let mejor = null, pts = 1;
+    for (const [kk, c] of Object.entries(apr)) { const n = kk.split(' ').filter((w) => p.has(w)).length; if (n > pts && CUENTAS.has(c)) { pts = n; mejor = c; } }
+    if (mejor) return { cuenta: mejor, por: 'Parecido a uno que escogiste antes' };
+    const t = ' ' + normI(desc);
+    for (const [re, c] of REGLAS) if (re.test(t) && CUENTAS.has(c)) return { cuenta: c, por: 'Por lo que dice el ítem' };
+    if (deClaude && CUENTAS.has(deClaude)) return { cuenta: deClaude, por: 'Propuesta de la lectura de la factura' };
+    return { cuenta: deHist || '', por: deHist ? 'La cuenta más usada con este proveedor' : '' };
+  }
+  // Renglones desde los ítems leídos de la factura (y ajuste de centavos o descuentos frente al total de la DIAN)
+  function renglonesDeItems(doc, r, s) {
+    const fact = factDe(doc);
+    const l = r.items.map((it) => {
+      const sg = cuentaItem(it.descripcion, it.cuenta, s.cuenta);
+      const pct = Number(it.iva_pct) || 0;
+      return { cuenta: sg.cuenta, por: sg.por, item: it.descripcion, descripcion: `${fact} ${it.cantidad && it.cantidad !== 1 ? it.cantidad + ' ' : ''}${it.descripcion}`.slice(0, 120), auto: false, base: r2(it.valor_sin_iva), iva: pct ? idIVA(pct >= 18 ? 19 : pct) : 0 };
+    }).filter((x) => x.base > 0);
+    if (!l.length) return { lineas: [], nota: 'La factura no trae renglones con valor.' };
+    const tot = suma(l, (x) => x.base + (x.iva ? r2(x.base * pctIVA(x.iva) / 100) : 0));
+    const dif = r2(doc.tot - tot);
+    let nota = '';
+    if (Math.abs(dif) > 1 && Math.abs(dif) <= doc.tot * 0.03) {
+      const g = l.reduce((a, b) => (b.base > a.base ? b : a));
+      const aj = r2(dif / (1 + (g.iva ? pctIVA(g.iva) / 100 : 0)));
+      g.base = r2(g.base + aj);
+      nota = `Los ítems sumaban ${fmt(tot)} y la DIAN dice ${fmt(doc.tot)}: ajusté ${fmt(aj)} en el renglón más grande (redondeos, descuentos o fletes).`;
+    } else if (Math.abs(dif) > 1) nota = `Los ítems suman ${fmt(tot)} y la DIAN dice ${fmt(doc.tot)}. Revisa los valores antes de enviar.`;
+    return { lineas: l, nota };
+  }
   // Descripción como la usa ODESA en Siigo: número de la factura y nombre de la cuenta ("C-2331814 Transporte terrestre")
   const factDe = (doc) => { const p = doc.p || (String(doc.f).match(/^[A-Z]+/i) || [''])[0]; const n = dig(doc.f) || doc.f; return p ? `${p}-${n}` : n; };
   const descDe = (doc, cuenta, sinIva) => `${factDe(doc)} ${((CUENTAS.get(String(cuenta)) || {}).nombre || 'Compra')}${sinIva ? ' (sin IVA)' : ''}`.slice(0, 120);
@@ -318,6 +449,9 @@
     const forma0 = prev ? prev.pago.id : (s.pago && formas.some((f) => f.id === s.pago) ? s.pago : (credito || {}).id);
     const cc0 = prev ? prev.cc : (cu.pago && cu.pago.cc) || s.cc || '';
     const rets0 = prev ? prev.retenciones.map((r) => r.id) : s.rets;
+    // Facturas de meses anteriores casi siempre ya están pagadas; se recuerda lo último escogido en cada mes
+    const mesDoc = (doc.d || '').slice(0, 7);
+    const pagada0 = prev ? !prev.proveedores : (F.pagadaMes || {})[mesDoc] != null ? F.pagadaMes[mesDoc] : mesDoc < todayISO().slice(0, 7);
     $('#fcomp-dlg-titulo').textContent = `Registrar compra: ${doc.n}`;
     $('#fcomp-dlg-res').innerHTML = `
       <p class="proy-nota">Factura <b>${esc(doc.p ? doc.p + '-' : '')}${esc(doc.f)}</b> · NIT ${esc(doc.nit)} · emitida el ${esc(fmtDate(doc.d))} · ${doc.fp === '2' ? 'a crédito' : doc.fp === '1' ? 'de contado' : ''} según la DIAN · <b>Total ${fmt(doc.tot)}</b> (IVA ${fmt(doc.iva)}${doc.otros ? ', otros impuestos ' + fmt(doc.otros) : ''}).</p>
@@ -329,8 +463,11 @@
         <div class="field"><label for="fr-forma">Forma de pago</label><select id="fr-forma">${[usadas, otras].map((g, i) => { const o = g.map((f) => `<option value="${f.id}"${f.id === forma0 ? ' selected' : ''}>${esc(f.nombre)}${f.vence ? ' (queda por pagar)' : ''}</option>`).join(''); return i && usadas.length && o ? `<optgroup label="Otras formas de pago de Siigo">${o}</optgroup>` : o; }).join('')}</select></div>
         <div class="field" id="fr-vence-w"><label for="fr-vence">Vence</label><input id="fr-vence" type="date" value="${esc(prev ? prev.vence : masDias(doc.d, 30))}"></div>
         <div class="field"><label for="fr-cc">Obra (centro de costo)</label><input id="fr-cc" list="fr-ccs" autocomplete="off" value="${esc(cc0 ? C().ccTexto(cc0) : '')}" placeholder="Ej. 100068-1 · LAGOMAR"><datalist id="fr-ccs">${centros.map((c) => `<option value="${esc(c.codigo + ' · ' + c.nombre)}"></option>`).join('')}</datalist><span class="hint" id="fr-cc-hint"></span></div>
-        <div class="field full"><label for="fr-pdf">La factura en PDF (opcional)</label><input id="fr-pdf" type="file" accept="application/pdf,image/*"><span class="hint">Si la adjuntas, la leo para buscar la obra y queda guardada con el pago en Proveedores.</span></div>
       </div>
+      <section class="proy-caja"><h3>Ítems de la factura</h3>
+        <div class="field"><label for="fr-pdf">La factura: PDF, imagen, XML o el ZIP del proveedor</label><input id="fr-pdf" type="file" accept="application/pdf,image/*,.xml,.zip,text/xml,application/zip"></div>
+        <p class="proy-nota" id="fr-items-msg">${doc.x ? 'Leyendo la factura descargada de la DIAN…' : cu.pago && cu.pago.archivo ? 'Leyendo la factura que ya está en Cuadra…' : 'Esta factura aún no está descargada: usa "Traer facturas de la DIAN", o adjúntala aquí (XML o ZIP del proveedor, exacto; o PDF, que se lee con Claude).'}</p>
+        ${doc.pdf || (cu.pago && cu.pago.archivo) ? `<button class="btn sm" type="button" data-fc="ver" data-cufe="${esc(cufe)}">Ver la factura (PDF)</button>` : ''}</section>
       <section class="proy-caja"><h3>Renglones</h3><p class="proy-nota">La cuenta define el rubro del informe de proyectos. Solo aparecen cuentas que tienen rubro.</p>
         <datalist id="fr-ctas">${[...CUENTAS.entries()].map(([c]) => `<option value="${esc(ctaTxt(c))}"></option>`).join('')}</datalist>
         <div id="fr-lineas"></div><button class="btn sm" type="button" data-fr="mas">+ Agregar renglón</button></section>
@@ -341,18 +478,40 @@
       </div>
       <section class="proy-caja" id="fr-ants-w"><h3>Anticipos por cruzar</h3>${R.ants.length ? R.ants.map((x) => `<label class="check" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input type="checkbox" data-frant="${esc(x.id)}"> ${esc(x.factura || 'Anticipo')} · pagado ${esc(fmtDate(x.fecha || ''))} · saldo ${fmt(x.saldo)}${x.prefijo && x.numero ? '' : ' <span class="neg">(sin prefijo/número)</span>'} <span>Cruzar</span><input data-frantv="${esc(x.id)}" inputmode="numeric" style="width:130px" value="${esc(x.saldo.toLocaleString('es-CO'))}"></label>`).join('') : '<p class="proy-nota">Este proveedor no tiene anticipos pagados por Cuadra pendientes de cruzar.</p>'}
         <details><summary>Cruzar un anticipo que está solo en Siigo</summary><div class="grid"><div class="field"><label for="fr-antm-doc">Documento del anticipo (prefijo-número)</label><input id="fr-antm-doc" placeholder="Ej. CC-2410"></div><div class="field"><label for="fr-antm-val">Valor a cruzar</label><input id="fr-antm-val" inputmode="numeric"></div></div></details></section>
-      <label class="check" id="fr-prov-w"><input type="checkbox" id="fr-prov"${cu.pago ? ' disabled' : ' checked'}> Pasarla a Proveedores (por revisar) para pagarla por Cuadra</label>
+      <section class="proy-caja" id="fr-prov-w"><h3>¿Ya está pagada?</h3>${cu.pago ? '<p class="proy-nota">Ya está en Proveedores: no se crea otro pago.</p>' : `
+        <label class="check"><input type="radio" name="fr-pagada" value="si"${pagada0 ? ' checked' : ''}> <span><b>Ya está pagada:</b> queda en Siigo a crédito proveedores y <b>no</b> pasa a Proveedores en Cuadra (el pago ya salió o se registra aparte).</span></label>
+        <label class="check"><input type="radio" name="fr-pagada" value="no"${pagada0 ? '' : ' checked'}> <span><b>Pendiente de pago:</b> pasa a Proveedores (por revisar) para aprobarla y pagarla por Cuadra.</span></label>`}</section>
       <div id="fr-resumen"></div>
       <p class="proy-aviso" id="fr-err" hidden></p>
       <div class="form-actions"><button class="btn" type="button" data-fr="ignorar">No registrar</button><button class="btn primary" type="button" data-fr="enviar">Registrar en Siigo</button></div>`;
     pintarLineas(); resumen();
     if (!$('#dlg-fcomp').open) $('#dlg-fcomp').showModal();
+    // La factura que ya se subió en Proveedores: se leen sus ítems sin pedirla otra vez
+    if (!prev && doc.x) archivoDian(doc, 'xml').then((f) => (f && R.cufe === cufe ? leerItems(f, false) : null)).catch(() => { const m = $('#fr-items-msg'); if (m) m.textContent = 'No pude abrir la factura descargada: adjúntala.'; });
+    else if (!prev && cu.pago && cu.pago.archivo) C().leerArchivo(cu.pago).then((f) => (f && R.cufe === cufe ? leerItems(f, false) : null)).catch(() => { const m = $('#fr-items-msg'); if (m) m.textContent = 'No pude abrir la factura guardada en Cuadra: adjúntala.'; });
+  }
+  async function leerItems(file, guardar) {
+    const doc = F.d.docs[R.cufe], cufe = R.cufe, msg = $('#fr-items-msg');
+    if (guardar) R.archivo = file;
+    msg.textContent = 'Leyendo los ítems de la factura…';
+    try {
+      const cuentas = [...CUENTAS.entries()].map(([c, x]) => [c, x.nombre, titulo(x.rubro)]);
+      const r = await Lector.items(file, C().claveClaude(), cuentas);
+      if (R.cufe !== cufe) return;
+      const { lineas, nota } = renglonesDeItems(doc, r, sugerido(doc));
+      if (lineas.length) { R.lineas = lineas; pintarLineas(); resumen(); }
+      msg.textContent = `${plural(lineas.length, 'ítem leído', 'ítems leídos')} ${r.fuente === 'xml' ? 'del XML (exacto)' : 'con Claude'}. Revisa la cuenta de cada uno: lo que cambies se recuerda para la próxima. ${nota}`;
+    } catch (e) { if (R.cufe === cufe) msg.textContent = (e && e.message) || 'No pude leer los ítems.'; }
+    // Obra: si la factura menciona el nombre de una obra
+    if (/pdf/i.test(file.type || file.name) && !$('#fr-cc').value.trim()) {
+      try { const txt = await leerPDF(file); const cc = txt ? C().matchCentro(txt) : ''; if (cc && R.cufe === cufe) { $('#fr-cc').value = C().ccTexto(cc); $('#fr-cc-hint').textContent = `La factura menciona ${C().ccTexto(cc)}: la puse como obra.`; } } catch (e) { /* sin texto */ }
+    }
   }
   function pintarLineas() {
     $('#fr-lineas').innerHTML = R.lineas.map((l, i) => {
       const rb = rubroDe(l.cuenta);
       return `<div class="fr-linea" data-i="${i}">
-        <div class="field"><label>Cuenta</label><input data-frl="cuenta" list="fr-ctas" value="${esc(l.cuenta ? ctaTxt(l.cuenta) : '')}" placeholder="Escribe el código o el nombre" autocomplete="off"><span class="hint ${l.cuenta && !rb ? 'neg' : ''}">${l.cuenta ? (rb ? 'Rubro: ' + esc(titulo(rb)) : 'Esta cuenta no tiene rubro en el informe de proyectos: caería en "Sin clasificar".') : ''}</span></div>
+        <div class="field"><label>Cuenta</label><input data-frl="cuenta" list="fr-ctas" value="${esc(l.cuenta ? ctaTxt(l.cuenta) : '')}" placeholder="Escribe el código o el nombre" autocomplete="off"><span class="hint ${l.cuenta && !rb ? 'neg' : ''}">${l.cuenta ? (rb ? 'Rubro: ' + esc(titulo(rb)) : 'Esta cuenta no tiene rubro en el informe de proyectos: caería en "Sin clasificar".') : 'Escoge la cuenta de este ítem.'}${l.por && l.cuenta ? ' · ' + esc(l.por) : ''}</span></div>
         <div class="field"><label>Descripción</label><input data-frl="descripcion" value="${esc(l.descripcion)}"></div>
         <div class="field"><label>Valor antes de IVA</label><input data-frl="base" inputmode="decimal" value="${esc(l.base.toLocaleString('es-CO'))}"></div>
         <div class="field"><label>IVA</label><select data-frl="iva"><option value="0">Sin IVA</option>${taxes('IVA').filter((t) => t.pct > 0 && [9412, 9577].includes(t.id)).map((t) => `<option value="${t.id}"${Number(l.iva) === t.id ? ' selected' : ''}>${esc(t.nombre)}</option>`).join('')}</select></div>
@@ -375,9 +534,10 @@
       <tr><td><b>Neto a pagar al proveedor</b></td><td class="n"><b>${fmt(c.total)}</b></td></tr>
       ${forma.vence ? c.cruces.map((x) => `<tr><td>− Anticipo ${esc(x.factura || '')} cruzado</td><td class="n">${fmt(x.valor)}</td></tr>`).join('') : ''}
       ${forma.vence && c.cruces.length ? `<tr><td><b>Queda por pagar</b></td><td class="n"><b>${fmt(porPagar)}</b></td></tr>` : ''}
-    </tbody></table></div><p class="proy-nota">En Siigo: factura de compra a ${esc(forma.nombre || '—')}${forma.vence ? ` (22050501, vence ${esc(fmtDate($('#fr-vence').value || ''))})` : ''}${c.cruces.length && forma.vence ? ' y un comprobante 20 que cruza el anticipo' : ''}.</p>`;
+    </tbody></table></div><p class="proy-nota">En Siigo: factura de compra a ${esc(forma.nombre || '—')}${forma.vence ? ` (22050501, vence ${esc(fmtDate($('#fr-vence').value || ''))})` : ''}${c.cruces.length && forma.vence ? ' y un comprobante 20 que cruza el anticipo' : ''}.${forma.vence ? (document.querySelector('input[name="fr-pagada"]') ? (pendientePago() ? ' Pasa a Proveedores para pagarla por Cuadra.' : ' No pasa a Proveedores (ya está pagada).') : '') : ''}</p>`;
     const b = document.querySelector('[data-fr="enviar"]'); if (b) { delete b.dataset.sure; b.textContent = 'Registrar en Siigo'; }
   }
+  const pendientePago = () => { const x = document.querySelector('input[name="fr-pagada"]:checked'); return !!x && x.value === 'no'; };
   const errR = (m) => { const e = $('#fr-err'); if (e) { e.textContent = m || ''; e.hidden = !m; } };
   async function leerPDF(file) {
     if (typeof Lector === 'undefined' || !Lector.pdfjs || !/pdf/i.test(file.type || file.name)) return '';
@@ -416,7 +576,7 @@
         cufe: R.cufe, fecha, vence: forma.vence ? vence : fecha, nit: doc.nit, nombre: doc.n, prefijo: String(pref).toUpperCase().slice(0, 6), numero: dig(doc.f) || doc.f, cc,
         totalDian: doc.tot, items: R.lineas.map((l) => ({ cuenta: l.cuenta, descripcion: l.descripcion, base: r2(l.base), iva: Number(l.iva) || 0 })),
         retenciones: c.rets.map((r) => ({ id: r.id, nombre: r.nombre, pct: r.pct, tipo: r.tipo })), pago: { id: forma.id, nombre: forma.nombre, vence: !!forma.vence },
-        proveedores: !!(forma.vence && $('#fr-prov').checked && !$('#fr-prov').disabled), ...(adjunto ? { adjunto } : {}),
+        proveedores: !!(forma.vence && pendientePago()), ...(adjunto ? { adjunto } : {}),
       };
       const id = await C().encolar({ marca: 'fc', tipo: 'FC', fc, cruces: forma.vence ? c.cruces.map((x) => ({ anticipoId: x.anticipoId, prefijo: x.prefijo, numero: x.numero, vence: x.vence, valor: x.valor })) : [] });
       // Lo aprendido para este proveedor (manda sobre el historial de Siigo)
@@ -425,8 +585,12 @@
         if (r && r.estado === 'siigo') return false;
         d.reg[R.cufe] = { estado: 'enviando', envioId: id, en: new Date().toISOString(), por: A.uid, envio: fc };
         d.apr = d.apr || {}; d.apr[doc.nit] = { cuenta: fc.items[0].cuenta, cc, rets: fc.retenciones.map((r) => r.id), pago: forma.id, en: new Date().toISOString().slice(0, 10) };
+        // Cuenta escogida para cada ítem: la próxima vez que llegue el mismo producto se propone sola
+        d.apr.items = d.apr.items || {};
+        for (const l of R.lineas) { const k = l.item ? claveItem(l.item) : ''; if (k) d.apr.items[k] = l.cuenta; }
         delete d.ign[R.cufe];
       });
+      if (document.querySelector('input[name="fr-pagada"]:checked')) { F.pagadaMes = F.pagadaMes || {}; F.pagadaMes[(doc.d || '').slice(0, 7)] = !pendientePago(); }
       await refrescarEnvios();
       $('#dlg-fcomp').close();
       toast('Factura en cola: el computador de la oficina la crea en Siigo en 1–2 minutos.');
@@ -453,6 +617,8 @@
       const a = b.dataset.fc;
       if (a === 'cargar') { $('#fc-file').click(); return; }
       if (a === 'registrar') { abrirRegistro(b.dataset.cufe); return; }
+      if (a === 'dian') { abrirDescarga(); return; }
+      if (a === 'ver') { verFactura(b.dataset.cufe); return; }
       if (a === 'designorar') { await mutar((d) => { delete d.ign[b.dataset.cufe]; }); render(); return; }
       if (a === 'pasar') { b.disabled = true; try { await pasar([b.dataset.cufe]); } catch (e) { toast(msgGitHub(e)); } b.disabled = false; return; }
       if (a === 'pasar-todas') {
@@ -462,6 +628,8 @@
         return;
       }
     }
+    const fd = ev.target.closest('[data-fd="pedir"]');
+    if (fd) { await pedirDescarga(fd); return; }
     const r = ev.target.closest('[data-fr]');
     if (r && $('#dlg-fcomp').contains(r)) {
       const a = r.dataset.fr;
@@ -488,21 +656,13 @@
     if (!$('#dlg-fcomp').contains(t)) return;
     if (t.dataset.frl) {
       const i = Number(t.closest('.fr-linea').dataset.i), l = R.lineas[i];
-      if (t.dataset.frl === 'cuenta') { l.cuenta = (t.value.match(/^\s*(\d{8})/) || [])[1] || ''; if (l.auto) l.descripcion = descDe(F.d.docs[R.cufe], l.cuenta, l.sin); pintarLineas(); }
+      if (t.dataset.frl === 'cuenta') { l.cuenta = (t.value.match(/^\s*(\d{8})/) || [])[1] || ''; l.por = l.cuenta ? 'Escogida por ti' : ''; if (l.auto) l.descripcion = descDe(F.d.docs[R.cufe], l.cuenta, l.sin); pintarLineas(); }
       else if (t.dataset.frl === 'base') { l.base = r2(A.parseMonto ? A.parseMonto(t.value) : Number(t.value.replace(/\./g, '').replace(',', '.'))); t.value = l.base.toLocaleString('es-CO'); }
       else if (t.dataset.frl === 'iva') l.iva = Number(t.value) || 0;
       else { l.descripcion = t.value; l.auto = false; }
       resumen(); return;
     }
-    if (t.id === 'fr-pdf' && t.files[0]) {
-      try {
-        const txt = await leerPDF(t.files[0]);
-        const cc = txt ? C().matchCentro(txt) : '';
-        $('#fr-cc-hint').textContent = cc ? `La factura menciona ${C().ccTexto(cc)}: la puse como obra.` : txt ? 'Leí la factura pero no menciona una obra que reconozca.' : '';
-        if (cc) $('#fr-cc').value = C().ccTexto(cc);
-      } catch (e) { $('#fr-cc-hint').textContent = 'No pude leer el PDF; escoge la obra.'; }
-      return;
-    }
+    if (t.id === 'fr-pdf' && t.files[0]) { await leerItems(t.files[0], true); return; }
     resumen();
   });
   document.addEventListener('input', (ev) => {
@@ -510,5 +670,5 @@
     if ($('#dlg-fcomp').contains(ev.target) && /^fr-(antm|rf|ica|riva)/.test(ev.target.id || '') || ev.target.dataset.frantv) resumen();
   });
 
-  window.FCOMP = { abrir, _leerExcel: leerExcel };
+  window.FCOMP = { abrir, recargar: async () => { await leer(true); render(); }, _leerExcel: leerExcel };
 })();

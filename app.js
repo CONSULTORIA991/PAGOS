@@ -2940,6 +2940,9 @@
     ccTexto, ccDeInput, matchCentro, partirFactura,
     siigoListo: () => !!(conf && conf.siigoApi),
     subirArchivo: (file) => subirFactura(file),
+    // La factura que ya se subió en Proveedores (para leer sus ítems)
+    leerArchivo: (p) => (p && p.archivo ? leerFacturaGuardada(p) : Promise.resolve(null)),
+    claveClaude: () => (conf && conf.claudeKey) || '',
     envios: () => BancoApi.envios(),
     // Anticipos pagados por Cuadra a este proveedor que aún tienen saldo por cruzar
     anticipos: (nit) => anticiposDe({ nit }).filter((x) => !x.manual).map((x) => ({ id: x.a.id, factura: x.a.factura, prefijo: x.prefijo, numero: x.numero, saldo: x.saldo, fecha: fechaPagoDe(x.a) || '', vence: x.a.vence || fechaPagoDe(x.a) || '' })),
