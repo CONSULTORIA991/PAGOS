@@ -227,10 +227,13 @@
   const movDe = (id) => { for (const l of Object.values(K.conc.movs || {})) { const m = l.find((x) => x.id === id); if (m) return m; } return null; };
   const ctaActual = () => (K.conc.cuentas || []).find((c) => c.id === K.cuenta);
   const palabras = (s) => new Set(String(s || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/^PAGO (A|DE) (PROVE?|NOMIN)\s*/, '').split(/[^A-Z0-9]+/).filter((w) => w.length > 2 && !['SAS', 'LTDA', 'S.A.S', 'DEL', 'LOS', 'LAS'].includes(w)));
+  // Proveedores conocidos: los de Cuadra y los que tienen facturas pendientes en Siigo
+  const provConocidos = () => { const m = new Map(B().proveedores().map((x) => [x.nit, x])); for (const [nit, nombre] of Object.entries((K.siigo && K.siigo.nombresPorPagar) || {})) if (nombre && !m.has(nit)) m.set(nit, { nit, nombre }); return [...m.values()]; };
   function provSugerido(m) {
     const p = palabras(m.desc); let mejor = null, pts = 0;
-    for (const x of B().proveedores()) { let n = 0; for (const w of palabras(x.nombre)) if (p.has(w)) n++; if (n > pts) { pts = n; mejor = x; } }
-    return mejor;
+    for (const x of provConocidos()) { let n = 0; for (const w of palabras(x.nombre)) if (p.has(w)) n++; if (n > pts) { pts = n; mejor = x; } }
+    // Con un solo apellido en común no basta: si el banco trae 2 o más palabras, deben coincidir 2
+    return pts >= Math.min(2, p.size) ? mejor : null;
   }
   function abrirRegistro(movId) {
     const m = movDe(movId), cta = ctaActual();
@@ -240,10 +243,12 @@
     const centros = B().centros();
     // Lo aprendido manda; si no hay, se sugiere por el tipo de movimiento y el nombre que trae el banco
     const ap = aprendidoDe(m.desc);
-    const tipo0 = ap ? tipoDeCuenta(ap.cuenta) : sug.k === 'nomina' ? 'nomina' : 'factura';
+    let tipo0 = ap ? tipoDeCuenta(ap.cuenta) : sug.k === 'nomina' ? 'nomina' : 'factura';
     const ter0 = ap ? { nombre: ap.nombre, nit: ap.nit } : (tipo0 === 'nomina' ? empSugerido(m) : provSugerido(m)) || {};
+    // Si el proveedor tiene en Siigo facturas pendientes que suman lo pagado, es pago de factura (aunque antes se usara anticipo)
+    if (sale && ter0.nit && tipo0 === 'anticipo' && combinacion(porPagarDe(ter0.nit), v).length) tipo0 = 'factura';
     const cc0 = ap && ap.cc ? (centros.find((c) => c.codigo === ap.cc) ? ap.cc + ' · ' + centros.find((c) => c.codigo === ap.cc).nombre : ap.cc) : tipo0 === 'nomina' ? 'ADMON-1' : '';
-    const terceros = [...(K.emps || []), ...B().proveedores()];
+    const terceros = [...(K.emps || []), ...provConocidos()];
     const listo = B().siigoListo();
     $('#conc-dlg-titulo').textContent = `Registrar: ${m.desc}`;
     $('#conc-dlg-res').innerHTML = `<p class="proy-nota">${esc(cta.nombre)} · ${esc(fmtDate(m.fecha))} · <b class="${sale ? 'neg' : 'pos'}">${fmt(m.valor)}</b>. ${esc(sug.t)}.</p>
@@ -257,8 +262,9 @@
           <div class="field" data-solo="otra"><label for="cr-cuenta">Cuenta contable (débito)</label><input id="cr-cuenta" inputmode="numeric" value="${esc(ap && tipo0 === 'otra' ? ap.cuenta : '')}" placeholder="Ej. 23700501"></div>
           <div class="field"><label for="cr-prov" id="cr-prov-lbl">Proveedor</label><input id="cr-prov" list="cr-provs" value="${esc(ter0.nombre || '')}" autocomplete="off"><datalist id="cr-provs">${terceros.map((x) => `<option value="${esc(x.nombre)}">${esc(x.nit)}</option>`).join('')}</datalist></div>
           <div class="field"><label for="cr-nit">NIT o cédula</label><input id="cr-nit" inputmode="numeric" value="${esc(ter0.nit || '')}" autocomplete="off"></div>
-          <div class="field" data-solo="factura"><label for="cr-fact">Factura (prefijo-número)</label><input id="cr-fact" placeholder="Ej. FE-2210" autocomplete="off"></div>
-          <div class="field" data-solo="factura"><label for="cr-vence">Vencimiento de la factura</label><input id="cr-vence" type="date" value="${esc(m.fecha)}"></div>
+          <div class="full" data-solo="factura" id="cr-fcs"></div>
+          <div class="field" data-solo="factura" data-manual><label for="cr-fact">Factura (prefijo-número)</label><input id="cr-fact" placeholder="Ej. FE-2210" autocomplete="off"></div>
+          <div class="field" data-solo="factura" data-manual><label for="cr-vence">Vencimiento de la factura</label><input id="cr-vence" type="date" value="${esc(m.fecha)}"></div>
           <div class="field"><label for="cr-cc">Obra (centro de costo)</label><input id="cr-cc" list="cr-ccs" autocomplete="off" value="${esc(cc0)}" placeholder="Ej. 100068-1 · LAGOMAR"><datalist id="cr-ccs">${centros.map((c) => `<option value="${esc(c.codigo + ' · ' + c.nombre)}"></option>`).join('')}</datalist></div>
           <div class="field full"><label for="cr-concepto">Concepto</label><input id="cr-concepto" value="${esc(m.desc)}"></div>
           <div class="field full"><label for="cr-sop">Soporte del pago (opcional)</label><input id="cr-sop" type="file" accept="application/pdf,image/*"></div>
@@ -273,14 +279,21 @@
       const t = $('#cr-tipo'); if (!t) return;
       const tp = t.value, [nom, cta0] = TIPOS_REG[tp];
       document.querySelectorAll('[data-solo]').forEach((x) => { x.hidden = x.dataset.solo !== tp; });
+      if (tp === 'factura') { const fcs = [...document.querySelectorAll('[data-fc]:checked')]; document.querySelectorAll('[data-manual]').forEach((x) => { x.hidden = fcs.length > 0; }); }
       $('#cr-prov-lbl').textContent = tp === 'nomina' ? 'Empleado' : tp === 'otra' ? 'Tercero' : 'Proveedor';
       if (tp === 'nomina' && !$('#cr-cc').value.trim()) $('#cr-cc').value = 'ADMON-1';
       const deb = tp === 'otra' ? ($('#cr-cuenta').value.trim() || '(escribe la cuenta)') : cta0;
       $('#cr-asi').innerHTML = `Así queda en Siigo: débito <b>${esc(deb)}</b>${tp === 'factura' ? ' cruzando la factura' : tp === 'anticipo' ? ` (documento CC-${docAnticipo(m.fecha)})` : ''} · crédito <b>${esc((cta.siigo || [])[0] || '')} ${esc(cta.nombre)}</b> · ${fmt(v)} · tercero: el ${tp === 'nomina' ? 'empleado' : 'mismo de arriba'}.`;
     };
-    const t = $('#cr-tipo'); if (t) { t.addEventListener('change', asiento); asiento(); }
+    const t = $('#cr-tipo'); if (t) { t.addEventListener('change', asiento); }
     const cu = $('#cr-cuenta'); if (cu) cu.addEventListener('input', asiento);
-    const pv = $('#cr-prov'); if (pv) pv.addEventListener('change', () => { const x = terceros.find((y) => y.nombre === pv.value); if (x) $('#cr-nit').value = x.nit; });
+    // Facturas pendientes en Siigo del proveedor: se pintan al abrir y cada vez que cambia el NIT
+    const fcBox = $('#cr-fcs');
+    const pintar = () => { if (fcBox) { pintarFacturas(fcBox, $('#cr-nit').value.replace(/\D/g, ''), v, m.fecha); asiento(); } };
+    if (fcBox) fcBox.addEventListener('change', () => { resumenFacturas(fcBox, v); asiento(); });
+    const pv = $('#cr-prov'); if (pv) pv.addEventListener('change', () => { const x = terceros.find((y) => y.nombre === pv.value); if (x) { $('#cr-nit').value = x.nit; pintar(); } });
+    const ni = $('#cr-nit'); if (ni) ni.addEventListener('change', pintar);
+    pintar(); asiento();
     if (!$('#dlg-conc').open) $('#dlg-conc').showModal();
   }
   const errReg = (msg) => { const e = $('#cr-err'); if (e) { e.textContent = msg; e.hidden = !msg; } };
@@ -290,6 +303,65 @@
     await marcarReg([movId], { tipo: 'existente', pagoId, envioId: r.envioId || '', error: r.error || '', texto: r.caja ? 'Caja menor marcada como reembolsada (se sube con el comprobante 14)' : 'Pago de Cuadra marcado como pagado' });
     terminarReg(r.error);
   }
+  // ---------- cuentas por pagar de Siigo (facturas de compra con saldo) ----------
+  // fila: [nit, FC, prefijo, número, fecha, vence, total, saldo, centro]
+  function porPagarDe(nit) {
+    const usadas = new Set(Object.values(K.conc.reg || {}).flatMap((g) => g.fcs || []));
+    return ((K.siigo && K.siigo.porPagar) || []).filter((x) => x[0] === nit && !usadas.has(x[1])).sort((a, b) => (a[4] < b[4] ? 1 : -1));
+  }
+  // Facturas cuyo saldo suma lo que salió del banco (una sola, o hasta 4 entre las 30 más recientes)
+  function combinacion(lista, v) {
+    const cerca = (s, n) => Math.abs(s - v) <= 1 + n * 0.5;
+    const una = lista.find((x) => cerca(x[7], 1));
+    if (una) return [una[1]];
+    const l = lista.slice(0, 30);
+    for (let k = 2; k <= 4; k++) {
+      const idx = [];
+      const buscar = (ini, s) => {
+        if (idx.length === k) return cerca(s, k);
+        for (let i = ini; i < l.length; i++) { if (s + l[i][7] > v + 5) continue; idx.push(i); if (buscar(i + 1, s + l[i][7])) return true; idx.pop(); }
+        return false;
+      };
+      if (buscar(0, 0)) return idx.map((i) => l[i][1]);
+    }
+    return [];
+  }
+  // Si no hay exacta: las facturas (de las 15 más recientes) que suman un poco MÁS de lo pagado (hasta 4 %):
+  // casi siempre son las retenciones (fuente, ICA) que se descuentan al pagar y no están en la factura
+  function cercana(lista, v) {
+    const l = lista.slice(0, 15); let mejor = null;
+    for (let mask = 1; mask < (1 << l.length); mask++) {
+      let s = 0, n = 0;
+      for (let i = 0; i < l.length; i++) if (mask & (1 << i)) { s += l[i][7]; n++; }
+      if (n > 6 || s < v || s > v * 1.04) continue;
+      if (!mejor || s - v < mejor.s - v) mejor = { s, ids: l.filter((x, i) => mask & (1 << i)).map((x) => x[1]) };
+    }
+    return mejor;
+  }
+  function pintarFacturas(box, nit, v, fecha) {
+    const lista = nit ? porPagarDe(nit) : [];
+    if (!nit) { box.innerHTML = ''; return; }
+    if (!lista.length) { box.innerHTML = `<p class="proy-nota">Este proveedor no tiene facturas de compra con saldo en Siigo${K.siigo && K.siigo.comprasEn ? ` (datos del ${esc(new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(K.siigo.comprasEn)))})` : ''}. Escribe la factura a mano o regístralo como anticipo.</p>`; return; }
+    const sel = new Set(combinacion(lista, v));
+    const cerca = sel.size ? null : cercana(lista, v);
+    box.innerHTML = `<fieldset class="conc-fcs"><legend>Facturas pendientes en Siigo · ${lista.length}</legend>
+      ${sel.size ? `<p class="proy-nota">${sel.size === 1 ? 'Esta factura tiene el mismo saldo que salió del banco' : `Estas ${sel.size} facturas suman lo que salió del banco`}: ya las dejé marcadas.</p>`
+        : cerca ? `<p class="proy-aviso">Ninguna da exacto. Las más parecidas son ${cerca.ids.length === 1 ? 'una factura' : cerca.ids.length + ' facturas'} que suman ${fmt(cerca.s)}: ${fmt(cerca.s - v)} más de lo que salió del banco (${(Math.round((cerca.s - v) / cerca.s * 1000) / 10).toLocaleString('es-CO')} %, casi siempre las retenciones). Las dejé marcadas: se pagan completas menos la última, que queda con ${fmt(cerca.s - v)} pendientes en Siigo para cruzar con la retención.</p>`
+          : '<p class="proy-nota">Ninguna combinación da exacto: marca las que se pagaron. Si marcas de más, la última queda como abono parcial.</p>'}
+      <div class="conc-fcs-l">${lista.slice(0, 60).map((x) => `<label><input type="checkbox" data-fc="${esc(x[1])}" data-fc-num="${esc((x[2] ? x[2] + '-' : '') + x[3])}" data-fc-vence="${esc(x[5])}" data-fc-saldo="${x[7]}" data-fc-cc="${esc(x[8])}"${sel.has(x[1]) || (cerca && cerca.ids.includes(x[1])) ? ' checked' : ''}>
+        <span><b>${esc((x[2] ? x[2] + '-' : '') + x[3])}</b> <span class="sub">· ${esc(x[1])} · ${esc(fmtDate(x[4]))}${x[5] < fecha ? ' · vencida' : ''}${x[8] ? ' · ' + esc(x[8]) : ''}</span></span><b class="n">${fmt(x[7])}</b></label>`).join('')}</div>
+      <p class="proy-nota" id="cr-fcs-res"></p></fieldset>`;
+    resumenFacturas(box, v);
+  }
+  function resumenFacturas(box, v) {
+    const ch = [...box.querySelectorAll('[data-fc]:checked')], tot = ch.reduce((s, x) => s + Number(x.dataset.fcSaldo), 0);
+    const r = box.querySelector('#cr-fcs-res'); if (!r) return;
+    const dif = Math.round(v - tot);
+    r.innerHTML = !ch.length ? 'No has marcado facturas: se usará la factura escrita a mano.' : Math.abs(dif) <= 1 + ch.length * 0.5 ? `✓ ${ch.length} ${ch.length === 1 ? 'factura' : 'facturas'} por ${fmt(tot)}: cuadra con el banco.`
+      : dif > 0 ? `Marcadas ${fmt(tot)}: faltan ${fmt(dif)} para llegar a lo que salió del banco. Marca otra factura o registra la diferencia aparte como anticipo.`
+        : `Marcadas ${fmt(tot)}: sobran ${fmt(-dif)}. La última factura marcada quedará con un abono parcial.`;
+  }
+
   // Tipos de registro de una salida del banco: [nombre, cuenta débito]
   const TIPOS_REG = { factura: ['Pago de una factura (22050501)', '22050501 Proveedores'], anticipo: ['Anticipo a proveedor (13300501)', '13300501 Anticipos a proveedores'], nomina: ['Pago de nómina (25050501)', '25050501 Salarios por pagar'], otra: ['Otra cuenta', ''] };
   const tipoDeCuenta = (c) => ({ 22050501: 'factura', 13300501: 'anticipo', 25050501: 'nomina' }[c] || 'otra');
@@ -306,7 +378,25 @@
     const factura = $('#cr-fact').value.trim().toUpperCase(), vence = $('#cr-vence').value, cc = $('#cr-cc').value.trim(), concepto = $('#cr-concepto').value.trim() || m.desc;
     const cuentaOtra = ($('#cr-cuenta').value || '').replace(/\D/g, '');
     if (!nombre || nit.length < 5) return errReg(`Escribe el ${tipo === 'nomina' ? 'empleado' : 'tercero'} y su NIT o cédula.`);
-    if (tipo === 'factura' && !/^[A-Z0-9]{1,6}-?\d+$/.test(factura.replace(/\s+/g, ''))) return errReg('Escribe la factura con prefijo y número, por ejemplo FE-2210.');
+    // Facturas de Siigo marcadas: un pago por factura en la misma transferencia
+    const marcadas = tipo === 'factura' ? [...document.querySelectorAll('[data-fc]:checked')] : [];
+    if (marcadas.length) {
+      const v0 = Math.abs(m.valor), tot = marcadas.reduce((s, x) => s + Number(x.dataset.fcSaldo), 0);
+      if (v0 - tot > 1 + marcadas.length * 0.5) return errReg(`Las facturas marcadas suman ${fmt(tot)} y del banco salieron ${fmt(v0)}. Marca otra factura o registra la diferencia aparte como anticipo.`);
+      // Valores en pesos que sumen exacto lo del banco: la última absorbe el redondeo o el abono parcial
+      let resto = Math.round(v0);
+      const facturas = marcadas.map((x, i) => {
+        const val = i === marcadas.length - 1 ? resto : Math.min(Math.round(Number(x.dataset.fcSaldo)), resto);
+        resto -= val;
+        return { factura: x.dataset.fcNum, vence: x.dataset.fcVence, valor: val, cc: cc || x.dataset.fcCc, fc: x.dataset.fc };
+      }).filter((f) => f.valor > 0);
+      const file = $('#cr-sop').files[0] || null;
+      const r = await B().pagarFacturas({ proveedor: nombre, nit, concepto, fecha: m.fecha, movId, cuentaBanco: (cta.siigo || [])[0], cc }, facturas, file);
+      await marcarReg([movId], { tipo, pagoId: (r.ids || [])[0] || '', envioId: r.envioId || '', error: r.error || '', fcs: facturas.map((f) => f.fc), texto: `Pago de ${facturas.map((f) => f.factura).join(', ')} a ${nombre}` },
+        { desc: m.desc, cuenta: '22050501', nit, nombre, cc: cc.split('·')[0].trim() });
+      return terminarReg(r.error);
+    }
+    if (tipo === 'factura' && !/^[A-Z0-9]{1,6}-?\d+$/.test(factura.replace(/\s+/g, ''))) return errReg('Marca la factura de Siigo que se pagó o escríbela con prefijo y número, por ejemplo FE-2210.');
     if (tipo === 'otra' && !/^\d{6,10}$/.test(cuentaOtra)) return errReg('Escribe la cuenta contable (solo números, por ejemplo 23700501).');
     if (tipo === 'otra' && /^(22050501|23359501|13300501)$/.test(cuentaOtra)) return errReg('Esa cuenta cruza documentos: escoge "Pago de una factura" o "Anticipo".');
     const file = $('#cr-sop').files[0] || null;

@@ -2850,14 +2850,16 @@
     return n + 1;
   }
   // Deja en la cola de Siigo el comprobante de UN pago, con el crédito a la cuenta del banco de donde salió
-  async function encolarPagoBanco(id, cuentaBanco) {
-    const p = S.pagos.find((x) => x.id === id);
-    if (!p) return { error: 'No se encontró el pago.' };
+  // Varios pagos del mismo lote (misma transferencia) van en un comprobante con UN crédito al banco
+  async function encolarPagoBanco(ids, cuentaBanco) {
+    const lista = (Array.isArray(ids) ? ids : [ids]).map((id) => S.pagos.find((x) => x.id === id));
+    if (lista.some((p) => !p)) return { error: 'No se encontró el pago.' };
     if (!(conf && conf.siigoApi)) return { error: 'Faltan las credenciales de Siigo (Usuarios → Conexión con Siigo).' };
-    const f = filaSiigoDe(p);
-    if (f.errores.length) return { error: 'Para subirlo a Siigo falta: ' + f.errores.join(', ') + '. Complétalo en Pagos realizados → Exportar a Siigo.' };
+    const filas = lista.map(filaSiigoDe);
+    const err = [...new Set(filas.flatMap((f) => f.errores))];
+    if (err.length) return { error: 'Para subirlo a Siigo falta: ' + err.join(', ') + '. Complétalo en Pagos realizados → Exportar a Siigo.' };
     const sc = { ...siigoConf(), cuentaBanco: cuentaBanco || siigoConf().cuentaBanco };
-    return { error: '', envioId: await subirASiigo('siigo', comprobantesPagos([f], await siguienteConsec11(), sc.tipo, sc)) };
+    return { error: '', envioId: await subirASiigo('siigo', comprobantesPagos(filas, await siguienteConsec11(), sc.tipo, sc)) };
   }
   const nota = (estado, txt) => ({ estado, por: uid, en: new Date().toISOString(), nota: txt });
   const BancoApi = {
@@ -2896,6 +2898,25 @@
       });
       render();
       return { id, ...(await encolarPagoBanco(id, x.cuentaBanco)) };
+    },
+    // Una transferencia que paga varias facturas de Siigo: un pago por factura, mismo lote, un solo comprobante
+    // facturas: [{ factura: 'FE-62798', vence, valor, cc, fc }]
+    async pagarFacturas(x, facturas, file) {
+      const adj = file ? await subirFactura(file) : {};
+      const lote = nuevoId(), ids = [];
+      await mutar((d) => {
+        for (const f of facturas) {
+          const id = nuevoId(); ids.push(id);
+          d.pagos.push({
+            id, proveedor: x.proveedor, nit: String(x.nit || '').replace(/\D/g, ''), concepto: String(x.concepto || `Pago ${f.factura}`).slice(0, 120),
+            factura: f.factura, valor: Math.round(f.valor), vence: f.vence || x.fecha, estado: 'pagado', fechaPago: x.fecha, cc: f.cc || x.cc || '', nota: f.fc ? 'Siigo ' + f.fc : '',
+            cuenta: '22050501', ...adj, lote, banco: { movId: x.movId, cuenta: x.cuentaBanco }, creado: new Date().toISOString(), creadoPor: uid,
+            historial: [nota('pagado', `Pago de ${f.factura}${f.fc ? ' (' + f.fc + ')' : ''} registrado desde la conciliación bancaria (pagado el ${fmtDate(x.fecha)})`)],
+          });
+        }
+      });
+      render();
+      return { ids, ...(await encolarPagoBanco(ids, x.cuentaBanco)) };
     },
     // Comprobante contable directo (gastos bancarios, 4 x 1.000): lineas [{cuenta, nit, cc, descripcion, debito, credito}]
     async comprobante(comps) {

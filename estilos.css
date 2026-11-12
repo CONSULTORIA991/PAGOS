@@ -364,6 +364,12 @@ details.repo .field { margin-top: 8px; }
 .conc-dlg .proy-caja { margin-bottom: 0; }
 .conc-dlg .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
 .conc-dlg .grid .full { grid-column: 1 / -1; }
+.conc-fcs { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; margin: 0; }
+.conc-fcs legend { font-weight: 700; padding: 0 4px; }
+.conc-fcs-l { display: grid; gap: 2px; max-height: 240px; overflow: auto; }
+.conc-fcs-l label { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 6px 4px; border-top: 1px solid var(--line); cursor: pointer; }
+.conc-fcs-l label:hover { background: var(--accent-soft); }
+.conc-fcs-l .n { font-family: var(--font-num); }
 /* Inicio: para hacer hoy */
 .tareas { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; box-shadow: var(--shadow); }
 .tareas h2 { margin: 0 0 6px; font-family: var(--font-display); font-size: 1.15rem; }
