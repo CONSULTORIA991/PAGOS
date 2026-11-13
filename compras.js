@@ -264,7 +264,8 @@
   function sugerido(doc) {
     const ap = (F.d.apr || {})[doc.nit], h = ((F.siigo && F.siigo.hist) || {})[doc.nit];
     const cuenta = (ap && ap.cuenta) || (h && h.cuentas[0]) || '', cc = (ap && ap.cc) || (h && h.cc) || '';
-    return { cuenta, cc, rets: (ap && ap.rets) || (h && h.rets) || [], pago: (ap && ap.pago) || (h && h.pago) || null, de: ap ? 'cuadra' : h ? 'siigo' : '', h };
+    const ivaTipo = (ap && ap.ivaTipo) || (h && h.ivaTipo) || 'mayor';
+    return { cuenta, cc, rets: (ap && ap.rets) || (h && h.rets) || [], pago: (ap && ap.pago) || (h && h.pago) || null, ivaTipo, de: ap ? 'cuadra' : h ? 'siigo' : '', h };
   }
   function render() {
     const meses = mesesCon(), cob = cobertura();
@@ -341,9 +342,16 @@
   // ---------- registrar compra ----------
   const R = { cufe: null, lineas: [], adj: null, pdfCC: '' };
   const taxes = (tipo) => ((F.siigo && F.siigo.taxes) || []).filter((t) => t.tipo === tipo);
-  function idIVA(pct) {
-    const l = taxes('IVA').filter((t) => t.pct === pct);
-    return (l.find((t) => (pct === 19 && t.id === 9412) || (pct === 5 && t.id === 9577)) || l[0] || {}).id || 0;
+  // IVA en Siigo ODESA (Configuración → Contabilidad → Impuestos, cuenta de compras):
+  //   mayor valor del costo → 61303109: "Iva - 19%" (9412) e "Iva-5%" (9577)
+  //   descontable → 24081001 / 24081003: "IVA 19%" (6145) e "IVA 5%" (6146)
+  const IVA_IDS = { mayor: { 19: 9412, 5: 9577 }, desc: { 19: 6145, 5: 6146 } };
+  const IVA_TXT = { 9412: 'IVA 19 % mayor valor del costo (61303109)', 9577: 'IVA 5 % mayor valor del costo (61303109)', 6145: 'IVA 19 % descontable (24081001)', 6146: 'IVA 5 % descontable (24081003)' };
+  const ivaTipoDe = (id) => ([6145, 6146].includes(Number(id)) ? 'desc' : [9412, 9577].includes(Number(id)) ? 'mayor' : '');
+  function idIVA(pct, tipo) {
+    const id = (IVA_IDS[tipo || R.ivaTipo || 'mayor'] || IVA_IDS.mayor)[pct];
+    if (id && taxes('IVA').some((t) => t.id === id)) return id;
+    return (taxes('IVA').find((t) => t.pct === pct) || {}).id || 0;
   }
   const pctIVA = (id) => (taxes('IVA').find((t) => t.id === Number(id)) || {}).pct || 0;
   // Renglones a partir de los valores de la DIAN: separa lo gravado al 19 % (o 5 %) de lo que no tiene IVA
@@ -439,7 +447,8 @@
     const s = sugerido(doc), cu = enCuadra(doc), centros = C().centros();
     R.cufe = cufe; R.adj = null; R.pdfCC = '';
     const prev = (F.d.reg[cufe] || {}).envio; // lo que se envió antes (si falló, para corregir)
-    R.lineas = prev ? prev.items.map((x) => ({ ...x })) : renglonesDe(doc, s);
+    R.ivaTipo = (prev && prev.items.map((x) => ivaTipoDe(x.iva)).find(Boolean)) || s.ivaTipo || 'mayor';
+    R.lineas =prev ? prev.items.map((x) => ({ ...x })) : renglonesDe(doc, s);
     R.ants = C().anticipos(doc.nit);
     // Formas de pago: las que se usan en las compras (más usadas primero); las demás, aparte
     const uso = (F.siigo && F.siigo.formasUso) || {};
@@ -469,6 +478,10 @@
         <p class="proy-nota" id="fr-items-msg">${doc.x ? 'Leyendo la factura descargada de la DIAN…' : cu.pago && cu.pago.archivo ? 'Leyendo la factura que ya está en Cuadra…' : 'Esta factura aún no está descargada: usa "Traer facturas de la DIAN", o adjúntala aquí (XML o ZIP del proveedor, exacto; o PDF, que se lee con Claude).'}</p>
         ${doc.pdf || (cu.pago && cu.pago.archivo) ? `<button class="btn sm" type="button" data-fc="ver" data-cufe="${esc(cufe)}">Ver la factura (PDF)</button>` : ''}</section>
       <section class="proy-caja"><h3>Renglones</h3><p class="proy-nota">La cuenta define el rubro del informe de proyectos. Solo aparecen cuentas que tienen rubro.</p>
+        <div class="field"><label>El IVA de esta factura va como</label>
+          <label class="check"><input type="radio" name="fr-ivatipo" value="mayor"${R.ivaTipo !== 'desc' ? ' checked' : ''}> <span><b>Mayor valor del costo</b> (61303109)</span></label>
+          <label class="check"><input type="radio" name="fr-ivatipo" value="desc"${R.ivaTipo === 'desc' ? ' checked' : ''}> <span><b>IVA descontable</b> (2408)</span></label>
+          <span class="hint">Cambia el IVA de todos los renglones; si un ítem es distinto, cámbialo en su renglón.${s.h && s.h.ivaTipo ? ` Con este proveedor se ha usado ${s.h.ivaTipo === 'desc' ? 'descontable' : 'mayor valor del costo'} en Siigo.` : ''}</span></div>
         <datalist id="fr-ctas">${[...CUENTAS.entries()].map(([c]) => `<option value="${esc(ctaTxt(c))}"></option>`).join('')}</datalist>
         <div id="fr-lineas"></div><button class="btn sm" type="button" data-fr="mas">+ Agregar renglón</button></section>
       <div class="grid">
@@ -514,7 +527,7 @@
         <div class="field"><label>Cuenta</label><input data-frl="cuenta" list="fr-ctas" value="${esc(l.cuenta ? ctaTxt(l.cuenta) : '')}" placeholder="Escribe el código o el nombre" autocomplete="off"><span class="hint ${l.cuenta && !rb ? 'neg' : ''}">${l.cuenta ? (rb ? 'Rubro: ' + esc(titulo(rb)) : 'Esta cuenta no tiene rubro en el informe de proyectos: caería en "Sin clasificar".') : 'Escoge la cuenta de este ítem.'}${l.por && l.cuenta ? ' · ' + esc(l.por) : ''}</span></div>
         <div class="field"><label>Descripción</label><input data-frl="descripcion" value="${esc(l.descripcion)}"></div>
         <div class="field"><label>Valor antes de IVA</label><input data-frl="base" inputmode="decimal" value="${esc(l.base.toLocaleString('es-CO'))}"></div>
-        <div class="field"><label>IVA</label><select data-frl="iva"><option value="0">Sin IVA</option>${taxes('IVA').filter((t) => t.pct > 0 && [9412, 9577].includes(t.id)).map((t) => `<option value="${t.id}"${Number(l.iva) === t.id ? ' selected' : ''}>${esc(t.nombre)}</option>`).join('')}</select></div>
+        <div class="field"><label>IVA</label><select data-frl="iva"><option value="0">Sin IVA</option>${[9412, 9577, 6145, 6146].filter((id) => taxes('IVA').some((t) => t.id === id)).map((id) => `<option value="${id}"${Number(l.iva) === id ? ' selected' : ''}>${esc(IVA_TXT[id])}</option>`).join('')}</select></div>
         ${R.lineas.length > 1 ? `<button class="btn sm ghost" type="button" data-fr="quitar" data-i="${i}">Quitar</button>` : ''}</div>`;
     }).join('');
   }
@@ -584,7 +597,7 @@
         const r = d.reg[R.cufe];
         if (r && r.estado === 'siigo') return false;
         d.reg[R.cufe] = { estado: 'enviando', envioId: id, en: new Date().toISOString(), por: A.uid, envio: fc };
-        d.apr = d.apr || {}; d.apr[doc.nit] = { cuenta: fc.items[0].cuenta, cc, rets: fc.retenciones.map((r) => r.id), pago: forma.id, en: new Date().toISOString().slice(0, 10) };
+        d.apr = d.apr || {}; d.apr[doc.nit] = { cuenta: fc.items[0].cuenta, cc, rets: fc.retenciones.map((r) => r.id), pago: forma.id, ivaTipo: fc.items.map((x) => ivaTipoDe(x.iva)).find(Boolean) || R.ivaTipo || 'mayor', en: new Date().toISOString().slice(0, 10) };
         // Cuenta escogida para cada ítem: la próxima vez que llegue el mismo producto se propone sola
         d.apr.items = d.apr.items || {};
         for (const l of R.lineas) { const k = l.item ? claveItem(l.item) : ''; if (k) d.apr.items[k] = l.cuenta; }
@@ -663,6 +676,11 @@
       resumen(); return;
     }
     if (t.id === 'fr-pdf' && t.files[0]) { await leerItems(t.files[0], true); return; }
+    if (t.name === 'fr-ivatipo') {
+      R.ivaTipo = t.value;
+      for (const l of R.lineas) { const p = pctIVA(l.iva); if (p) l.iva = idIVA(p, R.ivaTipo); }
+      pintarLineas();
+    }
     resumen();
   });
   document.addEventListener('input', (ev) => {
