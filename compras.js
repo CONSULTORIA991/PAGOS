@@ -427,8 +427,11 @@
     for (const l of R.lineas) {
       const b = r2(l.base), vi = l.iva ? r2(b * pctIVA(l.iva) / 100) : 0;
       base += b; iva += vi;
-      det.forEach((r) => { const v = r.tipo === 'ReteIVA' ? r2(vi * r.pct / 100) : r2(b * r.pct / (r.tipo === 'ReteICA' ? 1000 : 100)); r.valor = r2(r.valor + v); ret += v; });
+      // Retefuente: por renglón (así la calcula Siigo)
+      det.filter((r) => r.tipo !== 'ReteICA' && r.tipo !== 'ReteIVA').forEach((r) => { const v = r2(b * r.pct / 100); r.valor = r2(r.valor + v); ret += v; });
     }
+    // ReteICA (por mil sobre la base sin IVA) y ReteIVA (sobre el IVA): sobre el total de la factura, como Siigo
+    det.filter((r) => r.tipo === 'ReteICA' || r.tipo === 'ReteIVA').forEach((r) => { r.valor = r.tipo === 'ReteIVA' ? r2(r2(iva) * r.pct / 100) : r2(r2(base) * r.pct / 1000); ret += r.valor; });
     const total = r2(base + iva - ret);
     const cruces = [...document.querySelectorAll('[data-frant]:checked')].map((c) => {
       const x = (R.ants || []).find((a) => a.id === c.dataset.frant); const inp = document.querySelector(`[data-frantv="${c.dataset.frant}"]`);
