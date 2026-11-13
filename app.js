@@ -195,6 +195,11 @@
     if (e.status === 403) return 'GitHub rechazó la operación (límite de uso o permisos). Espera unos minutos e inténtalo de nuevo.';
     if (e.status === 404) return 'No se encontró el repositorio o el token no tiene acceso.';
     if (e.name === 'OperationError') return 'No se pudieron descifrar los datos.';
+    if (e.conflicto || e.status === 409 || e.message === 'conflicto') return 'Otra persona o el computador de la oficina estaba guardando en ese mismo momento. Cierra, vuelve a abrir y revisa si quedó; si no, inténtalo de nuevo.';
+    if (e.status >= 500) return `GitHub tuvo una falla momentánea (${e.status}). Revisa si quedó guardado antes de intentarlo de nuevo.`;
+    if (e.status) return `GitHub no aceptó el cambio (error ${e.status}). Inténtalo de nuevo; si se repite, avísale a la administradora.`;
+    if (e instanceof Error && !(e instanceof TypeError)) return e.message;
+    if (e instanceof TypeError && !/fetch|network|load failed/i.test(e.message)) { console.error(e); return 'Error interno de Cuadra: ' + e.message; }
     return 'No se pudo conectar con GitHub. Revisa la conexión e inténtalo de nuevo.';
   }
 
@@ -2815,6 +2820,15 @@
     SE.datos = f ? await Cripto.descifrarJSON(maestra, f.bytes) : { envios: [] };
     SE.datos.envios = SE.datos.envios || [];
   }
+  // Agrega un envío a la cola: nunca saca los que siguen pendientes o subiendo; de los terminados deja los 40 últimos.
+  // Si el envío ya está (un reintento después de guardar), no lo duplica.
+  function colaCon(lista, envio) {
+    const l = (lista || []).filter((x) => x.id !== envio.id);
+    const vivos = l.filter((x) => x.estado === 'pendiente' || x.estado === 'enviando');
+    const fin = l.filter((x) => !(x.estado === 'pendiente' || x.estado === 'enviando')).slice(0, 40);
+    const keep = new Set([...vivos, ...fin]);
+    return [envio, ...l.filter((x) => keep.has(x))];
+  }
   async function mutarEnvios(fn) {
     for (let i = 0; i < 4; i++) {
       await leerEnvios();
@@ -2837,7 +2851,7 @@
     // 2) Dejar el envío en la cola
     const yo = conf.usuarios && conf.usuarios[uid];
     const envio = { id, estado: 'pendiente', pedido: ahora, porNombre: yo ? (yo.nombre || yo.usuario) : '', marca, tipo: comps[0].tipo, comprobantes: comps, hechos: [] };
-    try { await mutarEnvios((d) => { d.envios = [envio, ...d.envios].slice(0, 30); }); }
+    try { await mutarEnvios((d) => { d.envios = colaCon(d.envios, envio); }); }
     catch (e) { try { await mutar((d) => { for (const x of d.pagos) if (x[campo] && x[campo].id === id) delete x[campo]; }); } catch (e2) {} throw e; }
     vigilarEnvios();
     return id;
@@ -2927,7 +2941,7 @@
       const lista = comps.map((c) => ({ tipo, consec: n++, fecha: c.fecha, ids: [], lineas: c.lineas, observaciones: String(c.observaciones || '').slice(0, 300) }));
       const yo = conf.usuarios && conf.usuarios[uid];
       const envio = { id: nuevoId(), estado: 'pendiente', pedido: new Date().toISOString(), porNombre: yo ? (yo.nombre || yo.usuario) : '', marca: 'conc', tipo, comprobantes: lista, hechos: [] };
-      await mutarEnvios((d) => { d.envios = [envio, ...d.envios].slice(0, 30); });
+      await mutarEnvios((d) => { d.envios = colaCon(d.envios, envio); });
       return envio.id;
     },
     async envios() { await leerEnvios(); return SE.datos.envios; },
@@ -2951,7 +2965,7 @@
       if (!(conf && conf.siigoApi)) throw new Error('Faltan las credenciales de Siigo (Usuarios → Conexión con Siigo).');
       const yo = conf.usuarios && conf.usuarios[uid];
       const envio = { id: nuevoId(), estado: 'pendiente', pedido: new Date().toISOString(), porNombre: yo ? (yo.nombre || yo.usuario) : '', porUid: uid, comprobantes: [], hechos: [], ...x };
-      await mutarEnvios((d) => { d.envios = [envio, ...d.envios].slice(0, 30); });
+      await mutarEnvios((d) => { d.envios = colaCon(d.envios, envio); });
       return envio.id;
     },
     // Facturas que se deben en Siigo: entran a Proveedores por revisar (no se vuelven a subir a Siigo: la deuda ya está allá)
@@ -3174,7 +3188,7 @@
       let ocupado = false;
       await mutar((d) => { const x = d.pagos.find((y) => y.id === p.id); ocupado = !x || !!x.ds || !!x.siigoEnvioDS; if (ocupado) return false; x.siigoEnvioDS = { id, en: ahora }; });
       if (ocupado) throw new Error('Esta cuenta de cobro ya tiene o está enviando su documento soporte.');
-      try { await mutarEnvios((d) => { d.envios = [envio, ...d.envios].slice(0, 30); }); }
+      try { await mutarEnvios((d) => { d.envios = colaCon(d.envios, envio); }); }
       catch (e) { try { await mutar((d) => { const x = d.pagos.find((y) => y.id === p.id); if (x && x.siigoEnvioDS && x.siigoEnvioDS.id === id) delete x.siigoEnvioDS; }); } catch (e2) {} throw e; }
       // Recordar la última cuenta usada como sugerencia
       if (!conf.siigo || conf.siigo.ultimaCuentaDS !== cuenta) { conf.siigo = { ...(conf.siigo || {}), ultimaCuentaDS: cuenta }; guardarConfig().catch(() => {}); }

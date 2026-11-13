@@ -63,9 +63,16 @@ const GH = (() => {
   async function escribir(ruta, bytes, sha) {
     const cuerpo = { message: 'Actualización', content: Cripto.b64(bytes), branch: cfg.branch };
     if (sha) cuerpo.sha = sha;
-    const r = await fetch(urlArchivo(ruta), { method: 'PUT', headers: cabeceras({ 'Content-Type': 'application/json' }), body: JSON.stringify(cuerpo) });
-    if (!r.ok) throw await error(r);
-    return (await r.json()).content.sha;
+    // GitHub responde 409 también cuando OTRO archivo se guardó en ese mismo instante (la rama avanzó, este no se
+    // guardó): se reintenta con el mismo sha. Si el 409 es porque ESTE archivo cambió, el que llama lo relee.
+    for (let i = 0; ; i++) {
+      const r = await fetch(urlArchivo(ruta), { method: 'PUT', headers: cabeceras({ 'Content-Type': 'application/json' }), body: JSON.stringify(cuerpo) });
+      if (r.ok) return (await r.json()).content.sha;
+      const falla = await error(r);
+      const reintentable = falla.status === 409 && !/does not match/i.test(falla.message);
+      if (!reintentable || i >= 3) throw falla;
+      await new Promise((ok) => setTimeout(ok, 800 * (i + 1) + Math.random() * 700));
+    }
   }
 
   async function borrar(ruta) {
