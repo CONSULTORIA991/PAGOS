@@ -25,7 +25,7 @@
   const TABS = [['revisar', 'Por revisar'], ['aprobado', 'Aprobados'], ['pendiente', 'Pendientes'], ['pagado', 'Pagados'], ['rechazado', 'Rechazados'], ['todos', 'Todos']];
   const TIPO_DOC = { cobro: 'Cuenta de cobro', anticipo: 'Anticipo', caja: 'Caja menor' };
 
-  const S = { pagos: [], banco: null, loaded: false, tab: 'revisar', q: '', siigoVer: '', sort: 'vence', openId: null, confirm: null, view: 'aprob', rDesde: '', rHasta: '', rRange: 'mes', payDate: '', sel: new Set() };
+  const S = { pagos: [], banco: null, loaded: false, tab: 'revisar', q: '', siigoVer: '', sort: 'vence', openId: null, confirm: null, view: 'aprob', rDesde: '', rHasta: '', rRange: 'mes', payDate: '', payValor: null, sel: new Set() };
   // Sesión: llave maestra, identidad y configuración descifrada.
   let maestra = null, rawMaestra = null, uid = null, conf = null;
   let isAdmin = false;
@@ -57,6 +57,8 @@
   function localISO(d) { return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); }
   function todayISO() { return localISO(new Date()); }
   function fechaPagoDe(p) { return p.fechaPago || (p.pagadoEn ? localISO(new Date(p.pagadoEn)) : ''); }
+  // p.valor siempre es lo que falta por pagar; p.valorOriginal (si existe) es el total antes de los abonos.
+  const abonadoDe = (p) => (p.abonos || []).reduce((t, a) => t + (Number(a.valor) || 0), 0);
   function daysUntil(iso) {
     if (!iso) return null;
     const [y, m, d] = iso.split('-').map(Number);
@@ -322,7 +324,7 @@
         <div class="r-due">${st === 'pagado'
           ? `<span>${fechaPagoDe(p) ? 'Pagado el ' + esc(fmtDate(fechaPagoDe(p))) : 'Pagado (sin fecha)'}</span>`
           : `${dueChip(p)}<span>${p.vence ? 'Vence ' + esc(fmtDate(p.vence)) : 'Sin fecha'}</span>`}</div>
-        <div class="r-amt">${fmt(p.valor)}</div>
+        <div class="r-amt">${fmt(p.valor)}${(p.abonos || []).length && st !== 'pagado' ? `<div class="quien">abonado ${fmt(abonadoDe(p))}</div>` : ''}</div>
         <div class="r-act"><span class="r-state-box"><span class="r-state pill st-${st}">${ESTADOS[st].label}</span>${etiquetaDecision(p) ? `<span class="quien">${esc(etiquetaDecision(p))}</span>` : ''}</span>${decisionButtons(p, true)}</div>
       </article>`;
     }).join('');
@@ -381,20 +383,32 @@
         : `<div class="impact"><span>Hoy quedaría en banco <span class="num ${now < 0 ? 'neg' : ''}">${fmt(now)}</span>.</span><span>Si se aprueba este pago, quedaría <span class="num ${after < 0 ? 'neg' : ''}">${fmt(after)}</span>.</span></div>`;
     }
     const hist = (p.historial || []).slice().reverse().map((h) => `<li><span class="pill st-${ESTADOS[h.estado] ? h.estado : 'revisar'}">${(ESTADOS[h.estado] || ESTADOS.revisar).label}</span><span>${esc(personName(h.por))}</span><span class="when">${esc(dtFmt.format(new Date(h.en)))}</span>${h.nota ? `<span>— ${esc(h.nota)}</span>` : ''}</li>`).join('');
+    const abonos = (p.abonos || []).slice().reverse().map((a) => `<li><span class="when">${esc(fmtDate(a.fecha))}</span><span class="num">${fmt(a.valor)}</span><span>${esc(personName(a.por))}</span></li>`).join('');
     const canDecide = st !== 'pagado';
 
     let adminBox = '';
     if (isAdmin) {
       let cf = '';
       if (S.confirm === 'delete') cf = `<div class="confirm"><span>¿Eliminar este pago? No se puede deshacer.</span><span class="decide" style="flex:none"><button class="btn sm" type="button" data-confirm="cancel">Cancelar</button><button class="btn sm danger solid" type="button" data-confirm="delete">Eliminar</button></span></div>`;
-      if (S.confirm === 'pay') cf = `<div class="confirm pay"><span class="pay-date"><label for="d-fpago">Fecha de pago</label><input type="date" id="d-fpago" value="${esc(S.payDate || todayISO())}" max="${todayISO()}"></span><span>Marcar como pagado${saldo != null ? ` y descontar <b class="num">${fmt(p.valor)}</b> del saldo en banco` : ''}.</span><span class="decide" style="flex:none"><button class="btn sm" type="button" data-confirm="cancel">Cancelar</button>${saldo != null ? '<button class="btn sm" type="button" data-confirm="pay-only">Solo marcar pagado</button>' : ''}<button class="btn sm primary" type="button" data-confirm="pay">${saldo != null ? 'Pagado y descontar' : 'Marcar pagado'}</button></span></div>`;
+      if (S.confirm === 'pay') {
+        const pend = Math.round(Number(p.valor) || 0);
+        const vp = S.payValor == null ? pend : S.payValor;
+        const esAbono = vp > 0 && vp < pend;
+        cf = `<div class="confirm pay">
+          <span class="pay-date"><label for="d-fpago">Fecha de pago</label><input type="date" id="d-fpago" value="${esc(S.payDate || todayISO())}" max="${todayISO()}"></span>
+          <span class="pay-date"><label for="d-valorpago">Valor que paga ahora</label><input id="d-valorpago" inputmode="decimal" value="${new Intl.NumberFormat('es-CO').format(vp)}" data-pend="${pend}"></span>
+          <span class="hint" id="d-pay-hint">${vp <= 0 ? 'Escribe el valor que se paga.' : esAbono ? `Es un abono parcial: queda pendiente <b class="num">${fmt(pend - vp)}</b>.` : 'Con esto la cuenta queda saldada.'}</span>
+          ${saldo != null ? `<span>Se descontará <b class="num">${fmt(Math.min(Math.max(vp, 0), pend))}</b> del saldo en banco.</span>` : ''}
+          <span class="decide" style="flex:none"><button class="btn sm" type="button" data-confirm="cancel">Cancelar</button>${saldo != null ? '<button class="btn sm" type="button" data-confirm="pay-only">Sin descontar del saldo</button>' : ''}<button class="btn sm primary" type="button" data-confirm="pay"${vp > 0 ? '' : ' disabled'}>${esAbono ? 'Registrar abono' : (saldo != null ? 'Pagado y descontar' : 'Marcar pagado')}</button></span>
+        </div>`;
+      }
       adminBox = `<div class="admin-box"><span class="section-lbl">Administración</span>
-        <div class="decide">${necesitaDS(p) ? (p.siigoEnvioDS ? '<span class="pill st-pendiente">Enviando documento soporte a Siigo…</span><button class="btn sm" type="button" data-admin="ds">Ver estado</button>' : '<button class="btn primary sm" type="button" data-admin="ds">Retenciones y documento soporte</button>') : ''}${st === 'aprobado' ? '<button class="btn primary sm" type="button" data-admin="pay">Marcar como pagado</button>' : ''}${st !== 'revisar' ? '<button class="btn sm" type="button" data-act="revisar" data-id="' + p.id + '">Volver a “Por revisar”</button>' : ''}<button class="btn sm" type="button" data-admin="edit">Editar</button><button class="btn sm danger" type="button" data-admin="delete">Eliminar</button></div>${cf}</div>`;
+        <div class="decide">${necesitaDS(p) ? (p.siigoEnvioDS ? '<span class="pill st-pendiente">Enviando documento soporte a Siigo…</span><button class="btn sm" type="button" data-admin="ds">Ver estado</button>' : '<button class="btn primary sm" type="button" data-admin="ds">Retenciones y documento soporte</button>') : ''}${st === 'aprobado' ? `<button class="btn primary sm" type="button" data-admin="pay">${(p.abonos || []).length ? 'Registrar otro abono o pagar el saldo' : 'Marcar como pagado'}</button>` : ''}${st !== 'revisar' ? '<button class="btn sm" type="button" data-act="revisar" data-id="' + p.id + '">Volver a “Por revisar”</button>' : ''}<button class="btn sm" type="button" data-admin="edit">Editar</button><button class="btn sm danger" type="button" data-admin="delete">Eliminar</button></div>${cf}</div>`;
     }
 
     box.innerHTML = `
       <div class="dlg-head"><div style="display:grid;gap:6px;min-width:0"><span class="pill st-${st}" style="justify-self:start">${ESTADOS[st].label}</span><h2>${esc(p.proveedor || 'Sin proveedor')}</h2></div><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
-      <div class="big-amt">${fmt(p.valor)}</div>
+      <div class="big-amt">${fmt(p.valor)}${(p.abonos || []).length ? `<div class="quien">${st === 'pagado' ? `De ${fmt(p.valorOriginal != null ? p.valorOriginal : p.valor)} en total` : `De ${fmt(p.valorOriginal != null ? p.valorOriginal : p.valor)} originalmente · abonado ${fmt(abonadoDe(p))}`}</div>` : ''}</div>
       <dl class="facts">
         <div><dt>Concepto</dt><dd>${esc(p.concepto || '—')}</dd></div>
         <div><dt>Factura</dt><dd>${esc(p.factura || '—')}</dd></div>
@@ -417,6 +431,7 @@
       ${impact}
       ${p.tipoDoc === 'caja' ? renderSoportesCaja(p) : renderInvoice(p)}
       ${canDecide ? `<div class="field"><label for="d-nota">Comentario de la decisión (opcional)</label><input id="d-nota" autocomplete="off" placeholder="Ej. Pagar la próxima semana" value="${esc(notaPrev)}"></div><div class="decide">${p.estado !== 'aprobado' ? `<button class="btn go" type="button" data-act="aprobado" data-id="${p.id}"${busy.has(p.id) ? ' disabled' : ''}>Aprobar este pago</button>` : ''}${p.estado !== 'pendiente' ? `<button class="btn hold" type="button" data-act="pendiente" data-id="${p.id}"${busy.has(p.id) ? ' disabled' : ''}>Dejar pendiente</button>` : ''}${p.estado !== 'rechazado' ? `<button class="btn no" type="button" data-act="rechazado" data-id="${p.id}"${busy.has(p.id) ? ' disabled' : ''}>Rechazar</button>` : ''}</div>` : ''}
+      ${abonos ? `<div style="display:grid;gap:8px"><span class="section-lbl">Abonos registrados</span><ul class="hist">${abonos}</ul></div>` : ''}
       ${hist ? `<div style="display:grid;gap:8px"><span class="section-lbl">Historial</span><ul class="hist">${hist}</ul></div>` : ''}
       ${adminBox}`;
     if (!dlg.open) dlg.showModal();
@@ -513,21 +528,39 @@
     busy.delete(id); render();
   }
 
+  // Paga el total o un abono parcial. Si el valor escrito es menor que lo pendiente, la cuenta
+  // sigue en su mismo estado (normalmente "aprobado") con p.valor reducido al saldo que falta;
+  // si cubre lo pendiente, queda "pagado". p.abonos guarda el historial de cada abono.
   async function marcarPagado(id, descontar) {
     const p = S.pagos.find((x) => x.id === id);
     if (!p) return;
     const now = new Date().toISOString();
     const fechaPago = S.payDate || todayISO();
+    const pedido = S.payValor == null ? Math.round(Number(p.valor) || 0) : Math.round(S.payValor);
+    if (!(pedido > 0)) { toast('Escribe el valor que se paga.'); return; }
+    let esAbono = false, restante = 0, pago = 0;
     try {
       await mutar((d) => {
         const x = d.pagos.find((y) => y.id === id);
         if (!x) return false;
-        x.estado = 'pagado'; x.decididoPor = uid; x.decididoEn = now; x.pagadoEn = now; x.fechaPago = fechaPago;
-        x.historial = (x.historial || []).slice(-24).concat([{ estado: 'pagado', por: uid, en: now, nota: 'Pagado el ' + fmtDate(fechaPago) + (descontar ? ' · descontado del saldo' : '') }]);
-        if (descontar && d.banco && typeof d.banco.saldo === 'number') d.banco = { ...d.banco, saldo: d.banco.saldo - (Number(x.valor) || 0), actualizado: now, por: uid };
+        const pendienteActual = Math.round(Number(x.valor) || 0);
+        pago = Math.min(pedido, pendienteActual);
+        restante = Math.max(pendienteActual - pago, 0);
+        esAbono = restante > 0;
+        if (x.valorOriginal == null) x.valorOriginal = pendienteActual;
+        x.abonos = (x.abonos || []).concat([{ valor: pago, fecha: fechaPago, por: uid, en: now }]);
+        x.valor = restante;
+        if (!esAbono) {
+          x.estado = 'pagado'; x.decididoPor = uid; x.decididoEn = now; x.pagadoEn = now; x.fechaPago = fechaPago;
+          const previos = x.abonos.length - 1;
+          x.historial = (x.historial || []).slice(-24).concat([{ estado: 'pagado', por: uid, en: now, nota: `Pagado el ${fmtDate(fechaPago)}${previos ? ` (incluye ${previos} ${previos === 1 ? 'abono anterior' : 'abonos anteriores'})` : ''}${descontar ? ' · descontado del saldo' : ''}` }]);
+        } else {
+          x.historial = (x.historial || []).slice(-24).concat([{ estado: x.estado, por: uid, en: now, nota: `Abono de ${fmt(pago)} el ${fmtDate(fechaPago)}${descontar ? ' · descontado del saldo' : ''}. Queda pendiente ${fmt(restante)}.` }]);
+        }
+        if (descontar && d.banco && typeof d.banco.saldo === 'number') d.banco = { ...d.banco, saldo: d.banco.saldo - pago, actualizado: now, por: uid };
       });
-      S.confirm = null;
-      toast(descontar ? `Pagado. Se descontaron ${fmt(p.valor)} del saldo.` : 'Marcado como pagado.');
+      S.confirm = null; S.payValor = null;
+      toast(esAbono ? `Abono registrado por ${fmt(pago)}${descontar ? ', descontado del saldo' : ''}. Queda pendiente ${fmt(restante)}.` : `Pagado${descontar ? '. Se descontaron ' + fmt(pago) + ' del saldo' : ''}.`);
     } catch (e) { writeError(e); }
     render();
   }
@@ -3513,8 +3546,8 @@
     if (t.dataset.admin === 'edit') { openForm(S.openId); return; }
     if (t.dataset.admin === 'ds') { openDS(S.openId); return; }
     if (t.dataset.admin === 'delete') { S.confirm = 'delete'; renderDetail(); return; }
-    if (t.dataset.admin === 'pay') { S.confirm = 'pay'; S.payDate = todayISO(); renderDetail(); return; }
-    if (t.dataset.confirm === 'cancel') { S.confirm = null; renderDetail(); return; }
+    if (t.dataset.admin === 'pay') { S.confirm = 'pay'; S.payDate = todayISO(); S.payValor = null; renderDetail(); return; }
+    if (t.dataset.confirm === 'cancel') { S.confirm = null; S.payValor = null; renderDetail(); return; }
     if (t.dataset.confirm === 'delete') { eliminar(S.openId); return; }
     if (t.dataset.confirm === 'pay') { marcarPagado(S.openId, !!(S.banco && typeof S.banco.saldo === 'number')); return; }
     if (t.dataset.confirm === 'pay-only') { marcarPagado(S.openId, false); return; }
@@ -3529,8 +3562,20 @@
     const r = ev.target.closest && ev.target.closest('[data-row]');
     if (r && (ev.key === 'Enter' || ev.key === ' ') && ev.target === r) { ev.preventDefault(); S.openId = r.dataset.row; S.confirm = null; renderDetail(); }
   });
-  document.addEventListener('input', (ev) => { if (ev.target.id === 'd-fpago') S.payDate = ev.target.value; });
-  $('#dlg-detail').addEventListener('close', () => { S.openId = null; S.confirm = null; });
+  document.addEventListener('input', (ev) => {
+    if (ev.target.id === 'd-fpago') { S.payDate = ev.target.value; return; }
+    if (ev.target.id === 'd-valorpago') {
+      const pend = Number(ev.target.dataset.pend) || 0;
+      const v = Math.round(parseMonto(ev.target.value)) || 0;
+      S.payValor = v;
+      const esAbono = v > 0 && v < pend;
+      const hint = $('#d-pay-hint');
+      if (hint) hint.innerHTML = v <= 0 ? 'Escribe el valor que se paga.' : esAbono ? `Es un abono parcial: queda pendiente <b class="num">${fmt(pend - v)}</b>.` : 'Con esto la cuenta queda saldada.';
+      const btn = document.querySelector('.confirm.pay [data-confirm="pay"]');
+      if (btn) { btn.textContent = esAbono ? 'Registrar abono' : (S.banco && typeof S.banco.saldo === 'number' ? 'Pagado y descontar' : 'Marcar pagado'); btn.disabled = !(v > 0); }
+    }
+  });
+  $('#dlg-detail').addEventListener('close', () => { S.openId = null; S.confirm = null; S.payValor = null; });
   $('#btn-add').addEventListener('click', () => openForm());
   $('#btn-cobro').addEventListener('click', () => openForm(null, 'cobro'));
   $('#btn-masiva-cobro').addEventListener('click', () => openMasiva('cobro'));
