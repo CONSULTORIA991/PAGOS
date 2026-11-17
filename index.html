@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="estilos.css?v=59">
+<link rel="stylesheet" href="estilos.css?v=60">
 </head>
 <body>
 
@@ -615,7 +615,9 @@
       <div class="field" id="asis-horadesde-wrap" hidden><label for="asis-horadesde">¿De qué hora…</label><input type="time" id="asis-horadesde"></div>
       <div class="field" id="asis-horahasta-wrap" hidden><label for="asis-horahasta">…a qué hora?</label><input type="time" id="asis-horahasta"></div>
       <div class="field" id="asis-cant-wrap" hidden><label for="asis-cant" id="asis-cant-lbl">Horas</label><input id="asis-cant" inputmode="decimal" autocomplete="off"></div>
-      <div class="field full" id="asis-concepto-wrap" hidden><label for="asis-concepto">Concepto (queda en la nota de esa quincena)</label><input id="asis-concepto" autocomplete="off" placeholder="Ej. Auxilio no constitutivo de salario"></div>
+      <div class="field full" id="asis-obra-wrap" hidden><label for="asis-obra">Obra (centro de costo)</label><input id="asis-obra" list="cc-lista" autocomplete="off" placeholder="Ej. 100068-1 · LAGOMAR"></div>
+      <div class="field" id="asis-diasobra-wrap" hidden><label for="asis-diasobra">¿Cuántos días estuvo en esa obra?</label><input id="asis-diasobra" inputmode="numeric" autocomplete="off"></div>
+      <div class="field full" id="asis-concepto-wrap" hidden><label for="asis-concepto">Concepto (queda en la nota de esa quincena)</label><input id="asis-concepto" autocomplete="off" placeholder="Ej. Auxilio de transporte a obra"></div>
       <div class="full" id="asis-res"></div>
       <div class="err full" id="asis-err" hidden></div>
       <div class="form-actions full"><button class="btn" type="button" data-close>Cancelar</button><button class="btn primary" type="submit" id="asis-go" disabled>Guardar novedad</button></div>
@@ -991,15 +993,15 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="cripto.js?v=59"></script>
-<script src="github.js?v=59"></script>
-<script src="lector.js?v=59"></script>
-<script src="app.js?v=59"></script>
-<script src="rrhh-docs.js?v=59"></script>
-<script src="rrhh.js?v=59"></script>
-<script src="informe-pdf.js?v=59"></script>
-<script src="proyectos.js?v=59"></script>
-<script src="conciliacion.js?v=59"></script>
-<script src="compras.js?v=59"></script>
+<script src="cripto.js?v=60"></script>
+<script src="github.js?v=60"></script>
+<script src="lector.js?v=60"></script>
+<script src="app.js?v=60"></script>
+<script src="rrhh-docs.js?v=60"></script>
+<script src="rrhh.js?v=60"></script>
+<script src="informe-pdf.js?v=60"></script>
+<script src="proyectos.js?v=60"></script>
+<script src="conciliacion.js?v=60"></script>
+<script src="compras.js?v=60"></script>
 </body>
 </html>
