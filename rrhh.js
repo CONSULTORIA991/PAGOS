@@ -277,7 +277,7 @@
           `${b('emp:activos', 'Activos', true)}${b('emp:retirados', 'Retirados')}${b('emp:todos', 'Todos')}${b('nuevo', '+ Agregar')}`)}
         ${card('nom', 'Nómina quincenal', 'Días, vacaciones, incapacidades, licencias, horas extra y lo que se paga a cada uno.',
           `Quincena del ${esc(nombreQ(mes, q))}: <b>${pq.estado === 'cerrado' ? 'cerrada' : 'abierta'}</b>${pend.length ? ` · <span class="rh-alerta">${pend.length} ${pend.length === 1 ? 'pendiente' : 'pendientes'}</span>` : ''}`,
-          `${b('nom:hoy', 'Abrir quincena', true)}${b('novedad', 'Registrar novedad')}${b('hep', 'Horas extra o un pago')}`)}
+          `${b('nom:hoy', 'Abrir quincena', true)}${b('novedad', 'Registrar novedad')}`)}
         ${card('pla', 'Planilla de aportes', 'Seguridad social del mes (pensión, salud, ARL, caja) y el archivo para subir a Aportes en Línea.',
           `${esc(nombreMes(mesPla))}: <b>${fmt(totPla)}</b> · ${pla.length} cotizantes`,
           `${b('pla:ant', 'Ver planilla', true)}${b('pla:archivo', 'Revisar y descargar archivo')}`)}
@@ -374,7 +374,7 @@
         <div class="field"><label for="rh-mes">Mes</label><input type="month" id="rh-mes" value="${esc(R.mes)}"></div>
         <div class="quick"><button class="qbtn" type="button" data-rh-q="1" aria-pressed="${R.q === 1}">1 al 15</button><button class="qbtn" type="button" data-rh-q="2" aria-pressed="${R.q === 2}">16 al 30</button></div>
         <span class="rh-estado ${cerrado ? 'cerrado' : 'borrador'}">${cerrado ? `Cerrada${p.cerradoPor ? ' por ' + esc(quien(p.cerradoPor)) : ''}` : 'Borrador · se puede modificar'}</span>
-      </div><div class="grupo">${cerrado ? '' : '<button class="btn primary" type="button" data-rh-ir="novedad">+ Registrar novedad</button><button class="btn" type="button" data-rh-ir="hep">+ Horas extra o un pago</button><button class="btn" type="button" data-rh="imp-q">Importar quincenas desde Excel</button>'}<button class="btn" type="button" data-rh-ir="desprendibles">Desprendibles (PDF)</button><button class="btn" type="button" data-rh="xls-nom">Descargar Excel</button>${A.isAdmin ? (cerrado ? '<button class="btn" type="button" data-rh="reabrir">Reabrir quincena</button>' : '<button class="btn" type="button" data-rh="cerrar">Cerrar quincena</button>') : ''}</div></div>
+      </div><div class="grupo">${cerrado ? '' : '<button class="btn primary" type="button" data-rh-ir="novedad">+ Registrar novedad</button><button class="btn" type="button" data-rh="imp-q">Importar quincenas desde Excel</button>'}<button class="btn" type="button" data-rh-ir="desprendibles">Desprendibles (PDF)</button><button class="btn" type="button" data-rh="xls-nom">Descargar Excel</button>${A.isAdmin ? (cerrado ? '<button class="btn" type="button" data-rh="reabrir">Reabrir quincena</button>' : '<button class="btn" type="button" data-rh="cerrar">Cerrar quincena</button>') : ''}</div></div>
       ${pasosNomina(emps, p, cerrado)}
       ${guia(`💡 Para vacaciones, incapacidades, licencias o suspensiones usa <b>Registrar novedad</b>: preguntas sencillas y la app pone los días y las fechas. También puedes escribir directo en las casillas; cada cambio se guarda solo y queda en <b>Cambios</b> con tu nombre (las casillas en amarillo fueron modificadas). Toca los <b>?</b> para saber qué va en cada columna.`)}
       ${bloques || '<div class="empty"><p>No hay empleados con días en esta quincena.</p></div>'}
@@ -393,7 +393,7 @@
     $('#rh-cuerpo').innerHTML = `
       <div class="rh-barra"><div class="grupo">${selEmpresa()}<div class="field"><label for="rh-mespla">Mes</label><input type="month" id="rh-mespla" value="${esc(R.mesPla)}"></div>
         <span class="rh-estado ${qs[0] && qs[1] ? 'cerrado' : 'borrador'}">${qs[0] && qs[1] ? 'Las dos quincenas cerradas' : 'Borrador: falta cerrar ' + (qs[0] ? 'la 2.ª quincena' : qs[1] ? 'la 1.ª quincena' : 'las quincenas')}</span></div>
-        <div class="grupo"><button class="btn" type="button" data-rh="xls-nov">Reporte de novedades</button><button class="btn" type="button" data-rh="xls-pla">Borrador de planilla</button><button class="btn primary" type="button" data-rh="aportes">Archivo para Aportes en Línea</button></div></div>
+        <div class="grupo"><button class="btn" type="button" data-rh-ir="novedadesPDF">Imprimir informe de novedades</button><button class="btn" type="button" data-rh="xls-nov">Reporte de novedades (Excel)</button><button class="btn" type="button" data-rh="xls-pla">Borrador de planilla</button><button class="btn primary" type="button" data-rh="aportes">Archivo para Aportes en Línea</button></div></div>
       ${guia(`💡 Aquí está la seguridad social de <b>${esc(nombreMes(R.mesPla).toLowerCase())}</b> (suma de las dos quincenas). Pasos: <b>1.</b> cierra las dos quincenas del mes · <b>2.</b> toca <b>Archivo para Aportes en Línea</b>: la app revisa que no falte nada y lo descarga · <b>3.</b> súbelo en Aportes en Línea → Liquidaciones → Transmisión de Planilla Integrada Excel. Toca los <b>?</b> de la tabla para saber qué es cada columna.`)}
       <section class="rep-sum">
         <div class="tile main"><span class="lbl">Total planilla ${esc(nombreMes(R.mesPla).toLowerCase())}</span><span class="val">${fmt(sum(filas, 'total'))}</span><span>Descontado a empleados ${fmt(sum(filas, 'descontado'))}</span></div>
@@ -828,6 +828,21 @@
     }
     return out;
   }
+  // Tipos "simples" (un número por quincena, sin rango de fechas): horas extra, recargos, o un pago no salarial.
+  const HEP_TIPOS = { hed: 1, hen: 1, rn: 1, rdf: 1, hedf: 1, henf: 1, otros: 1 };
+  const HEP_TIPO_AYUDA = {
+    hed: 'Trabajó más de las horas normales, de día (6 a.m. a 9 p.m.).', hen: 'Trabajó más de las horas normales, de noche (9 p.m. a 6 a.m.).',
+    rn: 'Trabajó su horario normal, pero de noche: se le paga el recargo, no una hora completa extra.',
+    rdf: 'Trabajó su horario normal un domingo o festivo: se le paga el recargo.',
+    hedf: 'Trabajó horas extra de día, un domingo o festivo.', henf: 'Trabajó horas extra de noche, un domingo o festivo.',
+    otros: 'Un pago que no es salario: no cotiza a seguridad social ni cuenta para vacaciones o cesantías. Ej.: auxilio no constitutivo de salario, bonificación ocasional.',
+  };
+  // Horas entre dos horas del día (HH:MM), cruzando medianoche si la hora final es menor
+  function horasEntre(hd, hh) {
+    const m = (t) => { const [h, mi] = t.split(':').map(Number); return h * 60 + mi; };
+    let d = m(hh) - m(hd); if (d <= 0) d += 1440;
+    return Math.round(d / 60 * 10) / 10;
+  }
   let asis = null; // { edit: {clave: días}, partes: [], problemas: n, finTocado }
   function abrirAsistente(empId) {
     const ref = R.tab === 'nom' ? R.mes : mesActual();
@@ -836,13 +851,60 @@
     $('#asis-emp').innerHTML = '<option value="">Escoge una persona…</option>' + emps.map((e) => `<option value="${esc(e.id)}">${esc(e.nombre)}${R.empresa ? '' : ' · ' + esc((e.empresa || EMPRESA_DEF).replace(/ S\.A\.S\.?$/i, ''))}</option>`).join('');
     $('#asis-emp').value = empId || '';
     $('#asis-tipo').value = 'vac'; $('#asis-ini').value = ''; $('#asis-fin').value = '';
+    $('#asis-mes2').value = R.tab === 'nom' ? R.mes : mesActual(); $('#asis-mes2').max = mesActual();
+    $('#asis-q2').value = String(R.tab === 'nom' ? R.q : quincenaHoy().q);
+    $('#asis-cant').value = ''; $('#asis-concepto').value = '';
+    $('#asis-dia').value = ''; $('#asis-dia').max = todayISO(); $('#asis-horadesde').value = ''; $('#asis-horahasta').value = '';
     asis = { edit: {}, partes: [], problemas: 0, finTocado: false };
-    mostrarError('#asis-err', ''); pintarAsis(); $('#dlg-asis').showModal();
+    mostrarError('#asis-err', ''); pintarTipoAsis(); pintarAsis(); $('#dlg-asis').showModal();
+  }
+  // Muestra las fechas (licencias, incapacidades…), el día y horario (horas extra/recargos) o el mes/quincena y valor (pagos), según el tipo
+  function pintarTipoAsis() {
+    const tipo = $('#asis-tipo').value, esHoras = !!HEP_TIPOS[tipo] && tipo !== 'otros', esPago = tipo === 'otros', simple = esHoras || esPago;
+    $('#asis-ini-wrap').hidden = simple; $('#asis-fin-wrap').hidden = simple;
+    $('#asis-ini').required = !simple; $('#asis-fin').required = !simple;
+    $('#asis-mes2-wrap').hidden = !esPago; $('#asis-q2-wrap').hidden = !esPago;
+    $('#asis-dia-wrap').hidden = !esHoras; $('#asis-horadesde-wrap').hidden = !esHoras; $('#asis-horahasta-wrap').hidden = !esHoras;
+    $('#asis-cant-wrap').hidden = !esPago;
+    $('#asis-concepto-wrap').hidden = !esPago;
+  }
+  // Vista previa de un pago no salarial: cuánto queda y en qué quincena, sin tocar fechas
+  function pintarAsisPago() {
+    const e = R.datos.empleados.find((x) => x.id === $('#asis-emp').value);
+    const mes = $('#asis-mes2').value, q = Number($('#asis-q2').value), cant = parseMonto($('#asis-cant').value);
+    const res = $('#asis-res'), go = $('#asis-go');
+    go.disabled = true;
+    if (!e || !mes || !isFinite(cant) || !(cant > 0)) { res.innerHTML = `<p class="rh-asis-falta">${!e ? 'Escoge a la persona.' : 'Escribe el valor del pago.'}</p>`; return; }
+    const clave = claveQ(mes, q), p = R.datos.periodos[clave] || {};
+    if (p.estado === 'cerrado') { res.innerHTML = `<p class="rh-asis-falta">La quincena del ${esc(nombreQ(mes, q))} ya está cerrada.</p>`; return; }
+    const f = filaDe(e, mes, q), antes = Number(f.otros) || 0, despues = antes + Math.round(cant);
+    res.innerHTML = `<p class="rh-asis-resumen">✔ <b>${esc(e.nombre)}</b>, quincena del ${esc(nombreQ(mes, q))}: ${antes ? `tenía ${fmt(antes)}, quedará en <b>${fmt(despues)}</b>` : `queda en <b>${fmt(despues)}</b>`} de bonificación o auxilio no constitutivo de salario.</p>`;
+    go.disabled = false;
+  }
+  // Vista previa de horas extra o un recargo: con el día y el horario calcula las horas y el valor
+  function pintarAsisHoras(tipo) {
+    const e = R.datos.empleados.find((x) => x.id === $('#asis-emp').value);
+    const dia = $('#asis-dia').value, hd = $('#asis-horadesde').value, hh = $('#asis-horahasta').value;
+    const res = $('#asis-res'), go = $('#asis-go');
+    go.disabled = true;
+    if (!e || !dia || !hd || !hh) { res.innerHTML = `<p class="rh-asis-falta">${!e ? 'Escoge a la persona.' : 'Escribe el día y de qué hora a qué hora.'}</p>`; return; }
+    const horas = horasEntre(hd, hh);
+    if (!(horas > 0)) { res.innerHTML = '<p class="rh-asis-falta">La hora final debe ser distinta de la inicial.</p>'; return; }
+    const mes = dia.slice(0, 7), q = Number(dia.slice(8)) <= 15 ? 1 : 2, clave = claveQ(mes, q), p = R.datos.periodos[clave] || {};
+    if (p.estado === 'cerrado') { res.innerHTML = `<p class="rh-asis-falta">La quincena del ${esc(nombreQ(mes, q))} ya está cerrada.</p>`; return; }
+    const f = filaDe(e, mes, q), antes = Number(f[tipo]) || 0, despues = Math.round((antes + horas) * 10) / 10;
+    const P = R.datos.param, sal = Number(e.salario) || 0, hora = sal / (P.horasMes || 210);
+    const valor = Math.round(tipo === 'rn' ? hora * horas * P.rec.rn / 100 : tipo === 'rdf' ? hora * horas * P.rec.rdf / 100 : hora * horas * (1 + P.rec[tipo] / 100));
+    res.innerHTML = `<p class="rh-asis-resumen">✔ <b>${esc(e.nombre)}</b>, el ${esc(fmtDate(dia))} de ${esc(hd)} a ${esc(hh)}: <b>${horas} h</b> de ${esc((HORAS.find(([k]) => k === tipo) || [, ''])[1])}, <b>${fmt(valor)}</b>. Queda en la quincena del ${esc(nombreQ(mes, q))}${antes ? `, con <b>${despues} h</b> en total de este tipo` : ''}.</p>`;
+    go.disabled = false;
   }
   function pintarAsis() {
     if (!asis) return;
-    const tipo = $('#asis-tipo').value, [k, clase] = tipo.split('|');
-    $('#asis-tipo-ayuda').textContent = TIPO_AYUDA[tipo] || '';
+    const tipo = $('#asis-tipo').value;
+    $('#asis-tipo-ayuda').textContent = TIPO_AYUDA[tipo] || HEP_TIPO_AYUDA[tipo] || '';
+    if (tipo === 'otros') { pintarAsisPago(); return; }
+    if (HEP_TIPOS[tipo]) { pintarAsisHoras(tipo); return; }
+    const [k, clase] = tipo.split('|');
     const e = R.datos.empleados.find((x) => x.id === $('#asis-emp').value);
     const ini = $('#asis-ini').value, fin = $('#asis-fin').value;
     const go = $('#asis-go');
@@ -876,7 +938,8 @@
   $('#dlg-asis').addEventListener('change', (ev) => {
     if (!asis) return;
     if (ev.target.dataset.asisDias) { const v = Math.max(0, Math.min(15, Math.round(Number(ev.target.value) || 0))); asis.edit[ev.target.dataset.asisDias] = v; }
-    if (ev.target.id === 'asis-tipo' || ev.target.id === 'asis-ini' || ev.target.id === 'asis-fin') asis.edit = {};
+    if (ev.target.id === 'asis-tipo') { asis.edit = {}; pintarTipoAsis(); }
+    else if (ev.target.id === 'asis-ini' || ev.target.id === 'asis-fin') asis.edit = {};
     pintarAsis();
   });
   $('#dlg-asis').addEventListener('input', (ev) => {
@@ -884,15 +947,80 @@
     if (ev.target.id === 'asis-fin') asis.finTocado = !!ev.target.value;
     // Al escribir el primer día se propone el mismo como último (se puede cambiar)
     if (ev.target.id === 'asis-ini' && ev.target.value && (!asis.finTocado || $('#asis-fin').value < ev.target.value)) { $('#asis-fin').value = ev.target.value; asis.finTocado = false; }
+    if (['asis-mes2', 'asis-q2', 'asis-cant', 'asis-concepto', 'asis-dia', 'asis-horadesde', 'asis-horahasta'].includes(ev.target.id)) pintarAsis();
   });
   $('#asis-form').addEventListener('submit', async (ev) => {
     ev.preventDefault();
-    if (!asis || !asis.partes.length || asis.problemas) return;
-    const tipo = $('#asis-tipo').value, [k, clase] = tipo.split('|');
+    const tipo = $('#asis-tipo').value;
+    const b = $('#asis-go'); b.disabled = true;
+    const empId0 = $('#asis-emp').value;
+    // Un pago no salarial: un valor en una quincena, se suma a lo que ya tenga
+    if (tipo === 'otros') {
+      const mes = $('#asis-mes2').value, q = Number($('#asis-q2').value);
+      const cant = Math.round(parseMonto($('#asis-cant').value));
+      const concepto = $('#asis-concepto').value.trim();
+      if (!empId0) { mostrarError('#asis-err', 'Escoge a la persona.'); b.disabled = false; return; }
+      if (!mes) { mostrarError('#asis-err', 'Escoge el mes.'); b.disabled = false; return; }
+      if (!isFinite(cant) || !(cant > 0)) { mostrarError('#asis-err', 'Escribe el valor del pago.'); b.disabled = false; return; }
+      const clave = claveQ(mes, q);
+      try {
+        let msg = '';
+        await mutar((d) => {
+          const p = d.periodos[clave] = d.periodos[clave] || { estado: 'borrador', filas: {} };
+          if (p.estado === 'cerrado') { msg = `La quincena del ${nombreQ(mes, q)} ya está cerrada.`; return false; }
+          const e = d.empleados.find((x) => x.id === empId0);
+          if (!e) { msg = 'El empleado ya no existe.'; return false; }
+          p.filas = p.filas || {};
+          const fila = p.filas[empId0] = { ...(p.filas[empId0] || {}) };
+          const antes = Number(fila.otros) || 0, despues = antes + cant;
+          fila.otros = despues;
+          if (concepto) fila.nota = [fila.nota, concepto].filter(Boolean).join(' · ');
+          anotar(d, { tipo: 'nomina', periodo: clave, empId: empId0, campo: 'otros', antes, despues });
+        });
+        if (msg) { mostrarError('#asis-err', msg); b.disabled = false; return; }
+        asis = null; $('#dlg-asis').close();
+        R.tab = 'nom'; R.mes = mes; R.q = q; render();
+        toast('Guardado. La nómina y la planilla ya quedan con el cálculo.');
+      } catch (err) { mostrarError('#asis-err', msgGitHub(err)); }
+      b.disabled = false;
+      return;
+    }
+    // Horas extra o un recargo: el día y de qué hora a qué hora; la app calcula las horas y el valor
+    if (HEP_TIPOS[tipo]) {
+      const dia = $('#asis-dia').value, hd = $('#asis-horadesde').value, hh = $('#asis-horahasta').value;
+      if (!empId0) { mostrarError('#asis-err', 'Escoge a la persona.'); b.disabled = false; return; }
+      if (!dia || !hd || !hh) { mostrarError('#asis-err', 'Escribe el día y de qué hora a qué hora.'); b.disabled = false; return; }
+      const horas = horasEntre(hd, hh);
+      if (!(horas > 0)) { mostrarError('#asis-err', 'La hora final debe ser distinta de la inicial.'); b.disabled = false; return; }
+      const mes = dia.slice(0, 7), q = Number(dia.slice(8)) <= 15 ? 1 : 2, clave = claveQ(mes, q);
+      try {
+        let msg = '';
+        await mutar((d) => {
+          const p = d.periodos[clave] = d.periodos[clave] || { estado: 'borrador', filas: {} };
+          if (p.estado === 'cerrado') { msg = `La quincena del ${nombreQ(mes, q)} ya está cerrada.`; return false; }
+          const e = d.empleados.find((x) => x.id === empId0);
+          if (!e) { msg = 'El empleado ya no existe.'; return false; }
+          p.filas = p.filas || {};
+          const fila = p.filas[empId0] = { ...(p.filas[empId0] || {}) };
+          const antes = Number(fila[tipo]) || 0, despues = Math.round((antes + horas) * 10) / 10;
+          fila[tipo] = despues;
+          fila.horasDet = (fila.horasDet || []).concat([{ tipo, fecha: dia, desde: hd, hasta: hh, horas }]);
+          anotar(d, { tipo: 'nomina', periodo: clave, empId: empId0, campo: tipo, antes, despues });
+        });
+        if (msg) { mostrarError('#asis-err', msg); b.disabled = false; return; }
+        asis = null; $('#dlg-asis').close();
+        R.tab = 'nom'; R.mes = mes; R.q = q; render();
+        toast('Guardado. La nómina y la planilla ya quedan con el cálculo.');
+      } catch (err) { mostrarError('#asis-err', msgGitHub(err)); }
+      b.disabled = false;
+      return;
+    }
+    // Vacaciones, incapacidad, licencias o suspensión: un rango de fechas que se reparte en quincenas
+    if (!asis || !asis.partes.length || asis.problemas) { b.disabled = false; return; }
+    const [k, clase] = tipo.split('|');
     const empId = $('#asis-emp').value, ini = $('#asis-ini').value, fin = $('#asis-fin').value;
     const partes = asis.partes.filter((x) => x.dias > 0 || x.nuevo !== x.dias);
-    if (!partes.length) return mostrarError('#asis-err', 'No hay días para guardar.');
-    const b = $('#asis-go'); b.disabled = true;
+    if (!partes.length) { mostrarError('#asis-err', 'No hay días para guardar.'); b.disabled = false; return; }
     try {
       let msg = '';
       await mutar((d) => {
@@ -919,76 +1047,6 @@
         if (!$('#susp-inicio').closest('.field').hidden) { $('#susp-inicio').value = ini; $('#susp-dias').value = String(diasRango(ini, fin)); pintarSusp(); }
       }
     } catch (err) { mostrarError('#asis-err', msgGitHub(err)); }
-    b.disabled = false;
-  });
-
-  // ---------- horas extra, recargos o un pago no salarial ----------
-  const HEP_TIPO_AYUDA = {
-    hed: 'Trabajó más de las horas normales, de día (6 a.m. a 9 p.m.).', hen: 'Trabajó más de las horas normales, de noche (9 p.m. a 6 a.m.).',
-    rn: 'Trabajó su horario normal, pero de noche: se le paga el recargo, no una hora completa extra.',
-    rdf: 'Trabajó su horario normal un domingo o festivo: se le paga el recargo.',
-    hedf: 'Trabajó horas extra de día, un domingo o festivo.', henf: 'Trabajó horas extra de noche, un domingo o festivo.',
-    otros: 'Un pago que no es salario: no cotiza a seguridad social ni cuenta para vacaciones o cesantías. Ej.: auxilio no constitutivo de salario, bonificación ocasional.',
-  };
-  function abrirHEP(empId) {
-    const emps = R.datos.empleados.filter(deEmpresa).filter(activo).sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
-    $('#hep-emp').innerHTML = '<option value="">Escoge una persona…</option>' + emps.map((e) => `<option value="${esc(e.id)}">${esc(e.nombre)}${R.empresa ? '' : ' · ' + esc((e.empresa || EMPRESA_DEF).replace(/ S\.A\.S\.?$/i, ''))}</option>`).join('');
-    $('#hep-emp').value = empId || '';
-    $('#hep-mes').value = R.tab === 'nom' ? R.mes : mesActual(); $('#hep-mes').max = mesActual();
-    $('#hep-q').value = String(R.tab === 'nom' ? R.q : quincenaHoy().q);
-    $('#hep-tipo').value = 'hed'; $('#hep-cant').value = ''; $('#hep-concepto').value = '';
-    mostrarError('#hep-err', ''); pintarHEP(); $('#dlg-hep').showModal();
-  }
-  function pintarHEP() {
-    const tipo = $('#hep-tipo').value, esPago = tipo === 'otros';
-    $('#hep-tipo-ayuda').textContent = HEP_TIPO_AYUDA[tipo] || '';
-    $('#hep-cant-lbl').textContent = esPago ? 'Valor (COP)' : 'Horas';
-    $('#hep-cant').placeholder = esPago ? '200.000' : '4';
-    $('#hep-concepto-wrap').hidden = !esPago;
-    const e = R.datos.empleados.find((x) => x.id === $('#hep-emp').value);
-    const mes = $('#hep-mes').value, q = Number($('#hep-q').value), cant = esPago ? parseMonto($('#hep-cant').value) : Number(String($('#hep-cant').value || '').replace(',', '.'));
-    const res = $('#hep-res');
-    if (!e || !mes || !isFinite(cant) || !(cant > 0)) { res.innerHTML = ''; return; }
-    const clave = claveQ(mes, q), p = R.datos.periodos[clave] || {};
-    if (p.estado === 'cerrado') { res.innerHTML = `<p class="rh-asis-falta">La quincena del ${esc(nombreQ(mes, q))} ya está cerrada.</p>`; return; }
-    const f = filaDe(e, mes, q), antes = Number(f[tipo]) || 0, despues = antes + Math.round(cant);
-    const P = R.datos.param, sal = Number(e.salario) || 0, hora = sal / (P.horasMes || 210);
-    const valor = esPago ? Math.round(cant) : Math.round(tipo === 'rn' ? hora * cant * P.rec.rn / 100 : tipo === 'rdf' ? hora * cant * P.rec.rdf / 100 : hora * cant * (1 + P.rec[tipo] / 100));
-    res.innerHTML = `<p class="rh-asis-resumen">✔ <b>${esc(e.nombre)}</b>, quincena del ${esc(nombreQ(mes, q))}: ${antes ? `tenía ${antes}${esPago ? '' : ' h'}, quedará en <b>${despues}${esPago ? '' : ' h'}</b>` : `queda en <b>${despues}${esPago ? '' : ' h'}</b>`} de ${esc((HORAS.find(([k]) => k === tipo) || [, 'bonificación/auxilio'])[1])}${esPago ? '' : `, <b>${fmt(valor)}</b> esta vez`}.</p>`;
-  }
-  $('#dlg-hep').addEventListener('input', pintarHEP);
-  $('#dlg-hep').addEventListener('change', pintarHEP);
-  $('#hep-form').addEventListener('submit', async (ev) => {
-    ev.preventDefault();
-    const tipo = $('#hep-tipo').value, esPago = tipo === 'otros';
-    const empId = $('#hep-emp').value, mes = $('#hep-mes').value, q = Number($('#hep-q').value);
-    const cant = esPago ? Math.round(parseMonto($('#hep-cant').value)) : Math.round(Number(String($('#hep-cant').value || '').replace(',', '.')) * 10) / 10;
-    const concepto = $('#hep-concepto').value.trim();
-    if (!empId) return mostrarError('#hep-err', 'Escoge a la persona.');
-    if (!mes) return mostrarError('#hep-err', 'Escoge el mes.');
-    if (!isFinite(cant) || !(cant > 0)) return mostrarError('#hep-err', esPago ? 'Escribe el valor del pago.' : 'Escribe las horas.');
-    const clave = claveQ(mes, q);
-    const b = $('#hep-go'); b.disabled = true;
-    try {
-      let msg = '', despues = 0;
-      await mutar((d) => {
-        const p = d.periodos[clave] = d.periodos[clave] || { estado: 'borrador', filas: {} };
-        if (p.estado === 'cerrado') { msg = `La quincena del ${nombreQ(mes, q)} ya está cerrada.`; return false; }
-        const e = d.empleados.find((x) => x.id === empId);
-        if (!e) { msg = 'El empleado ya no existe.'; return false; }
-        p.filas = p.filas || {};
-        const fila = p.filas[empId] = { ...(p.filas[empId] || {}) };
-        const antes = Number(fila[tipo]) || 0;
-        despues = antes + cant;
-        fila[tipo] = despues;
-        if (esPago && concepto) fila.nota = [fila.nota, concepto].filter(Boolean).join(' · ');
-        anotar(d, { tipo: 'nomina', periodo: clave, empId, campo: tipo, antes, despues });
-      });
-      if (msg) { mostrarError('#hep-err', msg); b.disabled = false; return; }
-      $('#dlg-hep').close();
-      R.tab = 'nom'; R.mes = mes; R.q = q; render();
-      toast('Guardado. La nómina y la planilla ya quedan con el cálculo.');
-    } catch (err) { mostrarError('#hep-err', msgGitHub(err)); }
     b.disabled = false;
   });
 
@@ -1344,6 +1402,46 @@
         e.ingreso && e.ingreso.slice(0, 7) === mes ? e.ingreso : '', e.retiro && e.retiro.slice(0, 7) === mes ? e.retiro : '', e.retiro && e.retiro.slice(0, 7) === mes ? e.motivoRetiro || '' : '', [f[0] && f[0].nota, f[1] && f[1].nota].filter(Boolean).join(' / '), mods]);
     }
     libro([{ titulo: 'Novedades', filas, anchos: [20, 30, 13, 18, 13, ...Array(16).fill(10), 12, 12, 20, 30, 60], pesos: [4, 18, 19, 20] }], `Novedades nómina ${mes}${sufijoEmp()}.xlsx`);
+  }
+  // Informe de novedades para imprimir: solo quien tuvo algo que contar ese mes (no toda la nómina), en frases simples
+  function novedadesTxt(f0, f1) {
+    const s = (k) => (Number((f0 || {})[k]) || 0) + (Number((f1 || {})[k]) || 0);
+    const d = (n) => `${n} ${n === 1 ? 'día' : 'días'}`;
+    const partes = [];
+    if (s('inc')) partes.push(`Incapacidad: ${d(s('inc'))}`);
+    if (s('vac')) partes.push(`Vacaciones: ${d(s('vac'))}`);
+    if (s('lr')) partes.push(`Licencia remunerada: ${d(s('lr'))}`);
+    if (s('lnr')) partes.push(`Licencia no remunerada: ${d(s('lnr'))}`);
+    if (s('sus')) partes.push(`Suspensión: ${d(s('sus'))}`);
+    // Horas extra y recargos: si se registraron con día y horario, se listan uno por uno (lo pidió Karen para el informe impreso)
+    const det = [...((f0 || {}).horasDet || []), ...((f1 || {}).horasDet || [])].sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
+    const conDetalle = new Set(det.map((x) => x.tipo));
+    for (const x of det) partes.push(`${HE_NOMBRE[x.tipo] || x.tipo}: ${fmtDate(x.fecha)}, de ${x.desde} a ${x.hasta} (${x.horas} h)`);
+    for (const [k, nom] of Object.entries(HE_NOMBRE)) if (s(k) && !conDetalle.has(k)) partes.push(`${nom}: ${s(k)} h`);
+    if (s('otros')) partes.push(`Bonificación o auxilio no constitutivo de salario: ${fmt(s('otros'))}`);
+    if (s('prestamos')) partes.push(`Préstamos: ${fmt(s('prestamos'))}`);
+    if (s('otrasDed')) partes.push(`Otras deducciones: ${fmt(s('otrasDed'))}`);
+    return partes;
+  }
+  function imprimirNovedades() {
+    const mes = R.mesPla;
+    const vistos = new Map();
+    for (const q of [1, 2]) for (const e of empleadosDe(mes, q).filter(deEmpresa)) { const k = e.cedula || e.id; if (!vistos.has(k)) vistos.set(k, { e, f: [null, null] }); vistos.get(k).f[q - 1] = filaDe(e, mes, q); }
+    const filas = [...vistos.values()].map(({ e, f }) => ({
+      e, partes: novedadesTxt(f[0], f[1]),
+      ing: e.ingreso && e.ingreso.slice(0, 7) === mes ? e.ingreso : '', ret: e.retiro && e.retiro.slice(0, 7) === mes ? e.retiro : '',
+    })).filter((x) => x.partes.length || x.ing || x.ret)
+      .sort((a, b) => String(a.e.empresa).localeCompare(String(b.e.empresa)) || String(a.e.nombre).localeCompare(String(b.e.nombre)));
+    if (!filas.length) { toast(`No hay novedades registradas en ${nombreMes(mes).toLowerCase()}.`); return; }
+    const empresas = [...new Set(filas.map((x) => x.e.empresa || EMPRESA_DEF))];
+    const cuerpo = empresas.map((emp) => {
+      const fs = filas.filter((x) => (x.e.empresa || EMPRESA_DEF) === emp);
+      return `<h2>${esc(emp)}</h2><table><thead><tr><th>Empleado</th><th>Novedades</th></tr></thead><tbody>${fs.map((x) => {
+        const lineas = [x.ing && 'Ingreso el ' + fmtDate(x.ing), x.ret && 'Retiro el ' + fmtDate(x.ret), ...x.partes].filter(Boolean);
+        return `<tr><td><b>${esc(x.e.nombre)}</b><br><span class="sub">C.C. ${esc(x.e.cedula || '—')}${x.e.cargo ? ' · ' + esc(x.e.cargo) : ''}</span></td><td>${lineas.map(esc).join('<br>')}</td></tr>`;
+      }).join('')}</tbody></table>`;
+    }).join('');
+    window.InformePDF.abrir({ titulo: 'Informe de novedades', subtitulo: [R.empresa || EMPRESA_DEF, nombreMes(mes)], cuerpo, archivo: `Novedades ${nombreMes(mes)}` });
   }
   function excelPlanilla() {
     const mes = R.mesPla, P = R.datos.param, filas = planillaMes(mes).filter((x) => deEmpresa(x.e));
@@ -1855,8 +1953,8 @@
       else if (a === 'nom') { const h = quincenaHoy(); R.tab = 'nom'; R.mes = h.mes; R.q = h.q; render(); }
       else if (a === 'pla') { R.tab = 'pla'; R.mesPla = mesAnterior(mesActual()); render(); if (b === 'archivo') archivoAportes(); }
       else if (a === 'novedad') abrirAsistente();
-      else if (a === 'hep') abrirHEP();
       else if (a === 'desprendibles') descargarDesprendibles();
+      else if (a === 'novedadesPDF') imprimirNovedades();
       else if (a === 'nuevo') abrirEmpleado(null);
       else { R.tab = a; render(); }
       window.scrollTo({ top: 0, behavior: 'smooth' });
