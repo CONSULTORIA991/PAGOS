@@ -118,8 +118,13 @@
     const dia = sal / 30, hora = sal / (P.horasMes || 210);
     const salario = dia * diasTrab, vac = dia * n('vac'), lr = dia * n('lr');
     const inc = Math.max(dia * P.incapacidadPct / 100, P.smmlv / 30) * n('inc');
-    const he = hora * (n('hed') * (1 + P.rec.hed / 100) + n('hen') * (1 + P.rec.hen / 100) + n('hedf') * (1 + P.rec.hedf / 100) + n('henf') * (1 + P.rec.henf / 100))
-      + hora * (n('rn') * P.rec.rn / 100 + n('rdf') * P.rec.rdf / 100);
+    // Valor de cada tipo de hora extra o recargo, por separado (para la nómina y los desprendibles)
+    const heTipos = {
+      hed: hora * n('hed') * (1 + P.rec.hed / 100), hen: hora * n('hen') * (1 + P.rec.hen / 100),
+      hedf: hora * n('hedf') * (1 + P.rec.hedf / 100), henf: hora * n('henf') * (1 + P.rec.henf / 100),
+      rn: hora * n('rn') * P.rec.rn / 100, rdf: hora * n('rdf') * P.rec.rdf / 100,
+    };
+    const he = Object.values(heTipos).reduce((s, v) => s + v, 0);
     const aux = e.aux !== false && sal <= 2 * P.smmlv ? (P.aux / 30) * diasTrab : 0;
     const ibc = salario + vac + lr + inc + he;
     const devengado = ibc + aux + n('otros');
@@ -127,7 +132,8 @@
     const fsp = sal >= 4 * P.smmlv ? Math.round(ibc * 0.01) : 0;
     // Como en el Excel: el total se redondea una sola vez (no la suma de valores ya redondeados)
     const deducciones = Math.round(ibc * (P.saludEmp + P.pensionEmp) / 100 + (sal >= 4 * P.smmlv ? ibc * 0.01 : 0)) + n('prestamos') + n('otrasDed');
-    return { diasTrab, salario: Math.round(salario), vac: Math.round(vac), lr: Math.round(lr), inc: Math.round(inc), he: Math.round(he), aux: Math.round(aux), otros: n('otros'),
+    return { diasTrab, salario: Math.round(salario), vac: Math.round(vac), lr: Math.round(lr), inc: Math.round(inc), he: Math.round(he),
+      heTipos: Object.fromEntries(Object.entries(heTipos).map(([k, v]) => [k, Math.round(v)])), aux: Math.round(aux), otros: n('otros'),
       ibc: Math.round(ibc), ibcX: ibc, devengado: Math.round(devengado), salud, pension, fsp, prestamos: n('prestamos'), otrasDed: n('otrasDed'), deducciones, neto: Math.round(devengado) - deducciones };
   }
   const arriba100 = (v) => Math.ceil(v / 100) * 100;
@@ -161,6 +167,47 @@
       return { e, diasQ1: x.dias[0], diasQ2: x.dias[1], dias, ibcQ1: x.ibc[0], ibcQ2: x.ibc[1], ibc, pension, salud, arl, ccf, sena, icbf, total, descontado, empresa: total - descontado,
         inc: x.inc, vac: x.vac, lr: x.lr, lnr: x.lnr, sus: x.sus, he: x.he, ing, ret, fechas: x.fechas || {} };
     });
+  }
+
+  // ---------- desprendibles de pago (PDF con el logo de ODESA) ----------
+  const HE_NOMBRE = { hed: 'Horas extra diurnas', hen: 'Horas extra nocturnas', rn: 'Recargo nocturno', rdf: 'Recargo dominical o festivo', hedf: 'Horas extra dom/fest diurnas', henf: 'Horas extra dom/fest nocturnas' };
+  function filaDesp(tit, cant, valor) { return `<tr><td>${esc(tit)}</td><td class="n">${cant || ''}</td><td class="n">${fmt(valor)}</td></tr>`; }
+  function desprendibleHTML(e, mes, q, primero) {
+    const f = filaDe(e, mes, q), c = calcular(e, f);
+    const ingresos = [filaDesp('Sueldo', c.diasTrab, c.salario)];
+    if (c.aux) ingresos.push(filaDesp('Auxilio de transporte', c.diasTrab, c.aux));
+    if (c.otros) ingresos.push(filaDesp('Bonificación o auxilio no constitutivo de salario', '', c.otros));
+    for (const [k, nom] of Object.entries(HE_NOMBRE)) if (c.heTipos[k]) ingresos.push(filaDesp(nom, Number(f[k]) || 0, c.heTipos[k]));
+    if (c.vac) ingresos.push(filaDesp('Vacaciones', Number(f.vac) || 0, c.vac));
+    if (c.lr) ingresos.push(filaDesp('Licencia remunerada', Number(f.lr) || 0, c.lr));
+    if (c.inc) ingresos.push(filaDesp('Incapacidad', Number(f.inc) || 0, c.inc));
+    const deducciones = [filaDesp('Salud (4 %)', c.diasTrab, c.salud), filaDesp('Pensión (4 %)', c.diasTrab, c.pension + c.fsp)];
+    if (c.prestamos) deducciones.push(filaDesp('Préstamos', '', c.prestamos));
+    if (c.otrasDed) deducciones.push(filaDesp('Otras deducciones', '', c.otrasDed));
+    return `<div class="desp${primero ? '' : ' salto'}">
+      <h2>${esc(e.nombre)} — Comprobante de nómina</h2>
+      <table><tbody>
+        <tr><td style="width:32%"><b>Período de pago</b></td><td>${esc(nombreQ(mes, q))}</td></tr>
+        <tr><td><b>Identificación</b></td><td>C.C. ${esc(e.cedula || '—')}</td></tr>
+        <tr><td><b>Cargo</b></td><td>${esc(e.cargo || '—')}</td></tr>
+        <tr><td><b>Salario básico</b></td><td>${fmt(e.salario)}</td></tr>
+        <tr><td><b>Tipo de vinculación</b></td><td>Nómina</td></tr>
+      </tbody></table>
+      <div style="display:flex;gap:16px;align-items:flex-start">
+        <table style="flex:1"><thead><tr class="sec"><td colspan="3">Ingresos</td></tr><tr><th>Concepto</th><th class="n">Cant.</th><th class="n">Valor</th></tr></thead>
+          <tbody>${ingresos.join('')}<tr class="tot"><td>Total ingresos</td><td></td><td class="n">${fmt(c.devengado)}</td></tr></tbody></table>
+        <table style="flex:1"><thead><tr class="sec"><td colspan="3">Deducciones</td></tr><tr><th>Concepto</th><th class="n">Cant.</th><th class="n">Valor</th></tr></thead>
+          <tbody>${deducciones.join('')}<tr class="tot"><td>Total deducciones</td><td></td><td class="n">${fmt(c.deducciones)}</td></tr></tbody></table>
+      </div>
+      <p class="frase" style="margin-top:10px"><span>Neto a pagar</span><b class="n">${fmt(c.neto)}</b></p>
+      <div style="margin-top:34px">______________________________<br>${esc(e.nombre)}<br><span class="sub">Recibí conforme</span></div>
+    </div>`;
+  }
+  function descargarDesprendibles() {
+    const emps = empleadosDe(R.mes, R.q).filter(deEmpresa).sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
+    if (!emps.length) return toast('No hay nadie con días en esta quincena.');
+    const cuerpo = emps.map((e, i) => desprendibleHTML(e, R.mes, R.q, i === 0)).join('');
+    window.InformePDF.abrir({ titulo: 'Comprobantes de nómina', subtitulo: [R.empresa || EMPRESA_DEF, 'Quincena del ' + nombreQ(R.mes, R.q)], cuerpo, archivo: `Desprendibles ${nombreQ(R.mes, R.q)}` });
   }
 
   // ---------- pantalla ----------
@@ -230,7 +277,7 @@
           `${b('emp:activos', 'Activos', true)}${b('emp:retirados', 'Retirados')}${b('emp:todos', 'Todos')}${b('nuevo', '+ Agregar')}`)}
         ${card('nom', 'Nómina quincenal', 'Días, vacaciones, incapacidades, licencias, horas extra y lo que se paga a cada uno.',
           `Quincena del ${esc(nombreQ(mes, q))}: <b>${pq.estado === 'cerrado' ? 'cerrada' : 'abierta'}</b>${pend.length ? ` · <span class="rh-alerta">${pend.length} ${pend.length === 1 ? 'pendiente' : 'pendientes'}</span>` : ''}`,
-          `${b('nom:hoy', 'Abrir quincena', true)}${b('novedad', 'Registrar novedad')}`)}
+          `${b('nom:hoy', 'Abrir quincena', true)}${b('novedad', 'Registrar novedad')}${b('hep', 'Horas extra o un pago')}`)}
         ${card('pla', 'Planilla de aportes', 'Seguridad social del mes (pensión, salud, ARL, caja) y el archivo para subir a Aportes en Línea.',
           `${esc(nombreMes(mesPla))}: <b>${fmt(totPla)}</b> · ${pla.length} cotizantes`,
           `${b('pla:ant', 'Ver planilla', true)}${b('pla:archivo', 'Revisar y descargar archivo')}`)}
@@ -327,7 +374,7 @@
         <div class="field"><label for="rh-mes">Mes</label><input type="month" id="rh-mes" value="${esc(R.mes)}"></div>
         <div class="quick"><button class="qbtn" type="button" data-rh-q="1" aria-pressed="${R.q === 1}">1 al 15</button><button class="qbtn" type="button" data-rh-q="2" aria-pressed="${R.q === 2}">16 al 30</button></div>
         <span class="rh-estado ${cerrado ? 'cerrado' : 'borrador'}">${cerrado ? `Cerrada${p.cerradoPor ? ' por ' + esc(quien(p.cerradoPor)) : ''}` : 'Borrador · se puede modificar'}</span>
-      </div><div class="grupo">${cerrado ? '' : '<button class="btn primary" type="button" data-rh-ir="novedad">+ Registrar novedad</button><button class="btn" type="button" data-rh="imp-q">Importar quincenas desde Excel</button>'}<button class="btn" type="button" data-rh="xls-nom">Descargar Excel</button>${A.isAdmin ? (cerrado ? '<button class="btn" type="button" data-rh="reabrir">Reabrir quincena</button>' : '<button class="btn" type="button" data-rh="cerrar">Cerrar quincena</button>') : ''}</div></div>
+      </div><div class="grupo">${cerrado ? '' : '<button class="btn primary" type="button" data-rh-ir="novedad">+ Registrar novedad</button><button class="btn" type="button" data-rh-ir="hep">+ Horas extra o un pago</button><button class="btn" type="button" data-rh="imp-q">Importar quincenas desde Excel</button>'}<button class="btn" type="button" data-rh-ir="desprendibles">Desprendibles (PDF)</button><button class="btn" type="button" data-rh="xls-nom">Descargar Excel</button>${A.isAdmin ? (cerrado ? '<button class="btn" type="button" data-rh="reabrir">Reabrir quincena</button>' : '<button class="btn" type="button" data-rh="cerrar">Cerrar quincena</button>') : ''}</div></div>
       ${pasosNomina(emps, p, cerrado)}
       ${guia(`💡 Para vacaciones, incapacidades, licencias o suspensiones usa <b>Registrar novedad</b>: preguntas sencillas y la app pone los días y las fechas. También puedes escribir directo en las casillas; cada cambio se guarda solo y queda en <b>Cambios</b> con tu nombre (las casillas en amarillo fueron modificadas). Toca los <b>?</b> para saber qué va en cada columna.`)}
       ${bloques || '<div class="empty"><p>No hay empleados con días en esta quincena.</p></div>'}
@@ -875,6 +922,76 @@
     b.disabled = false;
   });
 
+  // ---------- horas extra, recargos o un pago no salarial ----------
+  const HEP_TIPO_AYUDA = {
+    hed: 'Trabajó más de las horas normales, de día (6 a.m. a 9 p.m.).', hen: 'Trabajó más de las horas normales, de noche (9 p.m. a 6 a.m.).',
+    rn: 'Trabajó su horario normal, pero de noche: se le paga el recargo, no una hora completa extra.',
+    rdf: 'Trabajó su horario normal un domingo o festivo: se le paga el recargo.',
+    hedf: 'Trabajó horas extra de día, un domingo o festivo.', henf: 'Trabajó horas extra de noche, un domingo o festivo.',
+    otros: 'Un pago que no es salario: no cotiza a seguridad social ni cuenta para vacaciones o cesantías. Ej.: auxilio no constitutivo de salario, bonificación ocasional.',
+  };
+  function abrirHEP(empId) {
+    const emps = R.datos.empleados.filter(deEmpresa).filter(activo).sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
+    $('#hep-emp').innerHTML = '<option value="">Escoge una persona…</option>' + emps.map((e) => `<option value="${esc(e.id)}">${esc(e.nombre)}${R.empresa ? '' : ' · ' + esc((e.empresa || EMPRESA_DEF).replace(/ S\.A\.S\.?$/i, ''))}</option>`).join('');
+    $('#hep-emp').value = empId || '';
+    $('#hep-mes').value = R.tab === 'nom' ? R.mes : mesActual(); $('#hep-mes').max = mesActual();
+    $('#hep-q').value = String(R.tab === 'nom' ? R.q : quincenaHoy().q);
+    $('#hep-tipo').value = 'hed'; $('#hep-cant').value = ''; $('#hep-concepto').value = '';
+    mostrarError('#hep-err', ''); pintarHEP(); $('#dlg-hep').showModal();
+  }
+  function pintarHEP() {
+    const tipo = $('#hep-tipo').value, esPago = tipo === 'otros';
+    $('#hep-tipo-ayuda').textContent = HEP_TIPO_AYUDA[tipo] || '';
+    $('#hep-cant-lbl').textContent = esPago ? 'Valor (COP)' : 'Horas';
+    $('#hep-cant').placeholder = esPago ? '200.000' : '4';
+    $('#hep-concepto-wrap').hidden = !esPago;
+    const e = R.datos.empleados.find((x) => x.id === $('#hep-emp').value);
+    const mes = $('#hep-mes').value, q = Number($('#hep-q').value), cant = esPago ? parseMonto($('#hep-cant').value) : Number(String($('#hep-cant').value || '').replace(',', '.'));
+    const res = $('#hep-res');
+    if (!e || !mes || !isFinite(cant) || !(cant > 0)) { res.innerHTML = ''; return; }
+    const clave = claveQ(mes, q), p = R.datos.periodos[clave] || {};
+    if (p.estado === 'cerrado') { res.innerHTML = `<p class="rh-asis-falta">La quincena del ${esc(nombreQ(mes, q))} ya está cerrada.</p>`; return; }
+    const f = filaDe(e, mes, q), antes = Number(f[tipo]) || 0, despues = antes + Math.round(cant);
+    const P = R.datos.param, sal = Number(e.salario) || 0, hora = sal / (P.horasMes || 210);
+    const valor = esPago ? Math.round(cant) : Math.round(tipo === 'rn' ? hora * cant * P.rec.rn / 100 : tipo === 'rdf' ? hora * cant * P.rec.rdf / 100 : hora * cant * (1 + P.rec[tipo] / 100));
+    res.innerHTML = `<p class="rh-asis-resumen">✔ <b>${esc(e.nombre)}</b>, quincena del ${esc(nombreQ(mes, q))}: ${antes ? `tenía ${antes}${esPago ? '' : ' h'}, quedará en <b>${despues}${esPago ? '' : ' h'}</b>` : `queda en <b>${despues}${esPago ? '' : ' h'}</b>`} de ${esc((HORAS.find(([k]) => k === tipo) || [, 'bonificación/auxilio'])[1])}${esPago ? '' : `, <b>${fmt(valor)}</b> esta vez`}.</p>`;
+  }
+  $('#dlg-hep').addEventListener('input', pintarHEP);
+  $('#dlg-hep').addEventListener('change', pintarHEP);
+  $('#hep-form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const tipo = $('#hep-tipo').value, esPago = tipo === 'otros';
+    const empId = $('#hep-emp').value, mes = $('#hep-mes').value, q = Number($('#hep-q').value);
+    const cant = esPago ? Math.round(parseMonto($('#hep-cant').value)) : Math.round(Number(String($('#hep-cant').value || '').replace(',', '.')) * 10) / 10;
+    const concepto = $('#hep-concepto').value.trim();
+    if (!empId) return mostrarError('#hep-err', 'Escoge a la persona.');
+    if (!mes) return mostrarError('#hep-err', 'Escoge el mes.');
+    if (!isFinite(cant) || !(cant > 0)) return mostrarError('#hep-err', esPago ? 'Escribe el valor del pago.' : 'Escribe las horas.');
+    const clave = claveQ(mes, q);
+    const b = $('#hep-go'); b.disabled = true;
+    try {
+      let msg = '', despues = 0;
+      await mutar((d) => {
+        const p = d.periodos[clave] = d.periodos[clave] || { estado: 'borrador', filas: {} };
+        if (p.estado === 'cerrado') { msg = `La quincena del ${nombreQ(mes, q)} ya está cerrada.`; return false; }
+        const e = d.empleados.find((x) => x.id === empId);
+        if (!e) { msg = 'El empleado ya no existe.'; return false; }
+        p.filas = p.filas || {};
+        const fila = p.filas[empId] = { ...(p.filas[empId] || {}) };
+        const antes = Number(fila[tipo]) || 0;
+        despues = antes + cant;
+        fila[tipo] = despues;
+        if (esPago && concepto) fila.nota = [fila.nota, concepto].filter(Boolean).join(' · ');
+        anotar(d, { tipo: 'nomina', periodo: clave, empId, campo: tipo, antes, despues });
+      });
+      if (msg) { mostrarError('#hep-err', msg); b.disabled = false; return; }
+      $('#dlg-hep').close();
+      R.tab = 'nom'; R.mes = mes; R.q = q; render();
+      toast('Guardado. La nómina y la planilla ya quedan con el cálculo.');
+    } catch (err) { mostrarError('#hep-err', msgGitHub(err)); }
+    b.disabled = false;
+  });
+
   // ---------- suspensión ----------
   let susp = null; // { empId, clave, dias }
   const inicioQ = (clave) => (clave ? `${clave.slice(0, 7)}-${clave.endsWith('Q1') ? '01' : '16'}` : hoy());
@@ -1179,16 +1296,37 @@
     for (const e of R.datos.empleados.filter(deEmpresa)) filas.push([e.nombre, e.cedula, e.empresa || EMPRESA_DEF, e.cargo || '', e.contrato || '', Number(e.salario) || 0, e.aux !== false ? 'Sí' : 'No', e.riesgo || 1, e.ingreso || '', e.eps || '', e.afp || '', e.cc || '', activo(e) ? 'Activo' : 'Retirado', e.retiro || '', e.motivoRetiro || '', e.contratoFin || '', e.arl || '', e.ccf || '', e.cesantias || '', e.telefono || '', e.direccion || '']);
     libro([{ titulo: 'Empleados', filas, anchos: [32, 14, 22, 22, 18, 14, 10, 8, 12, 16, 16, 16, 10, 12, 24, 12, 14, 14, 14, 14, 26], pesos: [5] }], `Empleados${sufijoEmp() || ' ODESA'} ${hoy()}.xlsx`);
   }
+  // Columnas de la nómina: las que siempre van (identidad y los grandes totales) y las que solo se
+  // muestran si alguien de la hoja las usó (licencias, horas extra, recargos, préstamos…). Así, cuando
+  // no hubo novedades, el Excel que se envía a los jefes queda corto y fácil de revisar.
+  function colsNomina(e, f, c) {
+    const n = (k) => Number(f[k]) || 0;
+    return [
+      ['Nombre', e.nombre, 30, 0, true], ['Cédula', e.cedula, 13, 0, true], ['Cargo', e.cargo || '', 18, 0, true], ['Salario mensual', Number(e.salario) || 0, 14, 1, true],
+      ['Días quincena', n('dias'), 9, 0, true], ['Días trabajados', c.diasTrab, 9, 0, true],
+      ['Incapacidad', n('inc'), 9, 0], ['Vacaciones', n('vac'), 9, 0], ['Lic. remunerada', n('lr'), 9, 0], ['Lic. no remunerada', n('lnr'), 9, 0], ['Suspensión', n('sus'), 9, 0],
+      ['HE diurnas (h)', n('hed'), 9, 0], ['HE nocturnas (h)', n('hen'), 9, 0], ['Recargo nocturno (h)', n('rn'), 9, 0], ['Recargo dom/fest (h)', n('rdf'), 9, 0], ['HE dom diurnas (h)', n('hedf'), 9, 0], ['HE dom nocturnas (h)', n('henf'), 9, 0],
+      ['Salario quincena', c.salario, 14, 1, true], ['Vac/Lic/Incap', c.vac + c.lr + c.inc, 14, 1], ['Horas extra', c.he, 14, 1], ['Aux. transporte', c.aux, 14, 1, true], ['Otros pagos (no constitutivos)', c.otros, 14, 1],
+      ['Total devengado', c.devengado, 14, 1, true], ['Salud 4%', c.salud, 14, 1, true], ['Pensión 4%', c.pension, 14, 1, true], ['Fondo solidaridad', c.fsp, 14, 1],
+      ['Préstamos', c.prestamos, 14, 1], ['Otras deducciones', c.otrasDed, 14, 1], ['Total deducciones', c.deducciones, 14, 1, true], ['Neto a pagar', c.neto, 14, 1, true],
+      ['Nota', f.nota || '', 30, 0, true],
+    ];
+  }
   function excelNomina() {
-    const cab = ['Nombre', 'Cédula', 'Cargo', 'Salario mensual', 'Días quincena', 'Incapacidad', 'Vacaciones', 'Lic. remunerada', 'Lic. no remunerada', 'Suspensión', 'Días trabajados', 'HE diurnas (h)', 'HE nocturnas (h)', 'Recargo nocturno (h)', 'Recargo dom/fest (h)', 'HE dom diurnas (h)', 'HE dom nocturnas (h)', 'Salario quincena', 'Vac/Lic/Incap', 'Horas extra', 'Aux. transporte', 'Otros pagos (no constitutivos)', 'Total devengado', 'Salud 4%', 'Pensión 4%', 'Fondo solidaridad', 'Préstamos', 'Otras deducciones', 'Total deducciones', 'Neto a pagar', 'Nota'];
     const emps = empleadosDe(R.mes, R.q).filter(deEmpresa);
     const hojas = [...new Set(emps.map((e) => e.empresa || EMPRESA_DEF))].map((emp) => {
+      const es = emps.filter((x) => (x.empresa || EMPRESA_DEF) === emp);
+      if (!es.length) return { titulo: emp, filas: [[]], anchos: [], pesos: [] };
+      const datos = es.map((e) => { const f = filaDe(e, R.mes, R.q), c = calcular(e, f); return { e, f, c, cols: colsNomina(e, f, c) }; });
+      // Se queda la columna si siempre va, o si alguien de esta hoja tiene un valor distinto de cero/vacío
+      const usa = (i) => datos.some((x) => { const v = x.cols[i][1]; return typeof v === 'number' ? v !== 0 : !!v; });
+      const idx = datos[0].cols.map((c, i) => i).filter((i) => datos[0].cols[i][4] || usa(i));
+      const cab = idx.map((i) => datos[0].cols[i][0]);
+      const anchos = idx.map((i) => datos[0].cols[i][2]);
+      const pesos = idx.map((i, j) => (datos[0].cols[i][3] ? j : -1)).filter((j) => j >= 0);
       const filas = [[`NÓMINA ${nombreQ(R.mes, R.q).toUpperCase()}`], [`Empresa: ${emp}`], [], cab];
-      for (const e of emps.filter((x) => (x.empresa || EMPRESA_DEF) === emp)) {
-        const f = filaDe(e, R.mes, R.q), c = calcular(e, f), n = (k) => Number(f[k]) || 0;
-        filas.push([e.nombre, e.cedula, e.cargo || '', Number(e.salario) || 0, n('dias'), n('inc'), n('vac'), n('lr'), n('lnr'), n('sus'), c.diasTrab, n('hed'), n('hen'), n('rn'), n('rdf'), n('hedf'), n('henf'), c.salario, c.vac + c.lr + c.inc, c.he, c.aux, c.otros, c.devengado, c.salud, c.pension, c.fsp, c.prestamos, c.otrasDed, c.deducciones, c.neto, f.nota || '']);
-      }
-      return { titulo: `${R.q === 1 ? '1-15' : '16-30'} ${emp}`, filas, anchos: [30, 13, 18, 14, ...Array(13).fill(9), ...Array(13).fill(14), 30], pesos: [3, ...Array.from({ length: 13 }, (_, i) => 17 + i)] };
+      for (const x of datos) filas.push(idx.map((i) => x.cols[i][1]));
+      return { titulo: `${R.q === 1 ? '1-15' : '16-30'} ${emp}`, filas, anchos, pesos };
     });
     libro(hojas, `Nómina ${R.mes} quincena ${R.q}${sufijoEmp()}.xlsx`);
   }
@@ -1717,6 +1855,8 @@
       else if (a === 'nom') { const h = quincenaHoy(); R.tab = 'nom'; R.mes = h.mes; R.q = h.q; render(); }
       else if (a === 'pla') { R.tab = 'pla'; R.mesPla = mesAnterior(mesActual()); render(); if (b === 'archivo') archivoAportes(); }
       else if (a === 'novedad') abrirAsistente();
+      else if (a === 'hep') abrirHEP();
+      else if (a === 'desprendibles') descargarDesprendibles();
       else if (a === 'nuevo') abrirEmpleado(null);
       else { R.tab = a; render(); }
       window.scrollTo({ top: 0, behavior: 'smooth' });

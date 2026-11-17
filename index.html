@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="estilos.css?v=55">
+<link rel="stylesheet" href="estilos.css?v=57">
 </head>
 <body>
 
@@ -609,6 +609,33 @@
   </div>
 </dialog>
 
+<!-- Horas extra, recargos o un pago no salarial (auxilio no constitutivo, bonificación) -->
+<dialog id="dlg-hep">
+  <div class="dlg">
+    <div class="dlg-head"><h2>Horas extra o un pago</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
+    <p class="rh-guia" style="margin:0">Se suma a lo que ya tenga esa quincena (si registras dos veces horas extra diurnas, se acumulan). La app hace el cálculo y lo lleva a la nómina y a la planilla.</p>
+    <form class="grid" id="hep-form" novalidate>
+      <div class="field full"><label for="hep-emp">Persona</label><select id="hep-emp" required></select></div>
+      <div class="field"><label for="hep-mes">Mes</label><input type="month" id="hep-mes" required></div>
+      <div class="field"><label for="hep-q">Quincena</label><select id="hep-q"><option value="1">1 al 15</option><option value="2">16 al 30</option></select></div>
+      <div class="field full"><label for="hep-tipo">¿Qué vas a registrar?</label><select id="hep-tipo">
+        <option value="hed">Horas extra diurnas</option>
+        <option value="hen">Horas extra nocturnas</option>
+        <option value="rn">Recargo nocturno (hora ordinaria de noche)</option>
+        <option value="rdf">Recargo dominical o festivo (hora ordinaria)</option>
+        <option value="hedf">Horas extra diurnas en domingo o festivo</option>
+        <option value="henf">Horas extra nocturnas en domingo o festivo</option>
+        <option value="otros">Bonificación o auxilio no constitutivo de salario</option>
+      </select><span class="hint" id="hep-tipo-ayuda"></span></div>
+      <div class="field"><label for="hep-cant" id="hep-cant-lbl">Horas</label><input id="hep-cant" inputmode="decimal" autocomplete="off" required></div>
+      <div class="field full" id="hep-concepto-wrap" hidden><label for="hep-concepto">Concepto (queda en la nota de esa quincena)</label><input id="hep-concepto" autocomplete="off" placeholder="Ej. Auxilio no constitutivo de salario"></div>
+      <div class="full" id="hep-res"></div>
+      <div class="err full" id="hep-err" hidden></div>
+      <div class="form-actions full"><button class="btn" type="button" data-close>Cancelar</button><button class="btn primary" type="submit" id="hep-go">Guardar</button></div>
+    </form>
+  </div>
+</dialog>
+
 <!-- Revisión antes de descargar el archivo de Aportes -->
 <dialog id="dlg-rev">
   <div class="dlg">
@@ -977,15 +1004,15 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="cripto.js?v=55"></script>
-<script src="github.js?v=55"></script>
-<script src="lector.js?v=55"></script>
-<script src="app.js?v=55"></script>
-<script src="rrhh-docs.js?v=55"></script>
-<script src="rrhh.js?v=55"></script>
-<script src="informe-pdf.js?v=55"></script>
-<script src="proyectos.js?v=55"></script>
-<script src="conciliacion.js?v=55"></script>
-<script src="compras.js?v=55"></script>
+<script src="cripto.js?v=57"></script>
+<script src="github.js?v=57"></script>
+<script src="lector.js?v=57"></script>
+<script src="app.js?v=57"></script>
+<script src="rrhh-docs.js?v=57"></script>
+<script src="rrhh.js?v=57"></script>
+<script src="informe-pdf.js?v=57"></script>
+<script src="proyectos.js?v=57"></script>
+<script src="conciliacion.js?v=57"></script>
+<script src="compras.js?v=57"></script>
 </body>
 </html>
