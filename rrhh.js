@@ -853,14 +853,14 @@
     $('#asis-tipo').value = 'vac'; $('#asis-ini').value = ''; $('#asis-fin').value = '';
     $('#asis-mes2').value = R.tab === 'nom' ? R.mes : mesActual(); $('#asis-mes2').max = mesActual();
     $('#asis-q2').value = String(R.tab === 'nom' ? R.q : quincenaHoy().q);
-    $('#asis-cant').value = ''; $('#asis-concepto').value = ''; $('#asis-obra').value = ''; $('#asis-diasobra').value = '';
+    $('#asis-cant').value = ''; $('#asis-concepto').value = ''; $('#asis-obra').value = '';
     $('#asis-dia').value = ''; $('#asis-dia').max = todayISO(); $('#asis-horadesde').value = ''; $('#asis-horahasta').value = '';
     const centros = (A.compras && A.compras.centros()) || [];
     if (centros.length) $('#cc-lista').innerHTML = centros.map((c) => `<option value="${esc(c.codigo + ' · ' + c.nombre)}"></option>`).join('');
-    asis = { edit: {}, partes: [], problemas: 0, finTocado: false };
+    asis = { edit: {}, partes: [], problemas: 0, finTocado: false, diasObra: [] };
     mostrarError('#asis-err', ''); pintarTipoAsis(); pintarAsis(); $('#dlg-asis').showModal();
   }
-  // Muestra las fechas (licencias, incapacidades…), el día y horario (horas extra/recargos) o el mes/quincena, obra y valor (pagos), según el tipo
+  // Muestra las fechas (licencias, incapacidades…), el día y horario (horas extra/recargos) o el mes/quincena, obra, calendario y valor (pagos), según el tipo
   function pintarTipoAsis() {
     const tipo = $('#asis-tipo').value, esHoras = !!HEP_TIPOS[tipo] && tipo !== 'otros', esPago = tipo === 'otros', simple = esHoras || esPago;
     $('#asis-ini-wrap').hidden = simple; $('#asis-fin-wrap').hidden = simple;
@@ -868,14 +868,38 @@
     $('#asis-mes2-wrap').hidden = !esPago; $('#asis-q2-wrap').hidden = !esPago;
     $('#asis-dia-wrap').hidden = !esHoras; $('#asis-horadesde-wrap').hidden = !esHoras; $('#asis-horahasta-wrap').hidden = !esHoras;
     $('#asis-cant-wrap').hidden = !esPago;
-    $('#asis-obra-wrap').hidden = !esPago; $('#asis-diasobra-wrap').hidden = !esPago;
+    $('#asis-obra-wrap').hidden = !esPago; $('#asis-dias-wrap').hidden = !esPago;
     $('#asis-concepto-wrap').hidden = !esPago;
+    if (esPago) pintarDiasGrid();
+  }
+  // Calendario de la quincena escogida para el auxilio/bonificación: se tocan los días que correspondan
+  function pintarDiasGrid() {
+    if (!asis) return;
+    const mes = $('#asis-mes2').value, q = Number($('#asis-q2').value);
+    if (!mes) { $('#asis-dias-grid').innerHTML = ''; return; }
+    const ini = q === 1 ? 1 : 16, fin = q === 1 ? 15 : diasMes(mes);
+    const dias = []; for (let d = ini; d <= fin; d++) dias.push(d);
+    $('#asis-dias-grid').innerHTML = dias.map((d) => `<button class="qbtn" type="button" data-asis-dia="${d}" aria-pressed="${asis.diasObra.includes(d)}">${d}</button>`).join('');
+  }
+  $('#dlg-asis').addEventListener('click', (ev) => {
+    const t = ev.target.closest('[data-asis-dia]');
+    if (!t || !asis) return;
+    const d = Number(t.dataset.asisDia);
+    if (asis.diasObra.includes(d)) asis.diasObra = asis.diasObra.filter((x) => x !== d); else asis.diasObra = [...asis.diasObra, d].sort((a, b) => a - b);
+    pintarDiasGrid(); pintarAsis();
+  });
+  // "3, 7 y 9 de noviembre"
+  function diasTexto(dias, mes) {
+    if (!dias.length) return '';
+    const ord = dias.slice().sort((a, b) => a - b);
+    const lista = ord.length === 1 ? String(ord[0]) : ord.slice(0, -1).join(', ') + ' y ' + ord[ord.length - 1];
+    return `${lista} de ${nombreMes(mes).toLowerCase()}`;
   }
   // Vista previa de un pago no salarial (p. ej. auxilio de transporte a una obra): cuánto queda y en qué quincena
   function pintarAsisPago() {
     const e = R.datos.empleados.find((x) => x.id === $('#asis-emp').value);
     const mes = $('#asis-mes2').value, q = Number($('#asis-q2').value), cant = parseMonto($('#asis-cant').value);
-    const obraTxt = $('#asis-obra').value.trim(), dias = Number($('#asis-diasobra').value) || 0;
+    const obraTxt = $('#asis-obra').value.trim(), dias = (asis && asis.diasObra) || [];
     const res = $('#asis-res'), go = $('#asis-go');
     go.disabled = true;
     if (!e || !mes || !isFinite(cant) || !(cant > 0)) { res.innerHTML = `<p class="rh-asis-falta">${!e ? 'Escoge a la persona.' : 'Escribe el valor del pago.'}</p>`; return; }
@@ -886,7 +910,7 @@
     }
     const f = filaDe(e, mes, q), antes = Number(f.otros) || 0, despues = antes + Math.round(cant);
     const obra = obraTxt && A.compras ? A.compras.ccTexto(A.compras.ccDeInput(obraTxt)) : '';
-    res.innerHTML = `<p class="rh-asis-resumen">✔ <b>${esc(e.nombre)}</b>, quincena del ${esc(nombreQ(mes, q))}: ${antes ? `tenía ${fmt(antes)}, quedará en <b>${fmt(despues)}</b>` : `queda en <b>${fmt(despues)}</b>`} de bonificación o auxilio no constitutivo de salario${obra ? ` · obra ${esc(obra)}` : ''}${dias ? ` · ${dias} ${dias === 1 ? 'día' : 'días'}` : ''}.</p>`;
+    res.innerHTML = `<p class="rh-asis-resumen">✔ <b>${esc(e.nombre)}</b>, quincena del ${esc(nombreQ(mes, q))}: ${antes ? `tenía ${fmt(antes)}, quedará en <b>${fmt(despues)}</b>` : `queda en <b>${fmt(despues)}</b>`} de bonificación o auxilio no constitutivo de salario${obra ? ` · obra ${esc(obra)}` : ''}${dias.length ? ` · ${esc(diasTexto(dias, mes))}` : ''}.</p>`;
     go.disabled = false;
   }
   // Vista previa de horas extra o un recargo: con el día y el horario calcula las horas y el valor
@@ -946,8 +970,9 @@
   $('#dlg-asis').addEventListener('change', (ev) => {
     if (!asis) return;
     if (ev.target.dataset.asisDias) { const v = Math.max(0, Math.min(15, Math.round(Number(ev.target.value) || 0))); asis.edit[ev.target.dataset.asisDias] = v; }
-    if (ev.target.id === 'asis-tipo') { asis.edit = {}; pintarTipoAsis(); }
+    if (ev.target.id === 'asis-tipo') { asis.edit = {}; asis.diasObra = []; pintarTipoAsis(); }
     else if (ev.target.id === 'asis-ini' || ev.target.id === 'asis-fin') asis.edit = {};
+    else if (ev.target.id === 'asis-mes2' || ev.target.id === 'asis-q2') { asis.diasObra = []; pintarDiasGrid(); }
     pintarAsis();
   });
   $('#dlg-asis').addEventListener('input', (ev) => {
@@ -955,7 +980,7 @@
     if (ev.target.id === 'asis-fin') asis.finTocado = !!ev.target.value;
     // Al escribir el primer día se propone el mismo como último (se puede cambiar)
     if (ev.target.id === 'asis-ini' && ev.target.value && (!asis.finTocado || $('#asis-fin').value < ev.target.value)) { $('#asis-fin').value = ev.target.value; asis.finTocado = false; }
-    if (['asis-mes2', 'asis-q2', 'asis-cant', 'asis-concepto', 'asis-obra', 'asis-diasobra', 'asis-dia', 'asis-horadesde', 'asis-horahasta'].includes(ev.target.id)) pintarAsis();
+    if (['asis-mes2', 'asis-q2', 'asis-cant', 'asis-concepto', 'asis-obra', 'asis-dia', 'asis-horadesde', 'asis-horahasta'].includes(ev.target.id)) pintarAsis();
   });
   $('#asis-form').addEventListener('submit', async (ev) => {
     ev.preventDefault();
@@ -967,7 +992,7 @@
       const mes = $('#asis-mes2').value, q = Number($('#asis-q2').value);
       const cant = Math.round(parseMonto($('#asis-cant').value));
       const concepto = $('#asis-concepto').value.trim();
-      const obraTxt = $('#asis-obra').value.trim(), dias = Math.round(Number($('#asis-diasobra').value)) || 0;
+      const obraTxt = $('#asis-obra').value.trim(), dias = (asis && asis.diasObra && asis.diasObra.length) ? asis.diasObra.slice() : [];
       const cc = obraTxt && A.compras ? A.compras.ccDeInput(obraTxt) : '';
       if (!empId0) { mostrarError('#asis-err', 'Escoge a la persona.'); b.disabled = false; return; }
       if (!mes) { mostrarError('#asis-err', 'Escoge el mes.'); b.disabled = false; return; }
@@ -985,7 +1010,7 @@
           const fila = p.filas[empId0] = { ...(p.filas[empId0] || {}) };
           const antes = Number(fila.otros) || 0, despues = antes + cant;
           fila.otros = despues;
-          if (cc || dias) fila.otrosDet = (fila.otrosDet || []).concat([{ valor: cant, cc: cc || '', dias, concepto }]);
+          if (cc || dias.length) fila.otrosDet = (fila.otrosDet || []).concat([{ valor: cant, cc: cc || '', dias, concepto }]);
           if (concepto) fila.nota = [fila.nota, concepto].filter(Boolean).join(' · ');
           anotar(d, { tipo: 'nomina', periodo: clave, empId: empId0, campo: 'otros', antes, despues });
         });
@@ -1416,7 +1441,7 @@
     libro([{ titulo: 'Novedades', filas, anchos: [20, 30, 13, 18, 13, ...Array(16).fill(10), 12, 12, 20, 30, 60], pesos: [4, 18, 19, 20] }], `Novedades nómina ${mes}${sufijoEmp()}.xlsx`);
   }
   // Informe de novedades para imprimir: solo quien tuvo algo que contar ese mes (no toda la nómina), en frases simples
-  function novedadesTxt(f0, f1) {
+  function novedadesTxt(f0, f1, mes) {
     const s = (k) => (Number((f0 || {})[k]) || 0) + (Number((f1 || {})[k]) || 0);
     const d = (n) => `${n} ${n === 1 ? 'día' : 'días'}`;
     const partes = [];
@@ -1435,7 +1460,8 @@
     if (otrosDet.length) {
       for (const x of otrosDet) {
         const obra = x.cc && A.compras ? A.compras.ccTexto(x.cc) : '';
-        partes.push(`${x.concepto || 'Bonificación o auxilio no constitutivo de salario'}${obra ? ` · obra ${obra}` : ''}${x.dias ? ` · ${x.dias} ${x.dias === 1 ? 'día' : 'días'}` : ''}: ${fmt(x.valor)}`);
+        const diasTxt = Array.isArray(x.dias) ? (x.dias.length ? diasTexto(x.dias, mes) : '') : (x.dias ? `${x.dias} ${x.dias === 1 ? 'día' : 'días'}` : '');
+        partes.push(`${x.concepto || 'Bonificación o auxilio no constitutivo de salario'}${obra ? ` · obra ${obra}` : ''}${diasTxt ? ` · ${diasTxt}` : ''}: ${fmt(x.valor)}`);
       }
       const sinDet = s('otros') - otrosDet.reduce((t, x) => t + (Number(x.valor) || 0), 0);
       if (sinDet) partes.push(`Bonificación o auxilio no constitutivo de salario: ${fmt(sinDet)}`);
@@ -1449,7 +1475,7 @@
     const vistos = new Map();
     for (const q of [1, 2]) for (const e of empleadosDe(mes, q).filter(deEmpresa)) { const k = e.cedula || e.id; if (!vistos.has(k)) vistos.set(k, { e, f: [null, null] }); vistos.get(k).f[q - 1] = filaDe(e, mes, q); }
     const filas = [...vistos.values()].map(({ e, f }) => ({
-      e, partes: novedadesTxt(f[0], f[1]),
+      e, partes: novedadesTxt(f[0], f[1], mes),
       ing: e.ingreso && e.ingreso.slice(0, 7) === mes ? e.ingreso : '', ret: e.retiro && e.retiro.slice(0, 7) === mes ? e.retiro : '',
     })).filter((x) => x.partes.length || x.ing || x.ret)
       .sort((a, b) => String(a.e.empresa).localeCompare(String(b.e.empresa)) || String(a.e.nombre).localeCompare(String(b.e.nombre)));
