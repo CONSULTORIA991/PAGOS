@@ -213,8 +213,10 @@
         const est = e ? ESTADO_ENVIO[e.estado] || ['gris', e.estado] : g.tipo === 'revisado' ? ['gris', 'No se sube'] : ['gris', g.error ? 'Pendiente: ' + g.error : 'Sin subir'];
         const hechos = e && e.hechos && e.hechos.length ? ' · ' + e.hechos.map((h) => h.nombre || h.numero).join(', ') : '';
         const prob = e && e.estado === 'error' ? `<br><span class="sub">${esc([...(e.problemas || []), e.error || ''].filter(Boolean).join(' · ').slice(0, 200))}</span>` : '';
+        const puedeCorregir = e && e.estado === 'error' && isAdmin() && (e.marca === 'conc' || (e.marca === 'siigo' && g.pagoId));
         const reintentar = e && e.estado === 'error' && isAdmin() ? ` <button class="btn sm" type="button" data-conc-reintentar="${esc(e.id)}">Reintentar</button>` : '';
-        return `<tr><td>${esc(fCorta(f.m.fecha))}</td><td>${esc(f.m.desc)}</td><td class="n">${fmt(f.m.valor)}</td><td>${esc(g.texto || '')}</td><td><span class="pr-chip ${est[0]}">${esc(est[1])}${esc(hechos)}</span>${prob}${reintentar}</td></tr>`;
+        const corregir = puedeCorregir ? ` <button class="btn sm" type="button" data-conc-corregir="${esc(f.m.id)}">Corregir</button>` : '';
+        return `<tr><td>${esc(fCorta(f.m.fecha))}</td><td>${esc(f.m.desc)}</td><td class="n">${fmt(f.m.valor)}</td><td>${esc(g.texto || '')}</td><td><span class="pr-chip ${est[0]}">${esc(est[1])}${esc(hechos)}</span>${prob}${reintentar}${corregir}</td></tr>`;
       }).join('')}</tbody></table></div></section>`;
   }
   async function refrescarEnvios() { try { K.envios = await B().envios(); } catch (e) { /* sin conexión: se reintenta luego */ } }
@@ -425,6 +427,58 @@
     await marcarReg([movId], { tipo: 'revisado', texto: 'Revisado' + (nota ? ': ' + nota : '') });
     terminarReg('');
   }
+  // Corregir un registro que quedó en error (NIT, centro de costo o cuenta mal escritos) y reintentarlo
+  function abrirCorregir(movId) {
+    const m = movDe(movId), g = (K.conc.reg || {})[movId];
+    if (!m || !g || !g.envioId) return;
+    const e = (K.envios || []).find((x) => x.id === g.envioId);
+    if (!e || e.estado !== 'error') return;
+    const esConc = e.marca === 'conc';
+    const centros = B().centros();
+    let nitAct = '', nombreAct = '', ccAct = '', cuentaAct = '', mostrarCuenta = false;
+    if (esConc) {
+      const linea = (e.comprobantes[0].lineas || []).find((l) => Number(l.debito) > 0);
+      nitAct = (linea && linea.nit) || ''; ccAct = (linea && linea.cc) || ''; cuentaAct = (linea && linea.cuenta) || '';
+      mostrarCuenta = g.tipo === 'otra';
+    } else {
+      const p = B().pagoDe(g.pagoId) || {};
+      nitAct = p.nit || ''; nombreAct = p.proveedor || ''; ccAct = p.cc || '';
+    }
+    $('#conc-dlg-titulo').textContent = `Corregir: ${m.desc}`;
+    $('#conc-dlg-res').innerHTML = `<p class="proy-aviso">${esc([...(e.problemas || []), e.error || ''].filter(Boolean).join(' · '))}</p>
+      ${!esConc ? `<div class="field"><label for="cx-prov">Proveedor</label><input id="cx-prov" value="${esc(nombreAct)}" autocomplete="off"></div>` : ''}
+      <div class="field"><label for="cx-nit">NIT o cédula</label><input id="cx-nit" inputmode="numeric" value="${esc(nitAct)}" autocomplete="off"></div>
+      ${mostrarCuenta ? `<div class="field"><label for="cx-cuenta">Cuenta contable</label><input id="cx-cuenta" inputmode="numeric" value="${esc(cuentaAct)}" autocomplete="off"></div>` : ''}
+      <div class="field"><label for="cx-cc">Centro de costo</label><input id="cx-cc" list="cx-ccs" value="${esc(ccAct)}" autocomplete="off" placeholder="Ej. 100068-1 · LAGOMAR"><datalist id="cx-ccs">${centros.map((c) => `<option value="${esc(c.codigo + ' · ' + c.nombre)}"></option>`).join('')}</datalist></div>
+      <p class="proy-aviso" id="cr-err" hidden></p>
+      <div class="form-actions"><button class="btn" type="button" data-close>Cancelar</button><button class="btn primary" type="button" data-conc="corregir-ok" data-mov="${esc(movId)}" data-esconc="${esConc ? '1' : ''}">Corregir y reintentar</button></div>`;
+    if (!$('#dlg-conc').open) $('#dlg-conc').showModal();
+  }
+  async function registrarCorregido(movId, esConc) {
+    const g = (K.conc.reg || {})[movId];
+    const nit = $('#cx-nit').value.replace(/\D/g, '');
+    const cc = $('#cx-cc').value.trim();
+    if (nit.length < 5) return errReg('Escribe el NIT o cédula.');
+    if (esConc) {
+      const cuentaEl = $('#cx-cuenta');
+      const cambios = { nit, cc };
+      if (cuentaEl) {
+        const cuenta = cuentaEl.value.replace(/\D/g, '');
+        if (!/^\d{6,10}$/.test(cuenta)) return errReg('Escribe la cuenta contable (solo números, por ejemplo 23700501).');
+        cambios.cuenta = cuenta;
+      }
+      const ok = await B().editarComprobante(g.envioId, cambios);
+      if (!ok) return errReg('No se pudo corregir: vuelve a entrar a la conciliación e inténtalo de nuevo.');
+      terminarReg('');
+    } else {
+      const proveedor = $('#cx-prov').value.trim();
+      if (!proveedor) return errReg('Escribe el proveedor.');
+      const r = await B().editarPago(g.pagoId, { proveedor, nit, cc });
+      if (r.error) return errReg(r.error);
+      await marcarReg([movId], { ...g, envioId: r.envioId, error: '' });
+      terminarReg('');
+    }
+  }
   async function terminarReg(error) {
     $('#dlg-conc').close();
     toast(error ? `Quedó registrado en Cuadra, pero no subió a Siigo: ${error}` : 'Listo. Quedó en la cola: el computador de la oficina lo sube a Siigo en unos minutos.');
@@ -604,12 +658,13 @@
 
   // ---------- eventos ----------
   $('#view-conc').addEventListener('click', (ev) => {
-    const t = ev.target.closest('[data-conc], [data-conc-cta], [data-conc-ver], [data-conc-reg], [data-conc-mes], [data-conc-reintentar]');
+    const t = ev.target.closest('[data-conc], [data-conc-cta], [data-conc-ver], [data-conc-reg], [data-conc-mes], [data-conc-reintentar], [data-conc-corregir]');
     if (!t) return;
     if (t.dataset.concMes) { K.mes = t.dataset.concMes; render(); return; }
     if (t.dataset.concCta) { K.cuenta = t.dataset.concCta; render(); return; }
     if (t.dataset.concVer) { K.vista = t.dataset.concVer; if (K.vista === 'registrados') refrescarEnvios().then(render); render(); return; }
     if (t.dataset.concReg) { abrirRegistro(t.dataset.concReg); return; }
+    if (t.dataset.concCorregir) { abrirCorregir(t.dataset.concCorregir); return; }
     if (t.dataset.concReintentar) {
       t.disabled = true; const txt = t.textContent; t.textContent = 'Reintentando…';
       B().reintentarEnvio(t.dataset.concReintentar).then(() => refrescarEnvios()).then(render)
@@ -639,6 +694,7 @@
     if (a === 'revisado') run(() => registrarRevisado(t.dataset.mov));
     if (a === 'gastos-ok') run(() => registrarGastos(t.dataset.grupo));
     if (a === 'conocidos-ok') run(() => registrarConocidos(t.dataset.grupo));
+    if (a === 'corregir-ok') run(() => registrarCorregido(t.dataset.mov, !!t.dataset.esconc));
   });
 
   window.CONC = { abrir };
