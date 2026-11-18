@@ -134,13 +134,13 @@
   const plural = (n, uno, varios) => `${n.toLocaleString('es-CO')} ${n === 1 ? uno : varios}`;
   const fCorta = (iso) => { const [y, m, d] = iso.split('-').map(Number); return new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'short' }).format(new Date(y, m - 1, d)).replace('.', ''); };
 
-  async function abrir() {
+  async function abrir(forzar) {
     if (K.cargando) return;
     K.cargando = true;
     if (!K.mes) K.mes = todayISO().slice(0, 7);
     $('#conc-cuerpo').innerHTML = '<div class="empty"><h3>Cargando la conciliación…</h3></div>';
     try {
-      await leer();
+      await leer(forzar);
       // Si el mes escogido no tiene movimientos cargados, abre en el último mes que sí tenga
       const todos = Object.values(K.conc.movs || {}).flat();
       if (todos.length && !todos.some((m) => m.fecha.slice(0, 7) === K.mes)) K.mes = todos.reduce((x, m) => (m.fecha > x ? m.fecha : x), '').slice(0, 7);
@@ -157,7 +157,7 @@
     const pasos = [['Cargar los movimientos', 'Sube el CSV de la Sucursal Virtual Negocios (o un PDF). Puedes cargar cada día; lo repetido no se duplica.'], ['Cuadra los cruza', 'Busca cada movimiento en Siigo (recibos de pago, recibos de caja y comprobantes) por valor y fecha.'], ['Registrar lo que falta', 'Toca "Registrar" en cada faltante: queda en Cuadra y sube solo a Siigo. A la hora siguiente aparece cruzado.'], ['Cerrar el mes', 'Muy pronto: con el extracto, comparar el saldo final y descargar la conciliación en PDF.']];
     const cab = `
       <div class="rh-barra"><div class="grupo"><div class="field"><label for="conc-mes">Mes</label><input type="month" id="conc-mes" value="${esc(K.mes)}" max="${todayISO().slice(0, 7)}"></div></div>
-        <div class="grupo">${cta ? '<button class="btn" type="button" data-conc="pdf">Descargar PDF</button>' : ''}${isAdmin() ? '<button class="btn primary" type="button" data-conc="cargar">Cargar movimientos (CSV o PDF)</button>' : ''}</div></div>
+        <div class="grupo"><button class="btn" type="button" data-conc="actualizar">Actualizar</button>${cta ? '<button class="btn" type="button" data-conc="pdf">Descargar PDF</button>' : ''}${isAdmin() ? '<button class="btn primary" type="button" data-conc="cargar">Cargar movimientos (CSV o PDF)</button>' : ''}</div></div>
       <section class="cj-camino" aria-label="Cómo funciona"><h3>Así se trabaja</h3><ol>${pasos.map(([t, d], i) => `<li class="${i < 3 ? 'hecho' : ''}"><b><span>${i + 1}</span>${t}</b><small>${d}</small></li>`).join('')}</ol></section>
       <nav class="proy-tabs" role="tablist" aria-label="Cuentas de banco">${cuentas.map((c) => `<button type="button" role="tab" class="proy-tab" data-conc-cta="${esc(c.id)}" aria-selected="${c.id === K.cuenta}">${esc(c.nombre)}</button>`).join('')}${isAdmin() ? '<button type="button" class="proy-tab" data-conc="cuenta-nueva">+ Agregar cuenta</button>' : ''}</nav>`;
     if (!cta) { $('#conc-cuerpo').innerHTML = cab + '<div class="empty"><p>Agrega una cuenta de banco para empezar.</p></div>'; return; }
@@ -610,7 +610,8 @@
     if (t.dataset.concVer) { K.vista = t.dataset.concVer; if (K.vista === 'registrados') refrescarEnvios().then(render); render(); return; }
     if (t.dataset.concReg) { abrirRegistro(t.dataset.concReg); return; }
     const a = t.dataset.conc;
-    if (a === 'gastos') abrirGastos(t.dataset.grupo);
+    if (a === 'actualizar') { t.disabled = true; const txt = t.textContent; t.textContent = 'Actualizando…'; abrir(true).finally(() => { t.disabled = false; t.textContent = txt; }); }
+    else if (a === 'gastos') abrirGastos(t.dataset.grupo);
     else if (a === 'conocidos') abrirConocidos(t.dataset.grupo);
     else if (a === 'cargar') abrirCarga();
     else if (a === 'cuenta-nueva') abrirCuenta(false);
