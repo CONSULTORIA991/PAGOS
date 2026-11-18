@@ -1373,14 +1373,19 @@
   });
 
   // ---------- Excel ----------
+  // filaIni (0-indexada) + formulas(filaExcel1indexada) → {columna: "A1*B1…"} deja celdas con fórmula de Excel,
+  // no solo el número, para que se pueda revisar de dónde sale cada total (clic en la celda).
   function libro(hojas, nombre) {
     if (!window.XLSX) { toast('No cargó el generador de Excel. Recarga la página.'); return; }
     const wb = XLSX.utils.book_new();
-    for (const { titulo, filas, anchos, pesos } of hojas) {
+    for (const { titulo, filas, anchos, pesos, filaIni, formulas } of hojas) {
       const ws = XLSX.utils.aoa_to_sheet(filas);
       ws['!cols'] = (anchos || []).map((w) => ({ wch: w }));
       const rango = XLSX.utils.decode_range(ws['!ref'] || 'A1');
       for (let r = 0; r <= rango.e.r; r++) for (const c of pesos || []) { const x = ws[XLSX.utils.encode_cell({ r, c })]; if (x && typeof x.v === 'number') x.z = '"$"#,##0'; }
+      if (formulas) for (let r = (filaIni || 0) + 1; r <= rango.e.r + 1; r++) {
+        for (const [col, f] of Object.entries(formulas(r) || {})) { const addr = col + r; if (ws[addr]) ws[addr].f = String(f).replace(/^=/, ''); }
+      }
       XLSX.utils.book_append_sheet(wb, ws, titulo.slice(0, 31));
     }
     XLSX.writeFile(wb, nombre);
@@ -1397,14 +1402,14 @@
   function colsNomina(e, f, c) {
     const n = (k) => Number(f[k]) || 0;
     return [
-      ['Nombre', e.nombre, 30, 0, true], ['Cédula', e.cedula, 13, 0, true], ['Cargo', e.cargo || '', 18, 0, true], ['Salario mensual', Number(e.salario) || 0, 14, 1, true],
-      ['Días quincena', n('dias'), 9, 0, true], ['Días trabajados', c.diasTrab, 9, 0, true],
-      ['Incapacidad', n('inc'), 9, 0], ['Vacaciones', n('vac'), 9, 0], ['Lic. remunerada', n('lr'), 9, 0], ['Lic. no remunerada', n('lnr'), 9, 0], ['Suspensión', n('sus'), 9, 0],
-      ['HE diurnas (h)', n('hed'), 9, 0], ['HE nocturnas (h)', n('hen'), 9, 0], ['Recargo nocturno (h)', n('rn'), 9, 0], ['Recargo dom/fest (h)', n('rdf'), 9, 0], ['HE dom diurnas (h)', n('hedf'), 9, 0], ['HE dom nocturnas (h)', n('henf'), 9, 0],
-      ['Salario quincena', c.salario, 14, 1, true], ['Vac/Lic/Incap', c.vac + c.lr + c.inc, 14, 1], ['Horas extra', c.he, 14, 1], ['Aux. transporte', c.aux, 14, 1, true], ['Otros pagos (no constitutivos)', c.otros, 14, 1],
-      ['Total devengado', c.devengado, 14, 1, true], ['Salud 4%', c.salud, 14, 1, true], ['Pensión 4%', c.pension, 14, 1, true], ['Fondo solidaridad', c.fsp, 14, 1],
-      ['Préstamos', c.prestamos, 14, 1], ['Otras deducciones', c.otrasDed, 14, 1], ['Total deducciones', c.deducciones, 14, 1, true], ['Neto a pagar', c.neto, 14, 1, true],
-      ['Nota', f.nota || '', 30, 0, true],
+      ['Nombre', e.nombre, 30, 0, true, 'nombre'], ['Cédula', e.cedula, 13, 0, true, 'cedula'], ['Cargo', e.cargo || '', 18, 0, true, 'cargo'], ['Salario mensual', Number(e.salario) || 0, 14, 1, true, 'salMes'],
+      ['Días quincena', n('dias'), 9, 0, true, 'dias'], ['Días trabajados', c.diasTrab, 9, 0, true, 'diasTrab'],
+      ['Incapacidad', n('inc'), 9, 0, false, 'inc'], ['Vacaciones', n('vac'), 9, 0, false, 'vac'], ['Lic. remunerada', n('lr'), 9, 0, false, 'lr'], ['Lic. no remunerada', n('lnr'), 9, 0, false, 'lnr'], ['Suspensión', n('sus'), 9, 0, false, 'sus'],
+      ['HE diurnas (h)', n('hed'), 9, 0, false, 'hed'], ['HE nocturnas (h)', n('hen'), 9, 0, false, 'hen'], ['Recargo nocturno (h)', n('rn'), 9, 0, false, 'rn'], ['Recargo dom/fest (h)', n('rdf'), 9, 0, false, 'rdf'], ['HE dom diurnas (h)', n('hedf'), 9, 0, false, 'hedf'], ['HE dom nocturnas (h)', n('henf'), 9, 0, false, 'henf'],
+      ['Salario quincena', c.salario, 14, 1, true, 'salQ'], ['Vac/Lic/Incap', c.vac + c.lr + c.inc, 14, 1, false, 'vli'], ['Horas extra', c.he, 14, 1, false, 'he'], ['Aux. transporte', c.aux, 14, 1, true, 'aux'], ['Otros pagos (no constitutivos)', c.otros, 14, 1, false, 'otros'],
+      ['Total devengado', c.devengado, 14, 1, true, 'deveng'], ['Salud 4%', c.salud, 14, 1, true, 'salud'], ['Pensión 4%', c.pension, 14, 1, true, 'pension'], ['Fondo solidaridad', c.fsp, 14, 1, false, 'fsp'],
+      ['Préstamos', c.prestamos, 14, 1, false, 'prestamos'], ['Otras deducciones', c.otrasDed, 14, 1, false, 'otrasDed'], ['Total deducciones', c.deducciones, 14, 1, true, 'deducc'], ['Neto a pagar', c.neto, 14, 1, true, 'neto'],
+      ['Nota', f.nota || '', 30, 0, true, 'nota'],
     ];
   }
   function excelNomina() {
@@ -1421,7 +1426,23 @@
       const pesos = idx.map((i, j) => (datos[0].cols[i][3] ? j : -1)).filter((j) => j >= 0);
       const filas = [[`NÓMINA ${nombreQ(R.mes, R.q).toUpperCase()}`], [`Empresa: ${emp}`], [], cab];
       for (const x of datos) filas.push(idx.map((i) => x.cols[i][1]));
-      return { titulo: `${R.q === 1 ? '1-15' : '16-30'} ${emp}`, filas, anchos, pesos };
+      // Columna (letra) de cada campo si quedó visible en esta hoja; si no, no entra en la fórmula (vale 0 para todos)
+      const keys = idx.map((i) => datos[0].cols[i][5]);
+      const col = (k) => { const j = keys.indexOf(k); return j < 0 ? null : XLSX.utils.encode_col(j); };
+      const C = Object.fromEntries(['dias', 'inc', 'vac', 'lr', 'lnr', 'sus', 'diasTrab', 'salMes', 'salQ', 'vli', 'he', 'aux', 'otros', 'deveng', 'salud', 'pension', 'fsp', 'prestamos', 'otrasDed', 'deducc', 'neto'].map((k) => [k, col(k)]));
+      const suma = (cols, r) => cols.filter(Boolean).map((c) => c + r).join('+') || '0';
+      // Solo fórmulas donde no hay riesgo de desviarse de lo que calcula la app: días trabajados, salario de la
+      // quincena, y los tres totales como suma de lo que ya está a la izquierda (para que el jefe pueda revisar).
+      const formulas = (r) => {
+        const out = {};
+        if (C.diasTrab && C.dias) out[C.diasTrab] = `=MAX(0,${C.dias}${r}${['inc', 'vac', 'lr', 'lnr', 'sus'].map((k) => (C[k] ? `-${C[k]}${r}` : '')).join('')})`;
+        if (C.salQ && C.salMes && C.diasTrab) out[C.salQ] = `=ROUND(${C.salMes}${r}/30*${C.diasTrab}${r},0)`;
+        if (C.deveng) out[C.deveng] = `=${suma([C.salQ, C.vli, C.he, C.aux, C.otros], r)}`;
+        if (C.deducc) out[C.deducc] = `=${suma([C.salud, C.pension, C.fsp, C.prestamos, C.otrasDed], r)}`;
+        if (C.neto && C.deveng && C.deducc) out[C.neto] = `=${C.deveng}${r}-${C.deducc}${r}`;
+        return out;
+      };
+      return { titulo: `${R.q === 1 ? '1-15' : '16-30'} ${emp}`, filas, anchos, pesos, filaIni: 4, formulas };
     });
     libro(hojas, `Nómina ${R.mes} quincena ${R.q}${sufijoEmp()}.xlsx`);
   }
