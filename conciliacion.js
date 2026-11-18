@@ -213,7 +213,8 @@
         const est = e ? ESTADO_ENVIO[e.estado] || ['gris', e.estado] : g.tipo === 'revisado' ? ['gris', 'No se sube'] : ['gris', g.error ? 'Pendiente: ' + g.error : 'Sin subir'];
         const hechos = e && e.hechos && e.hechos.length ? ' · ' + e.hechos.map((h) => h.nombre || h.numero).join(', ') : '';
         const prob = e && e.estado === 'error' ? `<br><span class="sub">${esc([...(e.problemas || []), e.error || ''].filter(Boolean).join(' · ').slice(0, 200))}</span>` : '';
-        return `<tr><td>${esc(fCorta(f.m.fecha))}</td><td>${esc(f.m.desc)}</td><td class="n">${fmt(f.m.valor)}</td><td>${esc(g.texto || '')}</td><td><span class="pr-chip ${est[0]}">${esc(est[1])}${esc(hechos)}</span>${prob}</td></tr>`;
+        const reintentar = e && e.estado === 'error' && isAdmin() ? ` <button class="btn sm" type="button" data-conc-reintentar="${esc(e.id)}">Reintentar</button>` : '';
+        return `<tr><td>${esc(fCorta(f.m.fecha))}</td><td>${esc(f.m.desc)}</td><td class="n">${fmt(f.m.valor)}</td><td>${esc(g.texto || '')}</td><td><span class="pr-chip ${est[0]}">${esc(est[1])}${esc(hechos)}</span>${prob}${reintentar}</td></tr>`;
       }).join('')}</tbody></table></div></section>`;
   }
   async function refrescarEnvios() { try { K.envios = await B().envios(); } catch (e) { /* sin conexión: se reintenta luego */ } }
@@ -603,12 +604,18 @@
 
   // ---------- eventos ----------
   $('#view-conc').addEventListener('click', (ev) => {
-    const t = ev.target.closest('[data-conc], [data-conc-cta], [data-conc-ver], [data-conc-reg], [data-conc-mes]');
+    const t = ev.target.closest('[data-conc], [data-conc-cta], [data-conc-ver], [data-conc-reg], [data-conc-mes], [data-conc-reintentar]');
     if (!t) return;
     if (t.dataset.concMes) { K.mes = t.dataset.concMes; render(); return; }
     if (t.dataset.concCta) { K.cuenta = t.dataset.concCta; render(); return; }
     if (t.dataset.concVer) { K.vista = t.dataset.concVer; if (K.vista === 'registrados') refrescarEnvios().then(render); render(); return; }
     if (t.dataset.concReg) { abrirRegistro(t.dataset.concReg); return; }
+    if (t.dataset.concReintentar) {
+      t.disabled = true; const txt = t.textContent; t.textContent = 'Reintentando…';
+      B().reintentarEnvio(t.dataset.concReintentar).then(() => refrescarEnvios()).then(render)
+        .catch((e) => { toast(msgGitHub(e)); t.disabled = false; t.textContent = txt; });
+      return;
+    }
     const a = t.dataset.conc;
     if (a === 'actualizar') { t.disabled = true; const txt = t.textContent; t.textContent = 'Actualizando…'; abrir(true).finally(() => { t.disabled = false; t.textContent = txt; }); }
     else if (a === 'gastos') abrirGastos(t.dataset.grupo);
