@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="estilos.css?v=64">
+<link rel="stylesheet" href="estilos.css?v=65">
 </head>
 <body>
 
@@ -554,6 +554,31 @@
   </div>
 </dialog>
 
+<!-- Certificados y soportes: cualquier archivo ya existente (ARL, EPS, planilla pagada, paz y salvo...) de un empleado o de la empresa -->
+<dialog id="dlg-cert">
+  <div class="dlg">
+    <div class="dlg-head"><h2>Certificados y soportes</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
+    <p class="rh-guia">Sube aquí una sola vez lo que te pidan (certificado de ARL, EPS, pensión, caja, la planilla pagada, un paz y salvo…) y después solo lo descargas o lo envías, sin volver a entrar a la plataforma de origen.</p>
+    <div class="rh-barra"><div class="field"><label for="cert-buscar">Buscar</label><input id="cert-buscar" placeholder="Nombre del empleado o título..." autocomplete="off"></div></div>
+    <div id="cert-lista"></div>
+    <div class="rh-generar">
+      <div class="field"><label for="cert-emp">¿De quién es?</label><select id="cert-emp"><option value="">Toda la empresa (no es de un empleado)</option></select></div>
+      <div class="field"><label for="cert-titulo">Título</label><input id="cert-titulo" list="cert-sug" placeholder="Ej. Certificado de afiliación ARL" autocomplete="off"></div>
+      <datalist id="cert-sug">
+        <option value="Certificado de afiliación ARL"></option>
+        <option value="Certificado de afiliación EPS"></option>
+        <option value="Certificado de afiliación fondo de pensión"></option>
+        <option value="Certificado de afiliación caja de compensación"></option>
+        <option value="Planilla de pagos de aportes"></option>
+        <option value="Paz y salvo de aportes"></option>
+      </datalist>
+      <button class="btn primary" type="button" id="cert-subir">Subir archivo</button>
+    </div>
+    <input type="file" id="cert-archivo" accept=".pdf,image/*" hidden>
+    <div class="err" id="cert-err" hidden></div>
+  </div>
+</dialog>
+
 <!-- Informes de proyectos: detalle de un rubro y formulario de configuración -->
 <dialog id="dlg-fcomp">
   <div class="dlg">
@@ -993,15 +1018,15 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="cripto.js?v=64"></script>
-<script src="github.js?v=64"></script>
-<script src="lector.js?v=64"></script>
-<script src="app.js?v=64"></script>
-<script src="rrhh-docs.js?v=64"></script>
-<script src="rrhh.js?v=64"></script>
-<script src="informe-pdf.js?v=64"></script>
-<script src="proyectos.js?v=64"></script>
-<script src="conciliacion.js?v=64"></script>
-<script src="compras.js?v=64"></script>
+<script src="cripto.js?v=65"></script>
+<script src="github.js?v=65"></script>
+<script src="lector.js?v=65"></script>
+<script src="app.js?v=65"></script>
+<script src="rrhh-docs.js?v=65"></script>
+<script src="rrhh.js?v=65"></script>
+<script src="informe-pdf.js?v=65"></script>
+<script src="proyectos.js?v=65"></script>
+<script src="conciliacion.js?v=65"></script>
+<script src="compras.js?v=65"></script>
 </body>
 </html>
