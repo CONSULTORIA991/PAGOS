@@ -2960,6 +2960,7 @@
     proveedores: () => { const m = new Map(); for (const p of S.pagos) if (p.nit && p.tipoDoc !== 'caja') m.set(String(p.nit).replace(/\D/g, ''), p.proveedor); return [...m.entries()].map(([nit, nombre]) => ({ nit, nombre })); },
     centros: () => siigoConf().centros || [],
     siigoListo: () => !!(conf && conf.siigoApi),
+    pagoDe: (id) => { const p = S.pagos.find((x) => x.id === id); return p ? { nit: p.nit, proveedor: p.proveedor, cc: p.cc } : null; },
     // Un pago de Cuadra que se hizo en el banco: queda pagado con la fecha del banco y se sube a Siigo
     async pagarExistente(id, { fecha, cuentaBanco, movId }, file) {
       const adj = file ? await subirFactura(file) : null;
@@ -3034,6 +3035,40 @@
         ok = true;
       });
       return ok;
+    },
+    // Corrige un comprobante directo (conciliación: tipo "otra" cuenta o "nómina") que quedó en error
+    // por un NIT, centro de costo o cuenta mal escritos, y lo deja pendiente para que se vuelva a intentar.
+    async editarComprobante(id, cambios) {
+      let ok = false;
+      const nit = cambios.nit != null ? String(cambios.nit).replace(/\D/g, '') : null;
+      await mutarEnvios((d) => {
+        const e = (d.envios || []).find((x) => x.id === id);
+        if (!e || e.estado !== 'error' || e.marca !== 'conc' || !e.comprobantes || e.comprobantes.length !== 1) return false;
+        for (const l of e.comprobantes[0].lineas || []) {
+          if (cambios.cuenta != null && Number(l.debito) > 0) l.cuenta = cambios.cuenta;
+          if (nit) l.nit = nit;
+          if (cambios.cc != null) l.cc = cambios.cc;
+        }
+        Object.assign(e, { estado: 'pendiente', error: null, problemas: [], terminado: null });
+        ok = true;
+      });
+      return ok;
+    },
+    // Corrige el proveedor/NIT/centro de costo de un pago (anticipo o pago de factura) que quedó en error
+    // porque el tercero o el centro de costo no existían en Siigo, y lo vuelve a encolar.
+    async editarPago(id, cambios) {
+      let p;
+      await mutar((d) => {
+        p = d.pagos.find((x) => x.id === id);
+        if (!p) return false;
+        if (cambios.proveedor != null) p.proveedor = cambios.proveedor;
+        if (cambios.nit != null) p.nit = String(cambios.nit).replace(/\D/g, '');
+        if (cambios.cc != null) p.cc = cambios.cc;
+        delete p.siigoEnvio;
+      });
+      if (!p) return { error: 'No se encontró el pago.' };
+      render();
+      return encolarPagoBanco(id, p.banco && p.banco.cuenta);
     },
   };
   // ---------- desde Facturas de compra (compras.js) ----------
