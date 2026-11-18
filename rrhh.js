@@ -67,7 +67,7 @@
     const d = R.datos;
     d.param = { ...PARAM_DEF, ...(d.param || {}), rec: { ...PARAM_DEF.rec, ...((d.param || {}).rec || {}) }, arl: { ...PARAM_DEF.arl, ...((d.param || {}).arl || {}) } };
     d.empleados = d.empleados || []; d.periodos = d.periodos || {}; d.cambios = d.cambios || [];
-    d.documentos = d.documentos || []; d.suspensiones = d.suspensiones || [];
+    d.documentos = d.documentos || []; d.suspensiones = d.suspensiones || []; d.certificados = d.certificados || [];
     R.leido = Date.now();
   }
   async function mutar(fn) {
@@ -244,6 +244,7 @@
     nom: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/><path d="M8 14h3M8 17h6"/></svg>',
     pla: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/></svg>',
     doc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/></svg>',
+    cert: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="5"/><path d="M8.5 12.5 7 21l5-2.5L17 21l-1.5-8.5"/></svg>',
     log: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
   };
   const guia = (html) => `<p class="rh-guia">${html}</p>`;
@@ -284,6 +285,9 @@
         ${card('doc', 'Contratos y documentos', 'Fechas de vencimiento, preavisos, cartas de terminación, memorandos y certificados.',
           venc.length ? `<span class="rh-alerta">🔔 ${venc.length} ${venc.length === 1 ? 'contrato por notificar' : 'contratos por notificar'}</span>` : `${contratos.length} ${contratos.length === 1 ? 'contrato' : 'contratos'} a término fijo · todo al día`,
           b('doc', 'Ver contratos', true))}
+        ${card('cert', 'Certificados y soportes', 'Sube una vez el certificado de ARL, EPS, pensión, caja de un empleado, o la planilla pagada, y descárgalo cuando te lo pidan.',
+          `${(d.certificados || []).length} ${(d.certificados || []).length === 1 ? 'archivo guardado' : 'archivos guardados'}`,
+          '<button class="btn primary" type="button" data-rh="cert">Ver y subir</button>')}
         ${card('log', 'Historial de cambios', 'Quién cambió qué y cuándo, en empleados y en la nómina.',
           ult ? `Último: ${esc(quien(ult.por))}, ${esc(dtFmt.format(new Date(ult.en)))}` : 'Sin cambios todavía',
           b('log', 'Ver historial', true))}
@@ -761,6 +765,70 @@
     const b = $('#docs-generar'); b.disabled = true;
     await generarDoc(e.id, tipo, extra);
     b.disabled = false; pintarDocs();
+  });
+
+  // ---------- certificados y soportes: un solo lugar para subir cualquier archivo ya existente ----------
+  // (certificado de ARL/EPS/pensión/caja de un empleado, o un soporte de toda la empresa como la planilla pagada o un paz y salvo)
+  const rutaCert = (id) => `datos/rrhh-soportes/${id}.enc`;
+  function abrirCertificados() {
+    $('#cert-emp').innerHTML = '<option value="">Toda la empresa (no es de un empleado)</option>' +
+      R.datos.empleados.filter(deEmpresa).sort((a, b) => String(a.nombre).localeCompare(String(b.nombre))).map((e) => `<option value="${esc(e.id)}">${esc(e.nombre)}</option>`).join('');
+    $('#cert-titulo').value = ''; $('#cert-buscar').value = '';
+    mostrarError('#cert-err', '');
+    pintarCertificados();
+    $('#dlg-cert').showModal();
+  }
+  function pintarCertificados() {
+    const q = ($('#cert-buscar').value || '').toLowerCase().trim();
+    const nombreEmp = (empId) => { const e = R.datos.empleados.find((x) => x.id === empId); return e ? e.nombre : ''; };
+    let lista = (R.datos.certificados || []).filter((x) => x.empId ? deEmpresa(R.datos.empleados.find((e) => e.id === x.empId) || {}) : deEmpresa({ empresa: x.empresa }));
+    if (q) lista = lista.filter((x) => x.titulo.toLowerCase().includes(q) || nombreEmp(x.empId).toLowerCase().includes(q));
+    lista = lista.sort((a, b) => String(b.en).localeCompare(String(a.en)));
+    $('#cert-lista').innerHTML = lista.length
+      ? `<ul class="rh-docs">${lista.map((x) => `<li><div><div class="tit">${esc(x.titulo)}</div><div class="sub">${esc(x.empId ? nombreEmp(x.empId) : 'Toda la empresa')} · ${esc(dtFmt.format(new Date(x.en)))} · ${esc(quien(x.por))}</div></div>
+          <div class="acc"><button class="btn" type="button" data-cert-ver="${esc(x.id)}">Descargar</button>${A.isAdmin ? `<button class="btn" type="button" data-cert-borrar="${esc(x.id)}">Eliminar</button>` : ''}</div></li>`).join('')}</ul>`
+      : '<p class="rep-note" style="margin:0">Aún no has subido nada aquí. Súbelo una vez y luego lo descargas cuando lo necesites.</p>';
+  }
+  $('#dlg-cert').addEventListener('click', async (ev) => {
+    const b = ev.target.closest('[data-cert-ver], [data-cert-borrar]'); if (!b) return;
+    if (b.dataset.certVer) {
+      const x = (R.datos.certificados || []).find((s) => s.id === b.dataset.certVer); if (!x) return;
+      const w = window.open('', '_blank');
+      try {
+        const f = await GH.leer(x.archivo.ruta); if (!f) throw new Error('No encontré el archivo.');
+        const url = URL.createObjectURL(new Blob([await Cripto.descifrar(A.maestra, f.bytes)], { type: x.archivo.tipo || 'application/pdf' }));
+        if (w) w.location.href = url; else bajar(new Blob([await Cripto.descifrar(A.maestra, f.bytes)], { type: x.archivo.tipo }), x.archivo.nombre || 'documento.pdf');
+      } catch (err) { if (w) w.close(); mostrarError('#cert-err', 'No se pudo abrir: ' + (err.message || msgGitHub(err))); }
+    } else if (b.dataset.certBorrar) {
+      if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = '¿Eliminar? Toca de nuevo'; return; }
+      try { await mutar((d) => { d.certificados = (d.certificados || []).filter((s) => s.id !== b.dataset.certBorrar); }); pintarCertificados(); }
+      catch (err) { mostrarError('#cert-err', msgGitHub(err)); }
+    }
+  });
+  $('#cert-buscar').addEventListener('input', pintarCertificados);
+  $('#cert-subir').addEventListener('click', () => {
+    const titulo = $('#cert-titulo').value.trim();
+    if (!titulo) return mostrarError('#cert-err', 'Escribe un título, por ejemplo "Certificado de afiliación ARL".');
+    mostrarError('#cert-err', '');
+    $('#cert-archivo').value = ''; $('#cert-archivo').click();
+  });
+  $('#cert-archivo').addEventListener('change', async () => {
+    const f = $('#cert-archivo').files[0]; if (!f) return;
+    const titulo = $('#cert-titulo').value.trim(); if (!titulo) return;
+    if (f.size > 15 * 1024 * 1024) return mostrarError('#cert-err', 'El archivo pesa más de 15 MB. Escanéalo con menos resolución.');
+    mostrarError('#cert-err', '');
+    const id = nuevoId(), empId = $('#cert-emp').value || null, empresa = R.empresa || EMPRESA_DEF;
+    try {
+      toast('Subiendo…');
+      const ruta = rutaCert(id);
+      await GH.escribir(ruta, await Cripto.cifrar(A.maestra, new Uint8Array(await f.arrayBuffer())));
+      await mutar((d) => {
+        d.certificados = d.certificados || [];
+        d.certificados.push({ id, empId, titulo, empresa, archivo: { ruta, nombre: f.name, tipo: f.type || 'application/pdf' }, en: new Date().toISOString(), por: A.uid });
+      });
+      $('#cert-titulo').value = '';
+      toast('Guardado.'); pintarCertificados();
+    } catch (err) { mostrarError('#cert-err', 'No se subió: ' + msgGitHub(err)); }
   });
 
   // ---------- pasos de la quincena ----------
@@ -2055,6 +2123,7 @@
     else if (a === 'imp-pila') abrirImportacion('pila');
     else if (a === 'imp-q') abrirImportacion('quincenas');
     else if (a === 'aportes') archivoAportes();
+    else if (a === 'cert') abrirCertificados();
     else if (a === 'cerrar' || a === 'reabrir') {
       if (!t.dataset.sure) { t.dataset.sure = '1'; t.textContent = a === 'cerrar' ? '¿Cerrar? Ya no se podrá modificar. Toca de nuevo' : '¿Reabrir? Toca de nuevo'; return; }
       cerrarQuincena(a === 'cerrar');
