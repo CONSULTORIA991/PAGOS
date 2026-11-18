@@ -3023,6 +3023,18 @@
     },
     async envios() { await leerEnvios(); return SE.datos.envios; },
     subirSoporte: (file) => subirFactura(file),
+    // Un envío que quedó en "error" (ej. faltaba el tercero o el centro de costo en Siigo): se deja pendiente
+    // de nuevo para que el computador de la oficina lo vuelva a intentar en su próxima pasada.
+    async reintentarEnvio(id) {
+      let ok = false;
+      await mutarEnvios((d) => {
+        const e = (d.envios || []).find((x) => x.id === id);
+        if (!e || e.estado !== 'error') return false;
+        Object.assign(e, { estado: 'pendiente', error: null, problemas: [], terminado: null });
+        ok = true;
+      });
+      return ok;
+    },
   };
   // ---------- desde Facturas de compra (compras.js) ----------
   const ComprasApi = {
