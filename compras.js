@@ -580,7 +580,7 @@
       if (!(l.base > 0)) return errR('Cada renglón necesita un valor mayor que cero.');
     }
     if (Math.abs(r2(c.base + c.iva) - doc.tot) > 1) return errR(`El total (${fmt(c.base + c.iva)}) no cuadra con la DIAN (${fmt(doc.tot)}). Ajusta los renglones o el IVA.`);
-    if (forma.vence && c.totalCruces > c.total) return errR('Los anticipos a cruzar suman más que el neto de la factura.');
+    if (forma.vence && c.totalCruces - c.total > 1) return errR('Los anticipos a cruzar suman más que el neto de la factura.');
     if (forma.vence && c.cruces.some((x) => !x.prefijo || !x.numero)) return errR('Un anticipo marcado no tiene prefijo y número.');
     if (!btn.dataset.sure) { btn.dataset.sure = '1'; btn.textContent = '¿Crear la factura de compra en Siigo? Toca de nuevo'; setTimeout(() => { if (btn.dataset.sure) { delete btn.dataset.sure; btn.textContent = 'Registrar en Siigo'; } }, 7000); return; }
     delete btn.dataset.sure; btn.disabled = true; btn.textContent = 'Enviando a la cola…';
