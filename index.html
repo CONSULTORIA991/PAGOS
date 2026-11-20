@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="estilos.css?v=66">
+<link rel="stylesheet" href="estilos.css?v=67">
 </head>
 <body>
 
@@ -94,6 +94,7 @@
     <button class="vbtn" type="button" data-view="cajas" aria-pressed="false">Cajas menores</button>
     <button class="vbtn" type="button" data-view="rep" aria-pressed="false">Pagos realizados</button>
     <button class="vbtn" type="button" data-view="prov" aria-pressed="false">Consultar proveedor</button>
+    <button class="vbtn" type="button" data-view="anticipos" aria-pressed="false">Anticipos pendientes</button>
   </nav>
   <nav class="views" aria-label="Clientes" id="nav-cli" hidden>
     <button class="vbtn volver" type="button" data-view="inicio">← Inicio</button>
@@ -287,6 +288,47 @@
     </section>
     <div id="qp-res"></div>
   </div>
+
+  <!-- Anticipos pendientes a proveedores persona natural -->
+  <div class="view" id="view-anticipos" hidden>
+    <section class="ficha">
+      <div><h3>Anticipos a contratistas y proveedores persona natural</h3><span class="nit">Lo que se ha dado como anticipo y todavía no tiene documento soporte que lo justifique.</span></div>
+      <div class="cifras">
+        <div><span class="l">Saldo pendiente en Cuadra</span><span class="v" id="an-saldo-local">—</span></div>
+        <div><span class="l">Saldo pendiente según Siigo</span><span class="v" id="an-saldo-siigo">—</span></div>
+        <div><span class="l">Personas con saldo</span><span class="v" id="an-n-personas">—</span></div>
+      </div>
+      <p class="rep-note" id="an-sync">Sincronizando con Siigo…</p>
+    </section>
+    <section class="consulta">
+      <label class="buscar" for="an-input"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input id="an-input" autocomplete="off" placeholder="Busca por nombre o cédula"></label>
+      <div class="quick"><span class="qlbl">Ordenar</span><button class="qbtn" type="button" data-anord="saldo">Mayor saldo</button><button class="qbtn" type="button" data-anord="antiguo">Más antiguo</button><button class="qbtn" type="button" data-anord="nombre">Nombre A–Z</button></div>
+    </section>
+    <section class="list" id="an-list"></section>
+  </div>
+
+  <dialog id="dlg-antdet">
+    <div class="dlg">
+      <div class="dlg-head"><h2 id="antd-nombre">Anticipos</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
+      <div id="antd-cuerpo"></div>
+    </div>
+  </dialog>
+
+  <dialog id="dlg-antjust">
+    <div class="dlg">
+      <div class="dlg-head"><h2>Adjuntar documento soporte</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
+      <p class="rep-note" id="antj-info"></p>
+      <form id="antj-form" novalidate class="grid">
+        <div class="field full" id="antj-campo-anticipo" hidden><label for="antj-anticipo">¿Cuál anticipo se está justificando?</label><select id="antj-anticipo"></select></div>
+        <div class="field"><label for="antj-valor">Valor que justifica este soporte</label><input id="antj-valor" inputmode="numeric" required></div>
+        <div class="field"><label for="antj-fecha">Fecha del documento</label><input type="date" id="antj-fecha"></div>
+        <div class="field full"><label for="antj-nota">Nota (opcional)</label><input id="antj-nota" autocomplete="off" placeholder="Ej. Ya se cruzó en Siigo con el comprobante CC-11-2300"></div>
+        <div class="field full"><label for="antj-archivo">Documento soporte (PDF o foto, opcional)</label><input type="file" id="antj-archivo" accept=".pdf,image/*"></div>
+        <div class="err full" id="antj-err" hidden></div>
+        <div class="form-actions full"><button class="btn sm primary" type="submit" id="antj-guardar">Guardar</button></div>
+      </form>
+    </div>
+  </dialog>
 
   <!-- Consultar cliente -->
   <div class="view" id="view-cli" hidden>
@@ -1018,15 +1060,15 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="cripto.js?v=66"></script>
-<script src="github.js?v=66"></script>
-<script src="lector.js?v=66"></script>
-<script src="app.js?v=66"></script>
-<script src="rrhh-docs.js?v=66"></script>
-<script src="rrhh.js?v=66"></script>
-<script src="informe-pdf.js?v=66"></script>
-<script src="proyectos.js?v=66"></script>
-<script src="conciliacion.js?v=66"></script>
-<script src="compras.js?v=66"></script>
+<script src="cripto.js?v=67"></script>
+<script src="github.js?v=67"></script>
+<script src="lector.js?v=67"></script>
+<script src="app.js?v=67"></script>
+<script src="rrhh-docs.js?v=67"></script>
+<script src="rrhh.js?v=67"></script>
+<script src="informe-pdf.js?v=67"></script>
+<script src="proyectos.js?v=67"></script>
+<script src="conciliacion.js?v=67"></script>
+<script src="compras.js?v=67"></script>
 </body>
 </html>
