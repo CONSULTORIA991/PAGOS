@@ -1113,10 +1113,10 @@
   $('#r-desde').addEventListener('change', onDateInput);
   $('#r-hasta').addEventListener('change', onDateInput);
   // Secciones: Inicio · Proveedores (aprob, rep, prov) · Clientes (cart, cli)
-  const VISTAS = ['inicio', 'aprob', 'cajas', 'rep', 'prov', 'cart', 'cli', 'rrhh', 'proy', 'conc', 'fcomp'];
+  const VISTAS = ['inicio', 'aprob', 'cajas', 'rep', 'prov', 'anticipos', 'cart', 'cli', 'rrhh', 'proy', 'conc', 'fcomp'];
   function setView(v) {
     S.view = VISTAS.includes(v) ? v : 'inicio';
-    const grupo = ['aprob', 'cajas', 'rep', 'prov'].includes(S.view) ? 'prov' : ['cart', 'cli'].includes(S.view) ? 'cli' : S.view;
+    const grupo = ['aprob', 'cajas', 'rep', 'prov', 'anticipos'].includes(S.view) ? 'prov' : ['cart', 'cli'].includes(S.view) ? 'cli' : S.view;
     if (S.view === 'rrhh' && window.RRHH) window.RRHH.abrir();
     if (S.view === 'proy' && window.PROY) window.PROY.abrir();
     if (S.view === 'conc' && window.CONC) window.CONC.abrir();
@@ -1130,6 +1130,7 @@
     if (S.view === 'rep') renderReport();
     if (S.view === 'cajas') renderCajas();
     if (S.view === 'prov') renderConsultaProv();
+    if (S.view === 'anticipos') renderAnticipos();
     if (S.view === 'cart' && typeof renderCartera === 'function') renderCartera();
     if (S.view === 'cli') renderConsultaCli();
     window.scrollTo({ top: 0 });
@@ -3320,6 +3321,140 @@
       render(); estadoDS(p);
     } catch (e) { mostrarError('#ds-err', e.message && !e.status ? e.message : msgGitHub(e)); }
     b.disabled = false; b.textContent = 'Enviar documento soporte a Siigo';
+  });
+
+  // ---------- Anticipos pendientes a proveedores/contratistas persona natural ----------
+  // El computador de la oficina publica en datos/anticipos-siigo.enc el saldo real de la cuenta 13300501
+  // por tercero (persona natural), leyendo el mismo cache de comprobantes que usa la conciliación bancaria.
+  // Aquí se cruza contra lo que Cuadra tiene registrado, para no dejar anticipos "olvidados" sin soporte.
+  const R_ANTSIIGO = 'datos/anticipos-siigo.enc';
+  const AN = { siigo: null, leido: 0, q: '', orden: 'saldo' };
+  async function leerAntSiigo(forzar) {
+    if (AN.siigo && !forzar && Date.now() - AN.leido < 5 * 60e3) return false;
+    try {
+      const f = await GH.leer(R_ANTSIIGO);
+      AN.siigo = f ? await Cripto.descifrarJSON(maestra, f.bytes) : { actualizado: null, anticipos: [] };
+    } catch (e) { if (!AN.siigo) AN.siigo = { actualizado: null, anticipos: [] }; }
+    AN.leido = Date.now();
+    return true;
+  }
+  function justificadoDe(a) { return (a.justificado || []).reduce((s, j) => s + (Number(j.valor) || 0), 0); }
+  function cruzadoDe(a) { return (a.cruces || []).reduce((s, c) => s + (Number(c.valor) || 0), 0) + justificadoDe(a); }
+  function saldoAnt(a) { return Math.max(0, Math.round(Number(a.valor) || 0) - cruzadoDe(a)); }
+  function terceroAntLocal() {
+    const m = new Map();
+    for (const a of S.pagos) {
+      if (a.tipoDoc !== 'anticipo' || a.estado !== 'pagado') continue;
+      const nit = String(a.nit || '').replace(/\D/g, ''); if (!nit) continue;
+      const x = m.get(nit) || { nit, nombre: a.proveedor, dado: 0, cruzado: 0, items: [], ultimo: '' };
+      x.dado += Math.round(Number(a.valor) || 0); x.cruzado += cruzadoDe(a); x.items.push(a);
+      const f = fechaPagoDe(a) || a.vence || ''; if (f > x.ultimo) x.ultimo = f;
+      m.set(nit, x);
+    }
+    for (const x of m.values()) x.saldo = Math.max(0, x.dado - x.cruzado);
+    return m;
+  }
+  function cobrosSinDSde(nit) {
+    return S.pagos.filter((p) => p.tipoDoc === 'cobro' && !p.ds && !p.siigoEnvioDS && String(p.nit || '').replace(/\D/g, '') === nit);
+  }
+  function filasAnticipos() {
+    const locales = terceroAntLocal();
+    const porSiigo = new Map(((AN.siigo && AN.siigo.anticipos) || []).map((x) => [x.nit, x]));
+    const nits = new Set([...locales.keys()].filter((n) => locales.get(n).saldo > 0));
+    for (const [nit, x] of porSiigo) if (x.saldo > 0) nits.add(nit);
+    return [...nits].map((nit) => {
+      const loc = locales.get(nit) || null;
+      const sg = porSiigo.get(nit) || null;
+      return { nit, nombre: (loc && loc.nombre) || (sg && sg.nombre) || nit, local: loc, siigo: sg,
+        saldoLocal: loc ? loc.saldo : 0, saldoSiigo: sg ? sg.saldo : null, ultimo: (loc && loc.ultimo) || (sg && sg.ultimo) || '' };
+    });
+  }
+  function diasDesde(iso) { if (!iso) return 0; const d = Date.parse(iso); return isFinite(d) ? Math.max(0, Math.round((Date.now() - d) / 864e5)) : 0; }
+  function chipSiigo(f) {
+    if (f.siigo == null) return '<span class="chip">Sin dato de Siigo</span>';
+    const dif = Math.abs((f.saldoLocal || 0) - f.saldoSiigo);
+    if (!f.local) return `<span class="chip sg-no">⚠ No está en Cuadra</span>`;
+    return dif <= 1000 ? '<span class="chip sg-ok">✓ Cuadra con Siigo</span>' : `<span class="chip sg-mal">⚠ Difiere de Siigo (${fmt(f.saldoSiigo)})</span>`;
+  }
+  async function renderAnticipos() {
+    if (S.view !== 'anticipos') return;
+    if (await leerAntSiigo()) { if (S.view === 'anticipos') renderAnticipos(); }
+    const sync = $('#an-sync');
+    sync.textContent = AN.siigo && AN.siigo.actualizado ? `Comparado con Siigo el ${dtFmt.format(new Date(AN.siigo.actualizado))}.` : 'Todavía no se ha sincronizado con Siigo (lo hace el computador de la oficina); por ahora solo se ve lo registrado en Cuadra.';
+    let filas = filasAnticipos();
+    $('#an-saldo-local').textContent = fmt(filas.reduce((s, f) => s + f.saldoLocal, 0));
+    $('#an-saldo-siigo').textContent = AN.siigo && AN.siigo.actualizado ? fmt(filas.reduce((s, f) => s + (f.saldoSiigo || 0), 0)) : '—';
+    $('#an-n-personas').textContent = filas.length;
+    const q = AN.q.trim().toLowerCase();
+    if (q) filas = filas.filter((f) => f.nombre.toLowerCase().includes(q) || f.nit.includes(q));
+    document.querySelectorAll('[data-anord]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.anord === AN.orden)));
+    filas.sort(AN.orden === 'antiguo' ? (a, b) => diasDesde(b.ultimo) - diasDesde(a.ultimo) : AN.orden === 'nombre' ? (a, b) => a.nombre.localeCompare(b.nombre, 'es') : (a, b) => (b.saldoSiigo != null ? b.saldoSiigo : b.saldoLocal) - (a.saldoSiigo != null ? a.saldoSiigo : a.saldoLocal));
+    const list = $('#an-list');
+    list.innerHTML = filas.length ? filas.map((f) => `<article class="row rrow" data-anrow="${esc(f.nit)}" tabindex="0"><div class="r-main"><div class="r-prov">${esc(f.nombre)}</div><div class="r-sub">C.C./NIT ${esc(f.nit)} · último anticipo ${f.ultimo ? esc(fmtDate(f.ultimo)) + ` (hace ${diasDesde(f.ultimo)} días)` : 'sin fecha'} ${chipSiigo(f)}</div></div><div class="r-amt">${fmt(f.saldoLocal)}<div class="quien">pendiente en Cuadra</div></div></article>`).join('')
+      : '<div class="empty"><h3>No hay anticipos pendientes</h3><p>Todos los anticipos a proveedores persona natural ya tienen su documento soporte o fueron justificados.</p></div>';
+  }
+  $('#an-input').addEventListener('input', (e) => { AN.q = e.target.value; renderAnticipos(); });
+  document.addEventListener('click', (ev) => {
+    const o = ev.target.closest('[data-anord]'); if (o) { AN.orden = o.dataset.anord; renderAnticipos(); }
+    const r = ev.target.closest('[data-anrow]'); if (r) abrirAnticipoDet(r.dataset.anrow);
+  });
+  function abrirAnticipoDet(nit) {
+    const f = filasAnticipos().find((x) => x.nit === nit);
+    if (!f) return;
+    $('#antd-nombre').textContent = f.nombre;
+    const loc = f.local;
+    const sinDS = cobrosSinDSde(nit);
+    const itemsHtml = loc ? loc.items.filter((a) => saldoAnt(a) > 0).map((a) => `<article class="row rrow"><div class="r-main"><div class="r-prov">Anticipo ${esc(a.factura || '')}</div><div class="r-sub">${fechaPagoDe(a) ? 'Pagado ' + esc(fmtDate(fechaPagoDe(a))) : ''}${cruzadoDe(a) ? ' · ya justificado ' + fmt(cruzadoDe(a)) : ''}</div></div><div class="r-amt">${fmt(saldoAnt(a))}<div class="quien"><button class="btn sm" type="button" data-antjust="${esc(a.id)}">Adjuntar soporte</button></div></div></article>`).join('') : '<p class="rep-note">Esta persona no tiene anticipos registrados en Cuadra; el saldo viene solo de Siigo.</p>';
+    const dsHtml = sinDS.length ? `<div class="res-grupo"><span class="section-lbl">Cuentas de cobro de esta persona sin documento soporte</span>${sinDS.map((p) => `<article class="row rrow"><div class="r-main"><div class="r-prov">${esc(p.factura || 'Cuenta de cobro')}</div><div class="r-sub">${esc(p.concepto || '')}</div></div><div class="r-amt">${fmt(p.valorBruto || p.valor)}<div class="quien"><button class="btn sm primary" type="button" data-abrirds="${esc(p.id)}">Crear documento soporte</button></div></div></article>`).join('')}</div>` : '';
+    $('#antd-cuerpo').innerHTML = `
+      <div class="cifras" style="margin-bottom:12px">
+        <div><span class="l">Saldo pendiente en Cuadra</span><span class="v">${fmt(f.saldoLocal)}</span></div>
+        <div><span class="l">Saldo según Siigo</span><span class="v">${f.saldoSiigo != null ? fmt(f.saldoSiigo) : '—'}</span></div>
+      </div>
+      <div class="res-grupo"><span class="section-lbl">Anticipos sin justificar</span>${itemsHtml}</div>
+      ${dsHtml}
+      <p class="rep-note">Si ya tienes el documento soporte hecho en Siigo (o la cuenta de cobro física) y solo falta dejar la prueba en Cuadra, usa "Adjuntar soporte" en el anticipo. Si lo que falta es crear el documento soporte en Siigo, usa "Crear documento soporte" sobre la cuenta de cobro.</p>`;
+    $('#dlg-antdet').showModal();
+  }
+  document.addEventListener('click', (ev) => {
+    const j = ev.target.closest('[data-antjust]'); if (j) abrirJustificar(j.dataset.antjust);
+    const d = ev.target.closest('[data-abrirds]'); if (d) { $('#dlg-antdet').close(); openDS(d.dataset.abrirds); }
+  });
+  let antjustId = null;
+  function abrirJustificar(id) {
+    const a = S.pagos.find((x) => x.id === id);
+    if (!a) return;
+    antjustId = id;
+    $('#antj-campo-anticipo').hidden = true;
+    $('#antj-info').textContent = `${a.proveedor || ''} · anticipo ${a.factura || ''} · saldo por justificar ${fmt(saldoAnt(a))}`;
+    $('#antj-valor').value = saldoAnt(a).toLocaleString('es-CO');
+    $('#antj-fecha').value = todayISO();
+    $('#antj-nota').value = '';
+    $('#antj-archivo').value = '';
+    mostrarError('#antj-err', '');
+    $('#dlg-antjust').showModal();
+  }
+  $('#antj-form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    mostrarError('#antj-err', '');
+    const a = S.pagos.find((x) => x.id === antjustId);
+    if (!a) return;
+    const valor = parseMonto($('#antj-valor').value);
+    if (!isFinite(valor) || valor <= 0) return mostrarError('#antj-err', 'Escribe cuánto justifica este documento soporte.');
+    if (valor > saldoAnt(a) + 1) return mostrarError('#antj-err', `No puedes justificar más del saldo pendiente (${fmt(saldoAnt(a))}).`);
+    const file = $('#antj-archivo').files[0];
+    const btn = $('#antj-guardar'); btn.disabled = true; btn.textContent = 'Guardando…';
+    try {
+      let adj = {};
+      if (file) { btn.textContent = 'Cifrando y subiendo…'; adj = await subirFactura(file); }
+      const entry = { valor: Math.round(valor), fecha: $('#antj-fecha').value || todayISO(), nota: $('#antj-nota').value.trim(), por: uid, en: new Date().toISOString(), ...adj };
+      await mutar((d) => { const x = d.pagos.find((y) => y.id === antjustId); if (!x) return false; x.justificado = (x.justificado || []).concat([entry]); });
+      toast('Soporte guardado. El saldo de este anticipo ya se descontó.');
+      $('#dlg-antjust').close();
+      render(); renderAnticipos();
+      const nit = String(a.nit || '').replace(/\D/g, ''); if (nit) abrirAnticipoDet(nit);
+    } catch (e) { mostrarError('#antj-err', msgGitHub(e)); }
+    btn.disabled = false; btn.textContent = 'Guardar';
   });
 
   // Un comprobante 14 por caja: un débito por soporte y el crédito a 13300502 a nombre del responsable (uno por centro de costo)
