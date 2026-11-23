@@ -3394,6 +3394,12 @@
       : '<div class="empty"><h3>No hay anticipos pendientes</h3><p>Todos los anticipos a proveedores persona natural ya tienen su documento soporte o fueron justificados.</p></div>';
   }
   $('#an-input').addEventListener('input', (e) => { AN.q = e.target.value; renderAnticipos(); });
+  $('#an-refrescar').addEventListener('click', async () => {
+    const b = $('#an-refrescar'); b.disabled = true; b.textContent = 'Actualizando…';
+    await leerAntSiigo(true);
+    renderAnticipos();
+    b.disabled = false; b.textContent = 'Actualizar';
+  });
   document.addEventListener('click', (ev) => {
     const o = ev.target.closest('[data-anord]'); if (o) { AN.orden = o.dataset.anord; renderAnticipos(); }
     const r = ev.target.closest('[data-anrow]'); if (r) abrirAnticipoDet(r.dataset.anrow);
@@ -3406,6 +3412,8 @@
     const sinDS = cobrosSinDSde(nit);
     const itemsHtml = loc ? loc.items.filter((a) => saldoAnt(a) > 0).map((a) => `<article class="row rrow"><div class="r-main"><div class="r-prov">Anticipo ${esc(a.factura || '')}</div><div class="r-sub">${fechaPagoDe(a) ? 'Pagado ' + esc(fmtDate(fechaPagoDe(a))) : ''}${cruzadoDe(a) ? ' · ya justificado ' + fmt(cruzadoDe(a)) : ''}</div></div><div class="r-amt">${fmt(saldoAnt(a))}<div class="quien"><button class="btn sm" type="button" data-antjust="${esc(a.id)}">Adjuntar soporte</button></div></div></article>`).join('') : '<p class="rep-note">Esta persona no tiene anticipos registrados en Cuadra; el saldo viene solo de Siigo.</p>';
     const dsHtml = sinDS.length ? `<div class="res-grupo"><span class="section-lbl">Cuentas de cobro de esta persona sin documento soporte</span>${sinDS.map((p) => `<article class="row rrow"><div class="r-main"><div class="r-prov">${esc(p.factura || 'Cuenta de cobro')}</div><div class="r-sub">${esc(p.concepto || '')}</div></div><div class="r-amt">${fmt(p.valorBruto || p.valor)}<div class="quien"><button class="btn sm primary" type="button" data-abrirds="${esc(p.id)}">Crear documento soporte</button></div></div></article>`).join('')}</div>` : '';
+    const facturas = f.siigo && f.siigo.personaNatural === false ? (f.siigo.facturas || []) : null;
+    const fcHtml = facturas ? (facturas.length ? `<div class="res-grupo"><span class="section-lbl">Facturas de compra pendientes en Siigo (esta es una empresa)</span>${facturas.map((fc) => `<article class="row rrow"><div class="r-main"><div class="r-prov">${esc(fc.nombre)}</div><div class="r-sub">${esc(fc.prefijo)}-${esc(fc.numero)} · ${esc(fmtDate(fc.fecha))}</div></div><div class="r-amt">${fmt(fc.saldo)}<div class="quien"><button class="btn sm primary" type="button" data-cruzarfc="${esc(nit)}|${esc(fc.id)}">Cruzar anticipo</button></div></div></article>`).join('')}</div>` : '<p class="rep-note">Esta empresa no tiene facturas de compra con saldo pendiente en Siigo para cruzar el anticipo; revisa si falta registrarla.</p>') : '';
     $('#antd-cuerpo').innerHTML = `
       <div class="cifras" style="margin-bottom:12px">
         <div><span class="l">Saldo pendiente en Cuadra</span><span class="v">${fmt(f.saldoLocal)}</span></div>
@@ -3413,12 +3421,14 @@
       </div>
       <div class="res-grupo"><span class="section-lbl">Anticipos sin justificar</span>${itemsHtml}</div>
       ${dsHtml}
-      <p class="rep-note">Si ya tienes el documento soporte hecho en Siigo (o la cuenta de cobro física) y solo falta dejar la prueba en Cuadra, usa "Adjuntar soporte" en el anticipo. Si lo que falta es crear el documento soporte en Siigo, usa "Crear documento soporte" sobre la cuenta de cobro.</p>`;
+      ${fcHtml}
+      <p class="rep-note">Si ya tienes el documento soporte hecho en Siigo (o la cuenta de cobro física) y solo falta dejar la prueba en Cuadra, usa "Adjuntar soporte" en el anticipo. Si lo que falta es crear el documento soporte en Siigo, usa "Crear documento soporte" sobre la cuenta de cobro. Si es una empresa con factura de compra ya registrada, usa "Cruzar anticipo".</p>`;
     $('#dlg-antdet').showModal();
   }
   document.addEventListener('click', (ev) => {
     const j = ev.target.closest('[data-antjust]'); if (j) abrirJustificar(j.dataset.antjust);
     const d = ev.target.closest('[data-abrirds]'); if (d) { $('#dlg-antdet').close(); openDS(d.dataset.abrirds); }
+    const c = ev.target.closest('[data-cruzarfc]'); if (c) { const [nit, fcId] = c.dataset.cruzarfc.split('|'); abrirCruzarFC(nit, fcId); }
   });
   let antjustId = null;
   function abrirJustificar(id) {
@@ -3455,6 +3465,65 @@
       const nit = String(a.nit || '').replace(/\D/g, ''); if (nit) abrirAnticipoDet(nit);
     } catch (e) { mostrarError('#antj-err', msgGitHub(e)); }
     btn.disabled = false; btn.textContent = 'Guardar';
+  });
+
+  // Cruzar un anticipo de EMPRESA contra una factura de compra ya registrada en Siigo (sin crear nada nuevo,
+  // solo el comprobante 20 que debita 22050501 de la factura y acredita 13300501 del anticipo).
+  let CFC = { nit: null, nombre: '', facturas: [], anticipos: [] };
+  function abrirCruzarFC(nit, fcId) {
+    const f = filasAnticipos().find((x) => x.nit === nit);
+    if (!f || !f.siigo) return;
+    const facturas = f.siigo.facturas || [];
+    const anticipos = f.local ? f.local.items.filter((a) => saldoAnt(a) > 0) : [];
+    mostrarError('#cfc-err', '');
+    if (!facturas.length) return;
+    if (!anticipos.length) { $('#cfc-estado').innerHTML = ''; mostrarError('#cfc-err', 'Esta empresa no tiene ningún anticipo registrado en Cuadra con saldo; no se puede cruzar desde aquí.'); $('#dlg-cruzarfc').showModal(); return; }
+    CFC = { nit, nombre: f.nombre, facturas, anticipos };
+    $('#cfc-info').textContent = `${f.nombre} · NIT ${nit}`;
+    $('#cfc-fc').innerHTML = facturas.map((fc) => `<option value="${esc(fc.id)}"${fc.id === fcId ? ' selected' : ''}>${esc(fc.nombre)} (${esc(fc.prefijo)}-${esc(fc.numero)}) · saldo ${fmt(fc.saldo)}</option>`).join('');
+    $('#cfc-campo-ant').hidden = anticipos.length <= 1;
+    $('#cfc-ant').innerHTML = anticipos.map((a) => `<option value="${esc(a.id)}">${esc(a.factura || 'Anticipo')} · saldo ${fmt(saldoAnt(a))}</option>`).join('');
+    const sync = () => {
+      const fc = CFC.facturas.find((x) => x.id === $('#cfc-fc').value);
+      const a = CFC.anticipos.find((x) => x.id === $('#cfc-ant').value) || CFC.anticipos[0];
+      $('#cfc-valor').value = Math.round(Math.min(fc ? fc.saldo : 0, a ? saldoAnt(a) : 0)).toLocaleString('es-CO');
+    };
+    $('#cfc-fc').onchange = sync; $('#cfc-ant').onchange = sync;
+    sync();
+    $('#cfc-fecha').value = todayISO();
+    $('#cfc-estado').innerHTML = '';
+    const b = $('#cfc-enviar'); delete b.dataset.sure; b.disabled = false; b.textContent = 'Cruzar en Siigo';
+    $('#dlg-cruzarfc').showModal();
+  }
+  $('#cfc-form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    mostrarError('#cfc-err', '');
+    const fc = CFC.facturas.find((x) => x.id === $('#cfc-fc').value);
+    const a = CFC.anticipos.find((x) => x.id === $('#cfc-ant').value) || CFC.anticipos[0];
+    if (!fc || !a) return mostrarError('#cfc-err', 'Elige la factura y el anticipo.');
+    if (!fc.centro) return mostrarError('#cfc-err', 'No encontré el centro de costo de esa factura; revísala en Siigo.');
+    const valor = parseMonto($('#cfc-valor').value);
+    if (!isFinite(valor) || valor <= 0) return mostrarError('#cfc-err', 'Escribe cuánto se va a cruzar.');
+    const saldoA = saldoAnt(a);
+    if (valor > saldoA + 1) return mostrarError('#cfc-err', `No puedes cruzar más del saldo del anticipo (${fmt(saldoA)}).`);
+    if (valor > fc.saldo + 1) return mostrarError('#cfc-err', `No puedes cruzar más del saldo de la factura (${fmt(fc.saldo)}).`);
+    const { prefijo, numero } = partirFactura(a.factura);
+    if (!prefijo || !numero) return mostrarError('#cfc-err', 'El anticipo no tiene prefijo/número (corrígelo con Editar).');
+    const b = $('#cfc-enviar');
+    if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = '¿Cruzar este anticipo en Siigo? Toca de nuevo'; setTimeout(() => { if (b.dataset.sure) { delete b.dataset.sure; b.textContent = 'Cruzar en Siigo'; } }, 7000); return; }
+    delete b.dataset.sure;
+    b.disabled = true; b.textContent = 'Enviando a la cola…';
+    const id = nuevoId(), ahora = new Date().toISOString();
+    const yo = conf.usuarios && conf.usuarios[uid];
+    const envio = { id, estado: 'pendiente', pedido: ahora, porNombre: yo ? (yo.nombre || yo.usuario) : '', marca: 'cruce-fc', tipo: 'CRUCE-FC', hechos: [],
+      cruceFC: { nit: CFC.nit, nombre: CFC.nombre, cc: fc.centro, fecha: $('#cfc-fecha').value || todayISO(), fcSiigoId: fc.id, fcPrefijo: fc.prefijo, fcNumero: fc.numero, fcNombre: fc.nombre },
+      cruces: [{ anticipoId: a.id, prefijo, numero, vence: a.vence || fechaPagoDe(a) || '', valor: Math.round(valor), factura: a.factura }] };
+    try {
+      await mutarEnvios((d) => { d.envios = colaCon(d.envios, envio); });
+      toast('Cruce en cola: el computador de la oficina lo crea en Siigo en 1–2 minutos.');
+      $('#cfc-estado').innerHTML = '<p class="rep-note">Enviado. Vuelve a abrir esta persona en un par de minutos (o usa "Actualizar") para ver si ya se reflejó.</p>';
+    } catch (e) { mostrarError('#cfc-err', e.message && !e.status ? e.message : msgGitHub(e)); }
+    b.disabled = false; b.textContent = 'Cruzar en Siigo';
   });
 
   // Un comprobante 14 por caja: un débito por soporte y el crédito a 13300502 a nombre del responsable (uno por centro de costo)
