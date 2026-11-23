@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="estilos.css?v=67">
+<link rel="stylesheet" href="estilos.css?v=69">
 </head>
 <body>
 
@@ -302,7 +302,7 @@
     </section>
     <section class="consulta">
       <label class="buscar" for="an-input"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input id="an-input" autocomplete="off" placeholder="Busca por nombre o cédula"></label>
-      <div class="quick"><span class="qlbl">Ordenar</span><button class="qbtn" type="button" data-anord="saldo">Mayor saldo</button><button class="qbtn" type="button" data-anord="antiguo">Más antiguo</button><button class="qbtn" type="button" data-anord="nombre">Nombre A–Z</button></div>
+      <div class="quick"><span class="qlbl">Ordenar</span><button class="qbtn" type="button" data-anord="saldo">Mayor saldo</button><button class="qbtn" type="button" data-anord="antiguo">Más antiguo</button><button class="qbtn" type="button" data-anord="nombre">Nombre A–Z</button><button class="btn sm" type="button" id="an-refrescar">Actualizar</button></div>
     </section>
     <section class="list" id="an-list"></section>
   </div>
@@ -311,6 +311,22 @@
     <div class="dlg">
       <div class="dlg-head"><h2 id="antd-nombre">Anticipos</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
       <div id="antd-cuerpo"></div>
+    </div>
+  </dialog>
+
+  <dialog id="dlg-cruzarfc">
+    <div class="dlg">
+      <div class="dlg-head"><h2>Cruzar anticipo con una factura de compra</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
+      <p class="rep-note" id="cfc-info"></p>
+      <form id="cfc-form" novalidate class="grid">
+        <div class="field full"><label for="cfc-fc">Factura de compra a cruzar</label><select id="cfc-fc"></select></div>
+        <div class="field full" id="cfc-campo-ant" hidden><label for="cfc-ant">Anticipo a usar</label><select id="cfc-ant"></select></div>
+        <div class="field"><label for="cfc-valor">Valor a cruzar</label><input id="cfc-valor" inputmode="numeric" required></div>
+        <div class="field"><label for="cfc-fecha">Fecha del cruce</label><input type="date" id="cfc-fecha"></div>
+        <div class="err full" id="cfc-err" hidden></div>
+        <div class="form-actions full"><button class="btn sm primary" type="submit" id="cfc-enviar">Cruzar en Siigo</button></div>
+      </form>
+      <div id="cfc-estado"></div>
     </div>
   </dialog>
 
@@ -1060,15 +1076,15 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="cripto.js?v=67"></script>
-<script src="github.js?v=67"></script>
-<script src="lector.js?v=67"></script>
-<script src="app.js?v=67"></script>
-<script src="rrhh-docs.js?v=67"></script>
-<script src="rrhh.js?v=67"></script>
-<script src="informe-pdf.js?v=67"></script>
-<script src="proyectos.js?v=67"></script>
-<script src="conciliacion.js?v=67"></script>
-<script src="compras.js?v=67"></script>
+<script src="cripto.js?v=69"></script>
+<script src="github.js?v=69"></script>
+<script src="lector.js?v=69"></script>
+<script src="app.js?v=69"></script>
+<script src="rrhh-docs.js?v=69"></script>
+<script src="rrhh.js?v=69"></script>
+<script src="informe-pdf.js?v=69"></script>
+<script src="proyectos.js?v=69"></script>
+<script src="conciliacion.js?v=69"></script>
+<script src="compras.js?v=69"></script>
 </body>
 </html>
