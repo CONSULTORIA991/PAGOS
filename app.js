@@ -1230,7 +1230,7 @@
     if (r === 'todo') return ['', ''];
     return rangeDates(r);
   }
-  const Q = { prov: { clave: '', per: 'anio', desde: '', hasta: '' }, cli: { clave: '', per: 'anio', desde: '', hasta: '', ver: 'todo', orden: 'desc' } };
+  const Q = { prov: { clave: '', per: 'anio', desde: '', hasta: '' }, cli: { clave: '', per: 'anio', desde: '', hasta: '', ver: 'todo', orden: 'desc', sel: new Set() } };
   [Q.prov.desde, Q.prov.hasta] = rangoConsulta('anio'); [Q.cli.desde, Q.cli.hasta] = rangoConsulta('anio');
   const enRango = (f, q) => !!f && (!q.desde || f >= q.desde) && (!q.hasta || f <= q.hasta);
   const periodoTxt = (q) => (q.desde || q.hasta ? `${q.desde ? fmtDate(q.desde) : 'inicio'} – ${q.hasta ? fmtDate(q.hasta) : 'hoy'}` : 'Todo el tiempo');
@@ -1313,11 +1313,13 @@
     if (!g) {
       const b = buscarGrupo(gs, $('#qc-input').value);
       if (b.uno) { q.clave = b.uno.clave; return renderConsultaCli(); }
+      q.sel.clear();
       res.innerHTML = b.lista && b.lista.length
         ? `<div class="res-grupo"><span class="section-lbl">Elige el cliente</span><div class="elegir">${b.lista.slice(0, 20).map((x) => `<button class="btn sm" type="button" data-qcsel="${esc(x.clave)}">${esc(x.nombre)}</button>`).join('')}</div></div>`
         : `<div class="empty" style="margin-top:16px"><h3>Busca un cliente</h3><p>Escribe parte del nombre o el NIT. Verás cuánto te ha pagado en el periodo, cada cobro y lo que tiene pendiente por pagar.</p></div>`;
       return;
     }
+    for (const id of [...q.sel]) if (!g.items.some((it) => it.id === id && porCobrarDe(it) > 0)) q.sel.delete(id);
     const cobros = [];
     for (const it of g.items) for (const c of it.cobros || []) if (enRango(c.fecha, q) || (!c.fecha && !q.desde && !q.hasta)) cobros.push({ it, c });
     const dir = q.orden === 'asc' ? 1 : -1;
@@ -1339,8 +1341,21 @@
         </div>
       </div>
       ${verCob ? `<div class="res-grupo"><span class="section-lbl">Cobros recibidos</span>${cobros.length ? cobros.map(({ it, c }) => `<article class="row rrow s-aprobado" data-crow="${it.id}" tabindex="0"><div class="r-main"><div class="r-prov">${esc([it.documento, it.descripcion].filter(Boolean).join(' · ').slice(0, 140) || 'Cobro')}</div><div class="r-sub">${c.fecha ? 'Recibido el ' + esc(fmtDate(c.fecha)) : 'Sin fecha'}${c.historico ? ' · histórico' : ''}${c.ret ? ' · retenciones ' + fmt(c.ret) : ''}</div></div><div class="r-amt">${fmt(c.valor)}</div></article>`).join('') : '<p class="rep-note">No hay cobros en este periodo.</p>'}</div>` : ''}
-      ${verPend ? `<div class="res-grupo"><span class="section-lbl">Pendiente por cobrar</span>${pendientes.length ? pendientes.map((it) => `<article class="row rrow s-${CE_CLASE[it.estado] || 'revisar'}" data-crow="${it.id}" tabindex="0"><div class="r-main"><div class="r-prov">${esc([it.documento, it.descripcion].filter(Boolean).join(' · ').slice(0, 140))}</div><div class="r-sub">${it.vence ? 'Vence ' + esc(fmtDate(it.vence)) : it.fecha ? 'Elaborada ' + esc(fmtDate(it.fecha)) : ''} · ${CE[it.estado] || it.estado}</div></div><div class="r-amt">${fmt(porCobrarDe(it))}</div></article>`).join('') : '<p class="rep-note">No tiene nada pendiente por cobrar.</p>'}</div>` : ''}`;
+      ${verPend ? `<div class="res-grupo"><span class="section-lbl">Pendiente por cobrar</span>${pendientes.length ? pendientes.map((it) => `<article class="row rrow s-${CE_CLASE[it.estado] || 'revisar'}" data-crow="${it.id}" tabindex="0"><div class="r-main"><div class="r-prov"><input type="checkbox" class="sel" data-cobsel="${esc(it.id)}"${q.sel.has(it.id) ? ' checked' : ''} aria-label="Seleccionar para cobro conjunto"> ${esc([it.documento, it.descripcion].filter(Boolean).join(' · ').slice(0, 140))}</div><div class="r-sub">${it.vence ? 'Vence ' + esc(fmtDate(it.vence)) : it.fecha ? 'Elaborada ' + esc(fmtDate(it.fecha)) : ''} · ${CE[it.estado] || it.estado}</div></div><div class="r-amt">${fmt(porCobrarDe(it))}</div></article>`).join('') : '<p class="rep-note">No tiene nada pendiente por cobrar.</p>'}</div>` : ''}
+      ${q.sel.size ? `<div class="sel-bar" style="position:static;margin-top:8px"><div class="sel-info"><b>${q.sel.size} ${q.sel.size === 1 ? 'factura marcada' : 'facturas marcadas'}</b> · ${fmt([...q.sel].reduce((s, id) => { const it = g.items.find((x) => x.id === id); return s + (it ? porCobrarDe(it) : 0); }, 0))}</div><div class="decide" style="flex:none"><button class="btn sm" type="button" id="cob-limpiar">Quitar selección</button><button class="btn sm primary" type="button" id="cob-conjunto">Registrar cobro conjunto</button></div></div>` : ''}`;
   }
+  // El clic en la casilla solo selecciona (no abre el detalle de la factura)
+  document.addEventListener('click', (ev) => {
+    const c = ev.target.closest && ev.target.closest('input[data-cobsel]');
+    if (!c) return;
+    ev.stopPropagation();
+    if (c.checked) Q.cli.sel.add(c.dataset.cobsel); else Q.cli.sel.delete(c.dataset.cobsel);
+    renderConsultaCli();
+  }, true);
+  document.addEventListener('click', (ev) => {
+    if (ev.target.closest('#cob-limpiar')) { Q.cli.sel.clear(); renderConsultaCli(); return; }
+    if (ev.target.closest('#cob-conjunto')) abrirCobroConjunto();
+  });
 
   // Eventos de las consultas
   $('#qp-input').addEventListener('input', () => { Q.prov.clave = ''; renderConsultaProv(); });
@@ -3524,6 +3539,78 @@
       $('#cfc-estado').innerHTML = '<p class="rep-note">Enviado. Vuelve a abrir esta persona en un par de minutos (o usa "Actualizar") para ver si ya se reflejó.</p>';
     } catch (e) { mostrarError('#cfc-err', e.message && !e.status ? e.message : msgGitHub(e)); }
     b.disabled = false; b.textContent = 'Cruzar en Siigo';
+  });
+
+  // Cobro conjunto de cartera: varias facturas del mismo cliente pagadas en un solo movimiento de banco,
+  // con retenciones. Reemplaza la nota contable que antes se hacía a mano en Siigo (comprobante 14).
+  let COB = { items: [] };
+  function reteDeCob(v) { if (!v) return null; const [id, nombre, pct] = v.split('|'); return { taxId: Number(id), nombre, pct: Number(pct) }; }
+  function abrirCobroConjunto() {
+    const g = C.items.length ? grupos(C.items, (it) => it.cliente).find((x) => x.clave === Q.cli.clave) : null;
+    const items = g ? [...Q.cli.sel].map((id) => g.items.find((x) => x.id === id)).filter((it) => it && porCobrarDe(it) > 0) : [];
+    if (!items.length) return;
+    COB = { items: items.map((it) => ({ it, valor: Math.round(porCobrarDe(it)), base: Math.round(porCobrarDe(it)) })) };
+    $('#cob-quien').textContent = `${g.nombre} · NIT ${g.nit || 'sin número'} · ${items.length} ${items.length === 1 ? 'factura' : 'facturas'}`;
+    $('#cob-fecha').value = todayISO();
+    $('#cob-rete').value = ''; $('#cob-ica').value = '';
+    mostrarError('#cob-err', ''); $('#cob-estado').innerHTML = '';
+    const b = $('#cob-enviar'); delete b.dataset.sure; b.disabled = false; b.textContent = 'Registrar cobro conjunto en Siigo';
+    renderResumenCobro();
+    $('#dlg-cobroconjunto').showModal();
+  }
+  function renderResumenCobro() {
+    const rete = reteDeCob($('#cob-rete').value), ica = reteDeCob($('#cob-ica').value);
+    let totalValor = 0, totalRet = 0;
+    const filas = COB.items.map((x) => {
+      const rv = rete ? Math.round(x.base * rete.pct / 100) : 0;
+      const iv = ica ? Math.round(x.base * ica.pct / 1000) : 0;
+      totalValor += x.valor; totalRet += rv + iv;
+      return `<tr><td>${esc(x.it.documento || '')}</td><td class="n">${fmt(x.valor)}</td><td class="n"><input data-cobbase="${esc(x.it.id)}" inputmode="numeric" style="width:120px;text-align:right" value="${esc(x.base.toLocaleString('es-CO'))}"></td><td class="n">${fmt(rv + iv)}</td></tr>`;
+    }).join('');
+    $('#cob-resumen').innerHTML = `<div class="preview"><table><thead><tr><th>Factura</th><th>Valor a cobrar</th><th>Base para retención</th><th>Retención</th></tr></thead><tbody>${filas}</tbody>
+      <tfoot><tr><td><b>Total</b></td><td class="n"><b>${fmt(totalValor)}</b></td><td></td><td class="n"><b>${fmt(totalRet)}</b></td></tr>
+      <tr><td colspan="3"><b>Neto que entra al banco</b></td><td class="n"><b>${fmt(totalValor - totalRet)}</b></td></tr></tfoot></table></div>
+      <p class="rep-note">La base para retención viene igual al valor a cobrar; cámbiala si esa factura ya tenía IVA o un valor distinto para retefuente/ReteICA.</p>`;
+  }
+  ['#cob-rete', '#cob-ica'].forEach((s) => $(s).addEventListener('change', renderResumenCobro));
+  $('#cob-resumen').addEventListener('input', (ev) => {
+    const t = ev.target.closest('[data-cobbase]'); if (!t) return;
+    const x = COB.items.find((y) => y.it.id === t.dataset.cobbase); if (!x) return;
+    x.base = parseMonto(t.value) || 0;
+    renderResumenCobro();
+    document.querySelector(`[data-cobbase="${t.dataset.cobbase}"]`).focus();
+  });
+  $('#cob-form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    mostrarError('#cob-err', '');
+    const g = grupos(C.items, (it) => it.cliente).find((x) => x.clave === Q.cli.clave);
+    if (!g || !COB.items.length) return;
+    const cc = $('#cob-cc').value.trim();
+    if (!cc) return mostrarError('#cob-err', 'Escribe el centro de costo.');
+    const cuentaBanco = $('#cob-banco').value.replace(/\D/g, '');
+    if (!/^\d{8}$/.test(cuentaBanco)) return mostrarError('#cob-err', 'La cuenta de banco debe tener 8 dígitos.');
+    const fecha = $('#cob-fecha').value;
+    if (!fecha) return mostrarError('#cob-err', 'Escribe la fecha en que entró el dinero.');
+    const rete = reteDeCob($('#cob-rete').value), ica = reteDeCob($('#cob-ica').value);
+    const retenciones = [...(rete ? [{ taxId: rete.taxId, nombre: rete.nombre, tipo: 'Retefuente', pct: rete.pct }] : []), ...(ica ? [{ taxId: ica.taxId, nombre: ica.nombre, tipo: 'ReteICA', pct: ica.pct }] : [])];
+    const items = COB.items.map((x) => { const { prefijo, numero } = partirFactura(x.it.documento); return { itemId: x.it.id, prefijo, numero, valor: x.valor, vence: x.it.vence || x.it.fecha, base: x.base }; });
+    for (const it of items) if (!it.prefijo || !it.numero) return mostrarError('#cob-err', `La factura ${it.itemId} no tiene un número de documento válido (revísala en Cartera).`);
+    const b = $('#cob-enviar');
+    if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = '¿Registrar este cobro en Siigo? Toca de nuevo'; setTimeout(() => { if (b.dataset.sure) { delete b.dataset.sure; b.textContent = 'Registrar cobro conjunto en Siigo'; } }, 7000); return; }
+    delete b.dataset.sure;
+    b.disabled = true; b.textContent = 'Enviando a la cola…';
+    const id = nuevoId(), ahora = new Date().toISOString();
+    const yo = conf.usuarios && conf.usuarios[uid];
+    const envio = { id, estado: 'pendiente', pedido: ahora, porNombre: yo ? (yo.nombre || yo.usuario) : '', marca: 'cobro-cartera', tipo: 'COBRO-CARTERA', hechos: [],
+      cobroCartera: { nit: g.nit, nombre: g.nombre, cc, fecha, cuentaBanco }, items, retenciones };
+    try {
+      await mutarEnvios((d) => { d.envios = colaCon(d.envios, envio); });
+      toast('Cobro conjunto en cola: el computador de la oficina lo crea en Siigo en 1–2 minutos.');
+      $('#cob-estado').innerHTML = '<p class="rep-note">Enviado. Puedes cerrar esta ventana.</p>';
+      Q.cli.sel.clear();
+      render(); renderConsultaCli();
+    } catch (e) { mostrarError('#cob-err', e.message && !e.status ? e.message : msgGitHub(e)); }
+    b.disabled = false; b.textContent = 'Registrar cobro conjunto en Siigo';
   });
 
   // Un comprobante 14 por caja: un débito por soporte y el crédito a 13300502 a nombre del responsable (uno por centro de costo)
