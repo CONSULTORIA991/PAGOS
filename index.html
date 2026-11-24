@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="estilos.css?v=69">
+<link rel="stylesheet" href="estilos.css?v=70">
 </head>
 <body>
 
@@ -311,6 +311,37 @@
     <div class="dlg">
       <div class="dlg-head"><h2 id="antd-nombre">Anticipos</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
       <div id="antd-cuerpo"></div>
+    </div>
+  </dialog>
+
+  <dialog class="sheet" id="dlg-cobroconjunto">
+    <div class="dlg">
+      <div class="dlg-head"><h2>Registrar cobro conjunto</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
+      <p id="cob-quien" style="margin:0"></p>
+      <form class="grid" id="cob-form" novalidate>
+        <div class="field"><label for="cob-fecha">Fecha en que entró el dinero</label><input type="date" id="cob-fecha"></div>
+        <div class="field"><label for="cob-banco">Cuenta de banco</label><input id="cob-banco" inputmode="numeric" autocomplete="off" placeholder="Ej. 11100501" value="11100501"></div>
+        <div class="field"><label for="cob-cc">Centro de costo</label><input id="cob-cc" list="cc-lista" autocomplete="off"></div>
+        <div class="field"><label for="cob-rete">Retención en la fuente que practicó el cliente</label>
+          <select id="cob-rete">
+            <option value="">Sin retención en la fuente</option>
+            <option value="9430|Retefuente 2% Obra|2">Retefuente 2% Obra</option>
+            <option value="6150|Retefuente 4% Servicios|4">Retefuente 4% Servicios</option>
+            <option value="6149|Retefuente 6%|6">Retefuente 6%</option>
+            <option value="6148|Retefuente 10%|10">Retefuente 10%</option>
+            <option value="6147|Retefuente 11%|11">Retefuente 11%</option>
+            <option value="6151|Retefuente 2.5%|2.5">Retefuente 2.5%</option>
+          </select></div>
+        <div class="field"><label for="cob-ica">ReteICA (opcional)</label>
+          <select id="cob-ica">
+            <option value="">Sin ReteICA</option>
+            <option value="34860|Reteica 12.5|12.5">Reteica 12.5 (por mil)</option>
+          </select></div>
+        <div class="full" id="cob-resumen"></div>
+        <div class="err full" id="cob-err" hidden></div>
+        <div class="form-actions full"><button class="btn sm primary" type="submit" id="cob-enviar">Registrar cobro conjunto en Siigo</button></div>
+      </form>
+      <div id="cob-estado"></div>
     </div>
   </dialog>
 
@@ -1076,15 +1107,15 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="cripto.js?v=69"></script>
-<script src="github.js?v=69"></script>
-<script src="lector.js?v=69"></script>
-<script src="app.js?v=69"></script>
-<script src="rrhh-docs.js?v=69"></script>
-<script src="rrhh.js?v=69"></script>
-<script src="informe-pdf.js?v=69"></script>
-<script src="proyectos.js?v=69"></script>
-<script src="conciliacion.js?v=69"></script>
-<script src="compras.js?v=69"></script>
+<script src="cripto.js?v=70"></script>
+<script src="github.js?v=70"></script>
+<script src="lector.js?v=70"></script>
+<script src="app.js?v=70"></script>
+<script src="rrhh-docs.js?v=70"></script>
+<script src="rrhh.js?v=70"></script>
+<script src="informe-pdf.js?v=70"></script>
+<script src="proyectos.js?v=70"></script>
+<script src="conciliacion.js?v=70"></script>
+<script src="compras.js?v=70"></script>
 </body>
 </html>
