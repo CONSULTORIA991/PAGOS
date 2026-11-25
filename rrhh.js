@@ -582,6 +582,7 @@
     editando = e ? e.id : null;
     for (const k of TEXTOS_EMP) $('#' + (ID_CAMPO[k] || 'emp-' + k)).value = e ? e[k] || '' : '';
     $('#emp-gen-wrap').hidden = !!e; $('#emp-gen').checked = true; $('#emp-docs').hidden = !e;
+    $('#emp-otrosi-wrap').hidden = !e; $('#emp-otrosi-motivo-wrap').hidden = !e; $('#emp-otrosi').checked = true; $('#emp-otrosi-motivo').value = '';
     $('#emp-titulo').textContent = e ? e.nombre : 'Agregar empleado';
     $('#emp-nombre').value = e ? e.nombre : ''; $('#emp-cedula').value = e ? e.cedula : '';
     $('#emp-empresa').value = e ? e.empresa || '' : EMPRESA_DEF; $('#emp-cargo').value = e ? e.cargo || '' : '';
@@ -624,17 +625,21 @@
       if (tipo === 'obra' && !nuevo.obra) return mostrarError('#emp-err', 'Para el contrato por obra o labor describe la obra o labor contratada.');
       if (!nuevo.sexo) return mostrarError('#emp-err', 'Escoge el sexo: el contrato dice “EL TRABAJADOR” o “LA TRABAJADORA”.');
     }
+    const generarOtrosi = !!editando && $('#emp-otrosi').checked;
+    const motivoOtrosi = $('#emp-otrosi-motivo').value.trim();
     const b = $('#emp-guardar'); b.disabled = true;
-    let idGuardado = editando, retiroNuevo = false;
+    let idGuardado = editando, retiroNuevo = false, otrosi = null;
     try {
       let msg = '';
       await mutar((d) => {
-        retiroNuevo = false;
+        retiroNuevo = false; otrosi = null;
         if (d.empleados.some((x) => x.cedula === nuevo.cedula && x.id !== editando)) { msg = 'Ya hay un empleado con esa cédula.'; return false; }
         if (editando) {
           const e = d.empleados.find((x) => x.id === editando);
           if (!e) { msg = 'El empleado ya no existe.'; return false; }
           let hubo = false;
+          const cambiaCargo = String(e.cargo ?? '') !== String(nuevo.cargo ?? ''), cambiaSalario = Number(e.salario) !== Number(nuevo.salario);
+          if (generarOtrosi && (cambiaCargo || cambiaSalario)) otrosi = { antesCargo: e.cargo || '', despuesCargo: nuevo.cargo || '', cambiaCargo, antesSalario: Number(e.salario) || 0, despuesSalario: Number(nuevo.salario) || 0, cambiaSalario, motivo: motivoOtrosi };
           for (const k of Object.keys(CAMPOS_EMP)) {
             const a = e[k] ?? '', n = nuevo[k] ?? '';
             if (String(a) !== String(n)) { anotar(d, { tipo: 'empleado', accion: 'editar', empId: e.id, campo: CAMPOS_EMP[k], antes: k === 'salario' ? fmt(a) : a, despues: k === 'salario' ? fmt(n) : n, nota }); hubo = true; }
@@ -652,6 +657,7 @@
       if (msg) { mostrarError('#emp-err', msg); b.disabled = false; return; }
       $('#dlg-emp').close(); toast('Empleado guardado.'); render();
       if (generar) await generarDoc(idGuardado, 'contrato', { tipo });
+      if (otrosi) await generarDoc(idGuardado, 'otrosi', { otrosi });
       if (retiroNuevo) abrirRetiro(idGuardado);
     } catch (e) { mostrarError('#emp-err', msgGitHub(e)); }
     b.disabled = false;
