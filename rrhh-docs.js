@@ -192,6 +192,30 @@
     };
   }
 
+  // ---------- otrosí (modificación de cargo y/o salario) ----------
+  function otrosi(x) {
+    const { e } = x, emp = _emp = empresaDoc(e.empresa), g = genero(e), o = x.otrosi || {};
+    const tipo = tipoContrato(e) || 'indefinido';
+    const cambios = [];
+    if (o.cambiaCargo) cambios.push(['MODIFICACIÓN DEL CARGO', `A partir de la fecha, ${g.T} desempeñará el cargo de **${v(o.despuesCargo, 'CARGO NUEVO')}**, en reemplazo del cargo de **${v(o.antesCargo, 'CARGO ANTERIOR')}** que venía ejerciendo.`]);
+    if (o.cambiaSalario) cambios.push(['MODIFICACIÓN DEL SALARIO', `A partir de la fecha, el salario mensual ${g.de} será de ${o.despuesSalario ? pesos(o.despuesSalario) : falta('SALARIO NUEVO')}, en reemplazo del salario anterior de ${o.antesSalario ? pesos(o.antesSalario) : falta('SALARIO ANTERIOR')}.`]);
+    if (o.motivo) cambios.push(['MOTIVO', o.motivo]);
+    cambios.push(['DEMÁS CONDICIONES', `Las demás cláusulas y condiciones del contrato de trabajo ${TIPO_TXT[tipo] ? `(${TIPO_TXT[tipo].toLowerCase()})` : ''} suscrito entre las partes continúan vigentes sin modificación alguna.`]);
+    return {
+      nombre: `Otrosí - ${e.nombre}`,
+      bloques: [
+        T('OTROSÍ AL CONTRATO INDIVIDUAL DE TRABAJO'),
+        TB([['EMPRESA', emp.razon], ['TRABAJADOR', `${v(e.nombre, 'NOMBRE')} · C.C. ${v(e.cedula, 'CÉDULA')}`], ...(o.cambiaCargo ? [['CARGO', `${v(o.antesCargo, 'ANTES') || '—'} → ${v(o.despuesCargo, 'DESPUÉS')}`]] : []), ...(o.cambiaSalario ? [['SALARIO', `${o.antesSalario ? cifra(o.antesSalario) : '—'} → ${o.despuesSalario ? cifra(o.despuesSalario) : falta('NUEVO')}`]] : []), ['FECHA', v(fecha(x.fechaDoc), 'FECHA')]]),
+        ESP,
+        P(`Entre **${emp.razon}**, con NIT ${emp.nit}, representada legalmente por **${emp.rep}**, quien en adelante se denominará EL EMPLEADOR, y **${v(e.nombre, 'NOMBRE')}**, ${g.id} con cédula de ciudadanía N° ${v(e.cedula, 'CÉDULA')}, quien en adelante se denominará ${g.T}, vinculad${g.o} mediante contrato de trabajo vigente, de mutuo acuerdo suscriben el presente OTROSÍ, que se regirá por lo siguiente:`),
+        ...clausulas(cambios),
+        P(`Para constancia se firma en la ciudad de ${emp.ciudad}, ${v(fecha(x.fechaDoc), 'FECHA')}.`),
+        ESP, ESP,
+        F([['______________________________', ...firmaEmpleador(emp)], ['______________________________', ...firmaTrabajador(e, g)]]),
+      ],
+    };
+  }
+
   // ---------- proceso disciplinario ----------
   function citacion(x) {
     const { e } = x, emp = _emp = empresaDoc(e.empresa), g = genero(e), s = x.susp || {};
@@ -347,6 +371,7 @@
 
   const TIPOS = {
     contrato: { titulo: 'Contrato de trabajo', fn: contrato },
+    otrosi: { titulo: 'Otrosí (cambio de cargo o salario)', fn: otrosi },
     citacion: { titulo: 'Citación a descargos', fn: citacion },
     acta: { titulo: 'Acta de descargos', fn: actaDescargos },
     suspension: { titulo: 'Memorando de suspensión', fn: memorandoSuspension },
