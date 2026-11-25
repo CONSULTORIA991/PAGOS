@@ -1173,18 +1173,21 @@
         <label><input type="radio" name="susp-cual" value="nueva"${pareceMisma ? '' : ' checked'}> <span><b>Es una suspensión nueva.</b> Se hace un memorando nuevo.</span></label></div>` : '';
     $('#susp-inicio').value = clave ? (pareceMisma ? '' : inicioQ(clave)) : hoy();
     $('#susp-dias').value = dias ? String(dias) : '';
+    $('#susp-tipo').value = 'disciplinaria'; $('#susp-proyecto').value = '';
     $('#susp-hechos').value = ''; $('#susp-falta').value = ''; $('#susp-descargos').value = '';
     const pend = R.datos.suspensiones.filter((x) => x.empId === empId && !x.docId).slice(-1)[0];
-    if (pend) { $('#susp-hechos').value = pend.hechos || ''; $('#susp-falta').value = pend.falta || ''; $('#susp-descargos').value = pend.descargosFecha || ''; }
+    if (pend) { $('#susp-tipo').value = pend.tipo === 'obra' ? 'obra' : 'disciplinaria'; $('#susp-proyecto').value = pend.proyecto || ''; $('#susp-hechos').value = pend.hechos || ''; $('#susp-falta').value = pend.falta || ''; $('#susp-descargos').value = pend.descargosFecha || ''; }
     mostrarError('#susp-err', '');
     pintarSusp(); $('#dlg-susp').showModal();
   }
   function pintarSusp() {
     const misma = (document.querySelector('input[name="susp-cual"]:checked') || {}).value === 'misma';
     $('#susp-form').querySelectorAll('.field').forEach((f) => { f.hidden = misma; });
+    const obra = $('#susp-tipo').value === 'obra';
+    if (!misma) { $('#susp-campo-proyecto').hidden = !obra; $('#susp-campo-hechos').hidden = obra; $('#susp-campo-falta').hidden = obra; $('#susp-campo-descargos').hidden = obra; }
     $('#susp-go').textContent = misma ? 'Guardar (sin memorando nuevo)' : 'Guardar y generar memorando';
     const ini = $('#susp-inicio').value, n = Number($('#susp-dias').value) || 0;
-    $('#susp-fin').textContent = ini && n ? `Termina el ${fmtDate(Docs().sumarDias(ini, n - 1))}; regresa el ${fmtDate(Docs().sumarDias(ini, n))}.` : 'Primera vez: máximo 8 días; si reincide, hasta 2 meses (art. 112 CST).';
+    $('#susp-fin').textContent = ini && n ? `Termina el ${fmtDate(Docs().sumarDias(ini, n - 1))}; regresa el ${fmtDate(Docs().sumarDias(ini, n))}.` : obra ? 'Pon los días que ya sabes que va a durar (ajústalos después si se extiende).' : 'Primera vez: máximo 8 días; si reincide, hasta 2 meses (art. 112 CST).';
   }
   $('#dlg-susp').addEventListener('change', pintarSusp);
   $('#dlg-susp').addEventListener('input', (ev) => { if (ev.target.id === 'susp-dias' || ev.target.id === 'susp-inicio') pintarSusp(); });
@@ -1202,10 +1205,12 @@
       } catch (err) { mostrarError('#susp-err', msgGitHub(err)); }
       b.disabled = false; return;
     }
+    const tipo = $('#susp-tipo').value === 'obra' ? 'obra' : 'disciplinaria';
     const inicio = $('#susp-inicio').value, dias = Number($('#susp-dias').value) || 0;
     if (!inicio) return mostrarError('#susp-err', 'Escribe la fecha inicial de la suspensión.');
-    if (!(dias > 0 && dias <= 60)) return mostrarError('#susp-err', 'Escribe los días de suspensión (máximo 60).');
-    const reg = { id: nuevoId(), empId: s.empId, inicio, dias, fin: Docs().sumarDias(inicio, dias - 1), hechos: $('#susp-hechos').value.trim(), falta: $('#susp-falta').value.trim(), descargosFecha: $('#susp-descargos').value, periodos: s.clave ? [s.clave] : [], en: new Date().toISOString(), por: A.uid };
+    const maxDias = tipo === 'obra' ? 365 : 60;
+    if (!(dias > 0 && dias <= maxDias)) return mostrarError('#susp-err', `Escribe los días de suspensión (máximo ${maxDias}).`);
+    const reg = { id: nuevoId(), empId: s.empId, inicio, dias, fin: Docs().sumarDias(inicio, dias - 1), tipo, proyecto: $('#susp-proyecto').value.trim(), hechos: $('#susp-hechos').value.trim(), falta: $('#susp-falta').value.trim(), descargosFecha: $('#susp-descargos').value, periodos: s.clave ? [s.clave] : [], en: new Date().toISOString(), por: A.uid };
     b.disabled = true;
     const id = await generarDoc(s.empId, 'suspension', { susp: reg }, (d, e, docId) => {
       d.suspensiones = d.suspensiones.filter((x) => !(x.empId === s.empId && !x.docId));
