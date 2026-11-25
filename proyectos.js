@@ -1227,17 +1227,18 @@
       const cambios = {}; document.querySelectorAll('[data-pc]').forEach((s) => { const v = s.value || sugerido(s.dataset.pc); if (v && v !== SIN) cambios[s.dataset.pc] = v; });
       if (!Object.keys(cambios).length) throw new Error('Escoge el rubro de al menos una cuenta.');
       await mutarConf((c) => { c.mapa = Object.assign(c.mapa || {}, cambios); });
-    }, 'Guardar mapeo');
+    }, 'Guardar mapeo', true);
   }
 
-  // Formulario genérico
+  // Formulario genérico. ancho=true: para formularios con tablas anchas (ej. mapeo de cuentas).
   let formOk = null;
-  function abrirForm(tituloTxt, html, ok, boton) {
+  function abrirForm(tituloTxt, html, ok, boton, ancho) {
     $('#pf-titulo').textContent = tituloTxt;
     $('#pf-campos').innerHTML = html;
     $('#pf-go').textContent = boton || 'Guardar'; $('#pf-go').disabled = false;
     mostrarError('#pf-err', '');
     formOk = ok;
+    $('#dlg-proy-form').classList.toggle('ancho', !!ancho);
     $('#dlg-proy-form').showModal();
   }
 
