@@ -819,9 +819,36 @@
         const y = it.transform[5], x = it.transform[4];
         let f = filas.find((z) => Math.abs(z.y - y) <= 2.5);
         if (!f) { f = { y, xs: [] }; filas.push(f); }
-        f.xs.push([x, it.str]);
+        f.xs.push([x, it.str, it.width]);
       }
-      filas.sort((a, b) => b.y - a.y).forEach((f) => out.push(f.xs.sort((a, b) => a[0] - b[0]).map((x) => x[1]).join(' ').replace(/\s+/g, ' ').trim()));
+      filas.sort((a, b) => b.y - a.y);
+      // Algunos PDF (según cómo los genera el software del área técnica) dejan el último dígito de un
+      // valor redondo en miles ($ 1.462.000) suelto en un renglón un poco más abajo, por una rareza del
+      // renderizador. Esos dígitos sueltos se reincorporan al texto que los originó según su posición (x)
+      // real en la página, no por el orden en que aparecen.
+      for (let k = filas.length - 1; k >= 1; k--) {
+        const f = filas[k];
+        const orden = f.xs.slice().sort((a, b) => a[0] - b[0]);
+        let corte = orden.length;
+        while (corte > 0 && /^\d{1,3}$/.test(orden[corte - 1][1])) corte--;
+        const sueltos = orden.slice(corte);
+        if (!sueltos.length) continue;
+        let j = k - 1;
+        while (j >= 0 && !filas[j].xs.some(([, s]) => /\$/.test(s))) j--;
+        if (j < 0 || filas[j].y - f.y <= 0 || filas[j].y - f.y > 20) continue;
+        const prev = filas[j];
+        for (const [sx, sstr] of sueltos) {
+          let mejor = -1, mejorDist = Infinity;
+          prev.xs.forEach(([px, pstr, pw], idx) => {
+            const fin = px + (pw != null ? pw : pstr.length * 4);
+            const d = Math.abs(sx - fin);
+            if (d < mejorDist) { mejorDist = d; mejor = idx; }
+          });
+          if (mejor >= 0 && mejorDist < 10) prev.xs[mejor] = [prev.xs[mejor][0], prev.xs[mejor][1] + sstr, prev.xs[mejor][2]];
+        }
+        f.xs = orden.slice(0, corte);
+      }
+      filas.filter((f) => f.xs.length).forEach((f) => out.push(f.xs.sort((a, b) => a[0] - b[0]).map((x) => x[1]).join(' ').replace(/\s+/g, ' ').trim()));
     }
     return out;
   }
@@ -843,7 +870,28 @@
     if (capRubro === 'TUBERIA' && /electric|luces|regata/.test(s)) return 'PARTE ELECTRICA';
     return capRubro;
   }
-  function leerPresupuesto(lineas) {
+  // Algunos presupuestos en PDF dejan el/los últimos dígitos (0, 00...) de un valor redondo en miles
+  // en una línea aparte del texto (rareza del generador del PDF). pegarColas los reincorpora al número.
+  function pegarColas(s, tokens) {
+    if (!tokens.length) return s;
+    const ms = [...s.matchAll(/\$\s*[\d.,]+/g)];
+    const usar = ms.slice(-tokens.length);
+    if (usar.length !== tokens.length) return s + ' ' + tokens.join(' ');
+    let out = s, delta = 0;
+    usar.forEach((m, i) => { const pos = m.index + m[0].length + delta; out = out.slice(0, pos) + tokens[i] + out.slice(pos); delta += tokens[i].length; });
+    return out;
+  }
+  function unirColasNumericas(lineas) {
+    const out = [];
+    for (const l of lineas) {
+      const t = l.trim();
+      if (/^\d{1,3}(?:\s+\d{1,3})*$/.test(t) && out.length && /\$/.test(out[out.length - 1])) { out[out.length - 1] = pegarColas(out[out.length - 1], t.split(/\s+/)); continue; }
+      out.push(l);
+    }
+    return out;
+  }
+  function leerPresupuesto(lineasOrig) {
+    const lineas = unirColasNumericas(lineasOrig);
     const pr = { caps: [], avisos: [] };
     const tx = lineas.join('\n');
     const i0 = lineas.findIndex((l) => /^PRESUPUESTO$/i.test(l));
@@ -869,13 +917,19 @@
       buf = '';
     };
     for (const l of lineas) {
-      const capM = /CAP[ÍI]TULO\s+(\d+)\s*[-–:]\s*(.+)$/i.exec(l);
+      const capM = /CAP[ÍI]TULO\s+(\d+)\s*[-–·:]\s*(.+)$/i.exec(l);
       if (capM) { cerrar(); cap = { n: capM[2].trim(), r: rubroCapitulo(capM[2]), items: [], sub: 0 }; pr.caps.push(cap); continue; }
       const sub = /^Subtotal\s+(.+?)\s*\$\s*([\d.,]+)$/i.exec(l);
       if (sub) { cerrar(); if (cap && !/costos directos/i.test(sub[1])) cap.sub = montoPres(sub[2]); if (/costos directos/i.test(sub[1])) cap = null; continue; }
       if (/^#\s*Descripci/i.test(l) || /NIT\s*\d|Tel\s*\d/i.test(l)) continue;
       if (/^\d+\.\d+\s/.test(l)) { cerrar(); buf = l; continue; }
-      if (buf) buf += ' ' + l;
+      if (buf) {
+        const tks = l.split(/\s+/).filter(Boolean);
+        const trail = [];
+        while (tks.length && /^\d{1,3}$/.test(tks[tks.length - 1])) trail.unshift(tks.pop());
+        if (tks.length) buf += ' ' + tks.join(' ');
+        if (trail.length) buf = pegarColas(buf, trail);
+      }
     }
     cerrar();
     // Revisiones de cuadre
