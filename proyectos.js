@@ -385,7 +385,7 @@
     $('#proy-cuerpo').innerHTML = `
       ${guia(`💡 Toca un proyecto para ver su informe: indicadores, PyG por rubro y los proveedores de cada rubro. Los datos vienen de Siigo (actualizados el ${esc(fecha)}). ${isAdmin() ? 'Con <b>Agrupar centros</b> juntas varios contratos (por ejemplo, todo Cóndor) en un solo informe.' : ''}`)}
       <div class="rh-barra"><div class="grupo"><div class="field"><label for="proy-buscar">Buscar proyecto</label><input id="proy-buscar" value="${esc(P.q)}" placeholder="Nombre o código del centro de costo" autocomplete="off"></div></div>
-        <div class="grupo">${isAdmin() ? '<button class="btn primary" type="button" data-proy="grupo">+ Agrupar centros</button>' : ''}${isAdmin() && sinClasificarTotal() ? `<button class="btn" type="button" data-proy="clasificar">Clasificar cuentas <span class="rh-alerta">(${sinClasificarTotal()})</span></button>` : ''}</div></div>
+        <div class="grupo">${isAdmin() ? '<button class="btn primary" type="button" data-proy="grupo">+ Agrupar centros</button>' : ''}${isAdmin() ? `<button class="btn" type="button" data-proy="clasificar">Mapeo de cuentas${sinClasificarTotal() ? ` <span class="rh-alerta">(${sinClasificarTotal()})</span>` : ''}</button>` : ''}</div></div>
       ${gs ? `<h3 class="rh-empresa">Grupos de proyectos</h3><div class="proy-grid">${gs}</div>` : ''}
       <h3 class="rh-empresa">Centros de costo con movimiento · ${ccs.length}</h3>
       <div class="proy-grid">${ccs.map((c) => tarjeta('c:' + c, nombreCC(c), `Centro de costo ${c} · último movimiento ${fmtDate(acum.get(c).ult)}`, acum.get(c))).join('') || '<div class="empty"><p>No hay proyectos con ese nombre.</p></div>'}</div>`;
@@ -1206,21 +1206,28 @@
     $('#pf-go').disabled = false;
     return { e, cc, desde, n, via, meses };
   }
+  // Mapeo de cuentas en rubros: muestra TODAS las cuentas (ya clasificadas o no) para poder reclasificar
+  // cualquiera, no solo las que faltan. Así no depende de pedir el cambio por fuera de la app.
   function abrirClasificar() {
     const m = new Map();
-    for (const f of P.datos.filas) if (!clasificada(f[2])) { const x = m.get(f[2]) || { v: 0, n: 0, desc: f[6], ccs: new Set() }; x.v += f[5]; x.n++; x.ccs.add(f[3]); m.set(f[2], x); }
+    for (const f of P.datos.filas) {
+      const k = f[2];
+      if (/^[PN]:/.test(k)) continue; // ventas/descuentos y personal tienen su rubro fijo por lógica, no son editables aquí
+      const x = m.get(k) || { v: 0, n: 0, desc: f[6], ccs: new Set() };
+      x.v += f[5]; x.n++; x.ccs.add(f[3]); m.set(k, x);
+    }
+    const actualDe = (k) => P.conf.mapa[k] || (P.datos.mapaBase || {})[k] || '';
     const l = [...m.entries()].sort((a, b) => Math.abs(b[1].v) - Math.abs(a[1].v));
-    abrirForm('Clasificar cuentas en el PyG', `
-      <p class="full proy-nota" style="margin:0">Cuentas de Siigo que todavía no están en tu modelo de PyG. Escoge el rubro de cada una; se guarda para todos los proyectos. Algunas ya traen una sugerencia.</p>
+    abrirForm('Mapeo de cuentas en rubros', `
+      <p class="full proy-nota" style="margin:0">Todas las cuentas de Siigo que han salido en los proyectos, con su rubro de hoy. Cambia el que no esté bien; se guarda para todos los proyectos y todas las usuarias.</p>
       <div class="full rh-tabla-wrap"><table class="rh-tabla"><thead><tr><th>Cuenta</th><th class="n">Valor</th><th>Rubro</th></tr></thead><tbody>
-      ${l.map(([k, x]) => `<tr><td><b>${esc(k)}</b> ${esc(nombreCuenta(k).startsWith('Cuenta ') ? '' : nombreCuenta(k))}<br><span class="sub">${x.n} renglones · ej. ${esc(x.desc)}</span></td><td class="n">${fmt(x.v)}</td><td><select data-pc="${esc(k)}"><option value="">${esc(titulo(sugerido(k)))}${sugerido(k) !== SIN ? ' (sugerido)' : ''}</option>${RUBROS.map((r) => `<option value="${esc(r)}">${esc(titulo(r))}</option>`).join('')}<option value="${NO}">No incluir en el PyG</option></select></td></tr>`).join('')}
+      ${l.map(([k, x]) => { const act = actualDe(k); return `<tr><td><b>${esc(k)}</b> ${esc(nombreCuenta(k).startsWith('Cuenta ') ? '' : nombreCuenta(k))}<br><span class="sub">${x.n} renglones · ej. ${esc(x.desc)}</span></td><td class="n">${fmt(x.v)}</td><td><select data-pc="${esc(k)}"><option value=""${act ? '' : ' selected'}>${act ? 'Sin rubro' : (sugerido(k) !== SIN ? esc(titulo(sugerido(k))) + ' (sugerido)' : 'Escoger rubro')}</option>${RUBROS.map((r) => `<option value="${esc(r)}"${r === act ? ' selected' : ''}>${esc(titulo(r))}</option>`).join('')}<option value="${NO}"${act === NO ? ' selected' : ''}>No incluir en el PyG</option></select></td></tr>`; }).join('')}
       </tbody></table></div>`,
     async () => {
-      const cambios = {}; document.querySelectorAll('[data-pc]').forEach((s) => { cambios[s.dataset.pc] = s.value || sugerido(s.dataset.pc); });
-      const validos = Object.fromEntries(Object.entries(cambios).filter(([, v]) => v && v !== SIN));
-      if (!Object.keys(validos).length) throw new Error('Escoge el rubro de al menos una cuenta.');
-      await mutarConf((c) => { c.mapa = Object.assign(c.mapa || {}, validos); });
-    }, 'Guardar clasificación');
+      const cambios = {}; document.querySelectorAll('[data-pc]').forEach((s) => { const v = s.value || sugerido(s.dataset.pc); if (v && v !== SIN) cambios[s.dataset.pc] = v; });
+      if (!Object.keys(cambios).length) throw new Error('Escoge el rubro de al menos una cuenta.');
+      await mutarConf((c) => { c.mapa = Object.assign(c.mapa || {}, cambios); });
+    }, 'Guardar mapeo');
   }
 
   // Formulario genérico
