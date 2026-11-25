@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="estilos.css?v=74">
+<link rel="stylesheet" href="estilos.css?v=75">
 </head>
 <body>
 
@@ -600,6 +600,8 @@
       <datalist id="pila-eps"></datalist><datalist id="pila-afp"></datalist><datalist id="pila-arl"></datalist><datalist id="pila-ccf"></datalist>
       <div class="field full" id="emp-gen-wrap"><label class="check"><input type="checkbox" id="emp-gen" checked> Generar el contrato en Word al guardar</label></div>
       <div class="field" id="emp-salcontrato-wrap"><label for="emp-salcontrato">Salario que aparece en el contrato (si es distinto al de hoy)</label><input id="emp-salcontrato" inputmode="numeric" autocomplete="off" placeholder="Déjalo vacío para usar el salario actual"><span class="hint">Para contratos viejos (ej. 2020): pon aquí el salario de esa época. El salario de la nómina de hoy no cambia.</span></div>
+      <div class="field" id="emp-smmlvcontrato-wrap"><label for="emp-smmlvcontrato">Salario mínimo del año del contrato</label><input id="emp-smmlvcontrato" inputmode="numeric" autocomplete="off" placeholder="Déjalo vacío para usar el de hoy"><button class="btn sm" type="button" id="emp-sug-aux">Sugerir según el año de ingreso</button></div>
+      <div class="field" id="emp-auxcontrato-wrap"><label for="emp-auxcontrato">Auxilio de transporte del año del contrato</label><input id="emp-auxcontrato" inputmode="numeric" autocomplete="off" placeholder="Déjalo vacío para usar el de hoy"></div>
       <div class="field full" id="emp-otrosi-wrap" hidden><label class="check"><input type="checkbox" id="emp-otrosi" checked> Generar un otrosí en Word por este cambio</label></div>
       <div class="field full" id="emp-otrosi-motivo-wrap" hidden><label for="emp-otrosi-motivo">Motivo del otrosí (opcional)</label><input id="emp-otrosi-motivo" autocomplete="off" placeholder="Ej. Pasa de coordinadora administrativa a coordinadora del proyecto AMA Magdalena"></div>
       <div class="field full"><span class="section-lbl">Retiro</span></div>
@@ -640,6 +642,8 @@
         <option value="certificado">Certificado laboral</option>
       </select></div>
       <div class="field" id="docs-salcontrato-wrap" hidden><label for="docs-salcontrato">Salario que aparece en el contrato (si es distinto al de hoy)</label><input id="docs-salcontrato" inputmode="numeric" autocomplete="off" placeholder="Déjalo vacío para usar el salario actual"><span class="hint">Para contratos viejos: pon el salario de esa época. El salario de la nómina de hoy no cambia.</span></div>
+      <div class="field" id="docs-smmlvcontrato-wrap" hidden><label for="docs-smmlvcontrato">Salario mínimo del año del contrato</label><input id="docs-smmlvcontrato" inputmode="numeric" autocomplete="off" placeholder="Déjalo vacío para usar el de hoy"><button class="btn sm" type="button" id="docs-sug-aux">Sugerir según el año de ingreso</button></div>
+      <div class="field" id="docs-auxcontrato-wrap" hidden><label for="docs-auxcontrato">Auxilio de transporte del año del contrato</label><input id="docs-auxcontrato" inputmode="numeric" autocomplete="off" placeholder="Déjalo vacío para usar el de hoy"></div>
       <button class="btn primary" type="button" id="docs-generar">Generar</button>
     </div>
     <input type="file" id="docs-firmado" accept=".pdf,image/*" hidden>
@@ -1117,15 +1121,15 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="cripto.js?v=74"></script>
-<script src="github.js?v=74"></script>
-<script src="lector.js?v=74"></script>
-<script src="app.js?v=74"></script>
-<script src="rrhh-docs.js?v=74"></script>
-<script src="rrhh.js?v=74"></script>
-<script src="informe-pdf.js?v=74"></script>
-<script src="proyectos.js?v=74"></script>
-<script src="conciliacion.js?v=74"></script>
-<script src="compras.js?v=74"></script>
+<script src="cripto.js?v=75"></script>
+<script src="github.js?v=75"></script>
+<script src="lector.js?v=75"></script>
+<script src="app.js?v=75"></script>
+<script src="rrhh-docs.js?v=75"></script>
+<script src="rrhh.js?v=75"></script>
+<script src="informe-pdf.js?v=75"></script>
+<script src="proyectos.js?v=75"></script>
+<script src="conciliacion.js?v=75"></script>
+<script src="compras.js?v=75"></script>
 </body>
 </html>
