@@ -1516,23 +1516,34 @@
   }
   function excelNovedades() {
     const mes = R.mesPla;
-    const cab = ['Empresa', 'Nombre', 'Cédula', 'Cargo', 'Salario', 'Días Q1', 'Días Q2', 'Incapacidad (días)', 'Vacaciones (días)', 'Lic. remunerada (días)', 'Lic. no remunerada (días)', 'Suspensión (días)', 'HE diurnas (h)', 'HE nocturnas (h)', 'Recargo nocturno (h)', 'Recargo dom/fest (h)', 'HE dom diurnas (h)', 'HE dom nocturnas (h)', 'Otros pagos', 'Préstamos', 'Otras deducciones', 'Ingreso', 'Retiro', 'Motivo retiro', 'Notas', 'Modificaciones registradas'];
+    const cab = ['Empresa', 'Nombre', 'Cédula', 'Cargo', 'Salario', 'Días Q1', 'Días Q2', 'Incapacidad (días)', 'Vacaciones (días)', 'Lic. remunerada (días)', 'Lic. no remunerada (días)', 'Suspensión (días)',
+      'HE diurnas (h)', 'HE diurnas ($)', 'HE nocturnas (h)', 'HE nocturnas ($)', 'Recargo nocturno (h)', 'Recargo nocturno ($)', 'Recargo dom/fest (h)', 'Recargo dom/fest ($)', 'HE dom diurnas (h)', 'HE dom diurnas ($)', 'HE dom nocturnas (h)', 'HE dom nocturnas ($)', 'Valor horas extra y recargos',
+      'Otros pagos', 'Préstamos', 'Otras deducciones', 'Ingreso', 'Retiro', 'Motivo retiro', 'Notas', 'Modificaciones registradas'];
     const filas = [[`REPORTE DE NOVEDADES · ${nombreMes(mes).toUpperCase()}`], [], cab];
     const vistos = new Map();
     for (const q of [1, 2]) for (const e of empleadosDe(mes, q).filter(deEmpresa)) { const k = e.cedula || e.id; if (!vistos.has(k)) vistos.set(k, { e, f: [null, null] }); vistos.get(k).f[q - 1] = filaDe(e, mes, q); }
     const cambiosMes = R.datos.cambios.filter((c) => String(c.periodo || '').startsWith(mes));
     for (const { e, f } of [...vistos.values()].sort((a, b) => String(a.e.empresa).localeCompare(String(b.e.empresa)) || String(a.e.nombre).localeCompare(String(b.e.nombre)))) {
       const s = (k) => (Number((f[0] || {})[k]) || 0) + (Number((f[1] || {})[k]) || 0);
+      const c0 = f[0] ? calcular(e, f[0]) : null, c1 = f[1] ? calcular(e, f[1]) : null;
+      const valorHE = (k) => (c0 ? c0.heTipos[k] : 0) + (c1 ? c1.heTipos[k] : 0);
+      const totalHE = (c0 ? c0.he : 0) + (c1 ? c1.he : 0);
       const mods = cambiosMes.filter((c) => c.empId === e.id).map((c) => `${quien(c.por)}: ${NOMBRE_CAMPO[c.campo] || c.campo} ${c.antes || 0}→${c.despues || 0}`).join('; ');
-      filas.push([e.empresa || EMPRESA_DEF, e.nombre, e.cedula, e.cargo || '', Number(e.salario) || 0, f[0] ? Number(f[0].dias) || 0 : 0, f[1] ? Number(f[1].dias) || 0 : 0, s('inc'), s('vac'), s('lr'), s('lnr'), s('sus'), s('hed'), s('hen'), s('rn'), s('rdf'), s('hedf'), s('henf'), s('otros'), s('prestamos'), s('otrasDed'),
+      filas.push([e.empresa || EMPRESA_DEF, e.nombre, e.cedula, e.cargo || '', Number(e.salario) || 0, f[0] ? Number(f[0].dias) || 0 : 0, f[1] ? Number(f[1].dias) || 0 : 0, s('inc'), s('vac'), s('lr'), s('lnr'), s('sus'),
+        s('hed'), valorHE('hed'), s('hen'), valorHE('hen'), s('rn'), valorHE('rn'), s('rdf'), valorHE('rdf'), s('hedf'), valorHE('hedf'), s('henf'), valorHE('henf'), totalHE,
+        s('otros'), s('prestamos'), s('otrasDed'),
         e.ingreso && e.ingreso.slice(0, 7) === mes ? e.ingreso : '', e.retiro && e.retiro.slice(0, 7) === mes ? e.retiro : '', e.retiro && e.retiro.slice(0, 7) === mes ? e.motivoRetiro || '' : '', [f[0] && f[0].nota, f[1] && f[1].nota].filter(Boolean).join(' / '), mods]);
     }
-    libro([{ titulo: 'Novedades', filas, anchos: [20, 30, 13, 18, 13, ...Array(16).fill(10), 12, 12, 20, 30, 60], pesos: [4, 18, 19, 20] }], `Novedades nómina ${mes}${sufijoEmp()}.xlsx`);
+    libro([{ titulo: 'Novedades', filas, anchos: [20, 30, 13, 18, 13, ...Array(7).fill(9), ...Array(6).fill([9, 13]).flat(), 16, 14, 14, 14, 12, 12, 20, 30, 60], pesos: [4, 13, 15, 17, 19, 21, 23, 24, 25, 26, 27] }], `Novedades nómina ${mes}${sufijoEmp()}.xlsx`);
   }
   // Informe de novedades para imprimir: solo quien tuvo algo que contar ese mes (no toda la nómina), en frases simples
-  function novedadesTxt(f0, f1, mes) {
+  function novedadesTxt(e, f0, f1, mes) {
     const s = (k) => (Number((f0 || {})[k]) || 0) + (Number((f1 || {})[k]) || 0);
     const d = (n) => `${n} ${n === 1 ? 'día' : 'días'}`;
+    const c0 = f0 ? calcular(e, f0) : null, c1 = f1 ? calcular(e, f1) : null;
+    const valorHE = (k) => (c0 ? c0.heTipos[k] : 0) + (c1 ? c1.heTipos[k] : 0);
+    const P = R.datos.param, hora = (Number(e.salario) || 0) / (P.horasMes || 210);
+    const valorHoras = (tipo, horas) => Math.round(hora * (Number(horas) || 0) * (['rn', 'rdf'].includes(tipo) ? P.rec[tipo] / 100 : 1 + P.rec[tipo] / 100));
     const partes = [];
     if (s('inc')) partes.push(`Incapacidad: ${d(s('inc'))}`);
     if (s('vac')) partes.push(`Vacaciones: ${d(s('vac'))}`);
@@ -1542,8 +1553,8 @@
     // Horas extra y recargos: si se registraron con día y horario, se listan uno por uno (lo pidió Karen para el informe impreso)
     const det = [...((f0 || {}).horasDet || []), ...((f1 || {}).horasDet || [])].sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
     const conDetalle = new Set(det.map((x) => x.tipo));
-    for (const x of det) partes.push(`${HE_NOMBRE[x.tipo] || x.tipo}: ${fmtDate(x.fecha)}, de ${x.desde} a ${x.hasta} (${x.horas} h)`);
-    for (const [k, nom] of Object.entries(HE_NOMBRE)) if (s(k) && !conDetalle.has(k)) partes.push(`${nom}: ${s(k)} h`);
+    for (const x of det) partes.push(`${HE_NOMBRE[x.tipo] || x.tipo}: ${fmtDate(x.fecha)}, de ${x.desde} a ${x.hasta} (${x.horas} h) · ${fmt(valorHoras(x.tipo, x.horas))}`);
+    for (const [k, nom] of Object.entries(HE_NOMBRE)) if (s(k) && !conDetalle.has(k)) partes.push(`${nom}: ${s(k)} h · ${fmt(valorHE(k))}`);
     // Bonificaciones/auxilios no constitutivos: si tienen obra y/o días (p. ej. transporte a una obra), se listan uno por uno
     const otrosDet = [...((f0 || {}).otrosDet || []), ...((f1 || {}).otrosDet || [])];
     if (otrosDet.length) {
@@ -1564,7 +1575,7 @@
     const vistos = new Map();
     for (const q of [1, 2]) for (const e of empleadosDe(mes, q).filter(deEmpresa)) { const k = e.cedula || e.id; if (!vistos.has(k)) vistos.set(k, { e, f: [null, null] }); vistos.get(k).f[q - 1] = filaDe(e, mes, q); }
     const filas = [...vistos.values()].map(({ e, f }) => ({
-      e, partes: novedadesTxt(f[0], f[1], mes),
+      e, partes: novedadesTxt(e, f[0], f[1], mes),
       ing: e.ingreso && e.ingreso.slice(0, 7) === mes ? e.ingreso : '', ret: e.retiro && e.retiro.slice(0, 7) === mes ? e.retiro : '',
     })).filter((x) => x.partes.length || x.ing || x.ret)
       .sort((a, b) => String(a.e.empresa).localeCompare(String(b.e.empresa)) || String(a.e.nombre).localeCompare(String(b.e.nombre)));
