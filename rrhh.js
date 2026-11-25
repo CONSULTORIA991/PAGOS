@@ -583,6 +583,7 @@
     for (const k of TEXTOS_EMP) $('#' + (ID_CAMPO[k] || 'emp-' + k)).value = e ? e[k] || '' : '';
     $('#emp-gen-wrap').hidden = !!e; $('#emp-gen').checked = true; $('#emp-docs').hidden = !e;
     $('#emp-salcontrato-wrap').hidden = !!e; $('#emp-salcontrato').value = '';
+    $('#emp-smmlvcontrato-wrap').hidden = !!e; $('#emp-auxcontrato-wrap').hidden = !!e; $('#emp-smmlvcontrato').value = ''; $('#emp-auxcontrato').value = '';
     $('#emp-otrosi-wrap').hidden = !e; $('#emp-otrosi-motivo-wrap').hidden = !e; $('#emp-otrosi').checked = true; $('#emp-otrosi-motivo').value = '';
     $('#emp-titulo').textContent = e ? e.nombre : 'Agregar empleado';
     $('#emp-nombre').value = e ? e.nombre : ''; $('#emp-cedula').value = e ? e.cedula : '';
@@ -598,6 +599,7 @@
     $('#dlg-emp').showModal();
   }
   $('#emp-contrato').addEventListener('change', mostrarCamposContrato);
+  $('#emp-sug-aux').addEventListener('click', () => sugerirSmmlv($('#emp-ingreso'), $('#emp-smmlvcontrato'), $('#emp-auxcontrato')));
   $('#emp-docs').addEventListener('click', () => { const id = editando; $('#dlg-emp').close(); abrirDocs(id); });
   $('#emp-form').addEventListener('submit', async (ev) => {
     ev.preventDefault();
@@ -657,7 +659,12 @@
       });
       if (msg) { mostrarError('#emp-err', msg); b.disabled = false; return; }
       $('#dlg-emp').close(); toast('Empleado guardado.'); render();
-      if (generar) { const salarioContrato = Math.round(parseMonto($('#emp-salcontrato').value) || 0); await generarDoc(idGuardado, 'contrato', { tipo, ...(salarioContrato > 0 ? { salarioContrato } : {}) }); }
+      if (generar) {
+        const salarioContrato = Math.round(parseMonto($('#emp-salcontrato').value) || 0);
+        const smmlvContrato = Math.round(parseMonto($('#emp-smmlvcontrato').value) || 0);
+        const auxContrato = Math.round(parseMonto($('#emp-auxcontrato').value) || 0);
+        await generarDoc(idGuardado, 'contrato', { tipo, ...(salarioContrato > 0 ? { salarioContrato } : {}), ...(smmlvContrato > 0 ? { smmlv: smmlvContrato } : {}), ...(auxContrato > 0 ? { aux: auxContrato } : {}) });
+      }
       if (otrosi) await generarDoc(idGuardado, 'otrosi', { otrosi });
       if (retiroNuevo) abrirRetiro(idGuardado);
     } catch (e) { mostrarError('#emp-err', msgGitHub(e)); }
@@ -724,10 +731,28 @@
       : '<p class="rep-note" style="margin:0">Aún no hay documentos de este empleado. Genera el primero abajo.</p>';
     const t = tipoDe(e);
     $('#docs-tipo').value = t ? 'contrato' : $('#docs-tipo').value;
-    $('#docs-salcontrato').value = '';
+    $('#docs-salcontrato').value = ''; $('#docs-smmlvcontrato').value = ''; $('#docs-auxcontrato').value = '';
     pintarSalContrato();
   }
-  function pintarSalContrato() { $('#docs-salcontrato-wrap').hidden = $('#docs-tipo').value !== 'contrato'; }
+  $('#docs-sug-aux').addEventListener('click', () => {
+    const e = R.datos.empleados.find((x) => x.id === docsDe); if (!e) return;
+    sugerirSmmlv({ value: e.ingreso || '' }, $('#docs-smmlvcontrato'), $('#docs-auxcontrato'));
+  });
+  // Salario mínimo y auxilio de transporte histórico, por año (para contratos con fecha de ingreso de años anteriores)
+  const SMMLV_HIST = {
+    2019: [828116, 97032], 2020: [877803, 102854], 2021: [908526, 106454], 2022: [1000000, 117172],
+    2023: [1160000, 140606], 2024: [1300000, 162000], 2025: [1423500, 200000], 2026: [1750905, 249095],
+  };
+  function sugerirSmmlv(ingresoInput, smmlvInput, auxInput) {
+    const anio = Number(String(ingresoInput.value || '').slice(0, 4));
+    const par = SMMLV_HIST[anio];
+    if (!par) { toast(anio ? `No tengo el salario mínimo de ${anio} guardado; escríbelo a mano.` : 'Escribe primero la fecha de ingreso.'); return; }
+    smmlvInput.value = par[0].toLocaleString('es-CO'); auxInput.value = par[1].toLocaleString('es-CO');
+  }
+  function pintarSalContrato() {
+    const esContrato = $('#docs-tipo').value === 'contrato';
+    $('#docs-salcontrato-wrap').hidden = !esContrato; $('#docs-smmlvcontrato-wrap').hidden = !esContrato; $('#docs-auxcontrato-wrap').hidden = !esContrato;
+  }
   $('#docs-tipo').addEventListener('change', pintarSalContrato);
   $('#dlg-docs').addEventListener('click', async (ev) => {
     const b = ev.target.closest('[data-doc-bajar], [data-doc-ver], [data-doc-subir]'); if (!b) return;
@@ -771,7 +796,9 @@
     let extra = {};
     if (tipo === 'contrato') {
       const salarioContrato = Math.round(parseMonto($('#docs-salcontrato').value) || 0);
-      if (salarioContrato > 0) extra = { salarioContrato };
+      const smmlvContrato = Math.round(parseMonto($('#docs-smmlvcontrato').value) || 0);
+      const auxContrato = Math.round(parseMonto($('#docs-auxcontrato').value) || 0);
+      extra = { ...(salarioContrato > 0 ? { salarioContrato } : {}), ...(smmlvContrato > 0 ? { smmlv: smmlvContrato } : {}), ...(auxContrato > 0 ? { aux: auxContrato } : {}) };
     }
     if (tipo === 'citacion' || tipo === 'acta') {
       const s = R.datos.suspensiones.filter((x) => x.empId === e.id).slice(-1)[0];
