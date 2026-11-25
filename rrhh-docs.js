@@ -229,7 +229,27 @@
       ],
     };
   }
+  // Suspensión por falta de obra o labor contratada (no es sanción: no hay hechos, falta ni descargos).
+  // Texto dictado por Karen (Directora de RRHH de ODESA) para este caso.
+  function memorandoSuspensionObra(x) {
+    const { e } = x, emp = _emp = empresaDoc(e.empresa), g = genero(e), s = x.susp || {};
+    const dias = Number(s.dias) || 0, fin = s.fin || (s.inicio && dias ? sumarDias(s.inicio, dias - 1) : ''), reintegro = fin ? sumarDias(fin, 1) : '';
+    return {
+      nombre: `Memorando de suspensión - ${e.nombre}`,
+      bloques: [
+        ...encabezadoCarta(emp, e, g, x.fechaDoc, 'Suspensión temporal del contrato laboral por obra o labor contratada'),
+        P(`Teniendo en cuenta la suspensión de la obra o proyecto **${v(s.proyecto, 'OBRA O PROYECTO')}**, y en calidad de Directora de Recursos Humanos de la empresa, me permito informar que nos vemos en la obligación de suspender temporalmente su contrato de trabajo por obra o labor contratada.`),
+        P(`La duración de la suspensión se contará a partir del **${v(fecha(s.inicio), 'FECHA DE INICIO')}** hasta que se supere la situación que generó la suspensión del contrato de obra${fin ? ` (estimada hasta el **${v(fecha(fin), 'FECHA ESTIMADA')}**; si la situación se extiende o se supera antes, se le informará oportunamente)` : ''}.`),
+        P(`Durante la suspensión no se presta el servicio ni se paga salario (artículos 51 y 53 del Código Sustantivo del Trabajo). Su afiliación a la seguridad social se mantiene y la novedad se reportará en la planilla de aportes como suspensión temporal del contrato.`),
+        P(`Agradezco la atención que se sirva prestar a la presente.`),
+        P('Atentamente,'),
+        ESP,
+        F([[`______________________________`, `**${v(s.firmante, 'NOMBRE DE QUIEN FIRMA')}**`, 'Directora de Recursos Humanos', _emp.razon], [`______________________________`, `**Recibido: ${v(e.nombre, 'NOMBRE')}**`, `C.C. ${v(e.cedula, 'CÉDULA')}`, `Fecha de recibido: ____________`]]),
+      ],
+    };
+  }
   function memorandoSuspension(x) {
+    if ((x.susp || {}).tipo === 'obra') return memorandoSuspensionObra(x);
     const { e } = x, emp = _emp = empresaDoc(e.empresa), g = genero(e), s = x.susp || {};
     const dias = Number(s.dias) || 0, fin = s.fin || (s.inicio && dias ? sumarDias(s.inicio, dias - 1) : ''), reintegro = fin ? sumarDias(fin, 1) : '';
     return {
