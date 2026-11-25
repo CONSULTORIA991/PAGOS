@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="estilos.css?v=73">
+<link rel="stylesheet" href="estilos.css?v=74">
 </head>
 <body>
 
@@ -599,6 +599,7 @@
       <div class="field"><label for="emp-centro">Centro de trabajo</label><input id="emp-centro" autocomplete="off" placeholder="RIESGO V"></div>
       <datalist id="pila-eps"></datalist><datalist id="pila-afp"></datalist><datalist id="pila-arl"></datalist><datalist id="pila-ccf"></datalist>
       <div class="field full" id="emp-gen-wrap"><label class="check"><input type="checkbox" id="emp-gen" checked> Generar el contrato en Word al guardar</label></div>
+      <div class="field" id="emp-salcontrato-wrap"><label for="emp-salcontrato">Salario que aparece en el contrato (si es distinto al de hoy)</label><input id="emp-salcontrato" inputmode="numeric" autocomplete="off" placeholder="Déjalo vacío para usar el salario actual"><span class="hint">Para contratos viejos (ej. 2020): pon aquí el salario de esa época. El salario de la nómina de hoy no cambia.</span></div>
       <div class="field full" id="emp-otrosi-wrap" hidden><label class="check"><input type="checkbox" id="emp-otrosi" checked> Generar un otrosí en Word por este cambio</label></div>
       <div class="field full" id="emp-otrosi-motivo-wrap" hidden><label for="emp-otrosi-motivo">Motivo del otrosí (opcional)</label><input id="emp-otrosi-motivo" autocomplete="off" placeholder="Ej. Pasa de coordinadora administrativa a coordinadora del proyecto AMA Magdalena"></div>
       <div class="field full"><span class="section-lbl">Retiro</span></div>
@@ -638,6 +639,7 @@
         <option value="terminacion">Retiro: carta de terminación</option>
         <option value="certificado">Certificado laboral</option>
       </select></div>
+      <div class="field" id="docs-salcontrato-wrap" hidden><label for="docs-salcontrato">Salario que aparece en el contrato (si es distinto al de hoy)</label><input id="docs-salcontrato" inputmode="numeric" autocomplete="off" placeholder="Déjalo vacío para usar el salario actual"><span class="hint">Para contratos viejos: pon el salario de esa época. El salario de la nómina de hoy no cambia.</span></div>
       <button class="btn primary" type="button" id="docs-generar">Generar</button>
     </div>
     <input type="file" id="docs-firmado" accept=".pdf,image/*" hidden>
@@ -1115,15 +1117,15 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="cripto.js?v=73"></script>
-<script src="github.js?v=73"></script>
-<script src="lector.js?v=73"></script>
-<script src="app.js?v=73"></script>
-<script src="rrhh-docs.js?v=73"></script>
-<script src="rrhh.js?v=73"></script>
-<script src="informe-pdf.js?v=73"></script>
-<script src="proyectos.js?v=73"></script>
-<script src="conciliacion.js?v=73"></script>
-<script src="compras.js?v=73"></script>
+<script src="cripto.js?v=74"></script>
+<script src="github.js?v=74"></script>
+<script src="lector.js?v=74"></script>
+<script src="app.js?v=74"></script>
+<script src="rrhh-docs.js?v=74"></script>
+<script src="rrhh.js?v=74"></script>
+<script src="informe-pdf.js?v=74"></script>
+<script src="proyectos.js?v=74"></script>
+<script src="conciliacion.js?v=74"></script>
+<script src="compras.js?v=74"></script>
 </body>
 </html>
