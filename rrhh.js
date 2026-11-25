@@ -582,6 +582,7 @@
     editando = e ? e.id : null;
     for (const k of TEXTOS_EMP) $('#' + (ID_CAMPO[k] || 'emp-' + k)).value = e ? e[k] || '' : '';
     $('#emp-gen-wrap').hidden = !!e; $('#emp-gen').checked = true; $('#emp-docs').hidden = !e;
+    $('#emp-salcontrato-wrap').hidden = !!e; $('#emp-salcontrato').value = '';
     $('#emp-otrosi-wrap').hidden = !e; $('#emp-otrosi-motivo-wrap').hidden = !e; $('#emp-otrosi').checked = true; $('#emp-otrosi-motivo').value = '';
     $('#emp-titulo').textContent = e ? e.nombre : 'Agregar empleado';
     $('#emp-nombre').value = e ? e.nombre : ''; $('#emp-cedula').value = e ? e.cedula : '';
@@ -656,7 +657,7 @@
       });
       if (msg) { mostrarError('#emp-err', msg); b.disabled = false; return; }
       $('#dlg-emp').close(); toast('Empleado guardado.'); render();
-      if (generar) await generarDoc(idGuardado, 'contrato', { tipo });
+      if (generar) { const salarioContrato = Math.round(parseMonto($('#emp-salcontrato').value) || 0); await generarDoc(idGuardado, 'contrato', { tipo, ...(salarioContrato > 0 ? { salarioContrato } : {}) }); }
       if (otrosi) await generarDoc(idGuardado, 'otrosi', { otrosi });
       if (retiroNuevo) abrirRetiro(idGuardado);
     } catch (e) { mostrarError('#emp-err', msgGitHub(e)); }
@@ -723,7 +724,11 @@
       : '<p class="rep-note" style="margin:0">Aún no hay documentos de este empleado. Genera el primero abajo.</p>';
     const t = tipoDe(e);
     $('#docs-tipo').value = t ? 'contrato' : $('#docs-tipo').value;
+    $('#docs-salcontrato').value = '';
+    pintarSalContrato();
   }
+  function pintarSalContrato() { $('#docs-salcontrato-wrap').hidden = $('#docs-tipo').value !== 'contrato'; }
+  $('#docs-tipo').addEventListener('change', pintarSalContrato);
   $('#dlg-docs').addEventListener('click', async (ev) => {
     const b = ev.target.closest('[data-doc-bajar], [data-doc-ver], [data-doc-subir]'); if (!b) return;
     if (b.dataset.docBajar) bajarDoc(b.dataset.docBajar);
@@ -764,6 +769,10 @@
     if (tipo === 'contrato' && !tipoDe(e)) return mostrarError('#docs-err', 'Primero escoge el tipo de contrato del empleado (tócalo en la lista y edítalo).');
     if (tipo === 'noprorroga') { if (tipoDe(e) !== 'fijo' || !e.contratoFin) return mostrarError('#docs-err', 'El preaviso de no prórroga es para contratos a término fijo con fecha de terminación.'); await notificarNoProrroga(e.id); pintarDocs(); return; }
     let extra = {};
+    if (tipo === 'contrato') {
+      const salarioContrato = Math.round(parseMonto($('#docs-salcontrato').value) || 0);
+      if (salarioContrato > 0) extra = { salarioContrato };
+    }
     if (tipo === 'citacion' || tipo === 'acta') {
       const s = R.datos.suspensiones.filter((x) => x.empId === e.id).slice(-1)[0];
       extra = { susp: s && !s.docId ? s : {} };
