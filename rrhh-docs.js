@@ -118,7 +118,9 @@
   // ---------- contratos ----------
   function contrato(x) {
     const { e } = x, emp = _emp = empresaDoc(e.empresa), g = genero(e), tipo = x.tipo || tipoContrato(e) || 'indefinido';
-    const sal = Number(e.salario) || 0, smmlv = Number(x.smmlv) || 1750905, aux = Number(x.aux) || 249095;
+    // Salario que se muestra en el contrato: si se indicó uno distinto (contratos viejos, con el salario de esa
+    // época), se usa solo aquí, sin tocar el salario actual del empleado en la nómina.
+    const sal = Number(x.salarioContrato) || Number(e.salario) || 0, smmlv = Number(x.smmlv) || 1750905, aux = Number(x.aux) || 249095;
     const conAux = e.aux !== false && sal > 0 && sal <= 2 * smmlv;
     const meses = tipo === 'fijo' ? mesesEntre(e.ingreso, e.contratoFin) : 0;
     const dPrueba = Number(e.prueba) || (tipo === 'fijo' && meses ? Math.min(60, Math.floor(meses * 30 / 5)) : 60);
