@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="estilos.css?v=72">
+<link rel="stylesheet" href="estilos.css?v=73">
 </head>
 <body>
 
@@ -599,6 +599,8 @@
       <div class="field"><label for="emp-centro">Centro de trabajo</label><input id="emp-centro" autocomplete="off" placeholder="RIESGO V"></div>
       <datalist id="pila-eps"></datalist><datalist id="pila-afp"></datalist><datalist id="pila-arl"></datalist><datalist id="pila-ccf"></datalist>
       <div class="field full" id="emp-gen-wrap"><label class="check"><input type="checkbox" id="emp-gen" checked> Generar el contrato en Word al guardar</label></div>
+      <div class="field full" id="emp-otrosi-wrap" hidden><label class="check"><input type="checkbox" id="emp-otrosi" checked> Generar un otrosí en Word por este cambio</label></div>
+      <div class="field full" id="emp-otrosi-motivo-wrap" hidden><label for="emp-otrosi-motivo">Motivo del otrosí (opcional)</label><input id="emp-otrosi-motivo" autocomplete="off" placeholder="Ej. Pasa de coordinadora administrativa a coordinadora del proyecto AMA Magdalena"></div>
       <div class="field full"><span class="section-lbl">Retiro</span></div>
       <div class="field"><label for="emp-retiro">Fecha de retiro</label><input type="date" id="emp-retiro"><span class="hint">Déjala vacía si sigue activo.</span></div>
       <div class="field"><label for="emp-motivo">Motivo del retiro</label><input id="emp-motivo" autocomplete="off" placeholder="Renuncia, terminación de obra…"></div>
@@ -1113,15 +1115,15 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="cripto.js?v=72"></script>
-<script src="github.js?v=72"></script>
-<script src="lector.js?v=72"></script>
-<script src="app.js?v=72"></script>
-<script src="rrhh-docs.js?v=72"></script>
-<script src="rrhh.js?v=72"></script>
-<script src="informe-pdf.js?v=72"></script>
-<script src="proyectos.js?v=72"></script>
-<script src="conciliacion.js?v=72"></script>
-<script src="compras.js?v=72"></script>
+<script src="cripto.js?v=73"></script>
+<script src="github.js?v=73"></script>
+<script src="lector.js?v=73"></script>
+<script src="app.js?v=73"></script>
+<script src="rrhh-docs.js?v=73"></script>
+<script src="rrhh.js?v=73"></script>
+<script src="informe-pdf.js?v=73"></script>
+<script src="proyectos.js?v=73"></script>
+<script src="conciliacion.js?v=73"></script>
+<script src="compras.js?v=73"></script>
 </body>
 </html>
