@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="estilos.css?v=71">
+<link rel="stylesheet" href="estilos.css?v=72">
 </head>
 <body>
 
@@ -771,11 +771,17 @@
     <p id="susp-intro" style="margin:0"></p>
     <div id="susp-cual"></div>
     <form class="grid" id="susp-form" novalidate>
+      <div class="field full"><label for="susp-tipo">Motivo de la suspensión</label>
+        <select id="susp-tipo">
+          <option value="disciplinaria">Disciplinaria (sanción por una falta)</option>
+          <option value="obra">Por obra o labor contratada (no hay obra para asignarle, sin sanción)</option>
+        </select></div>
       <div class="field"><label for="susp-inicio">Fecha inicial de la suspensión</label><input type="date" id="susp-inicio" required></div>
       <div class="field"><label for="susp-dias">Días de suspensión (en total)</label><input id="susp-dias" inputmode="numeric" required><span class="hint" id="susp-fin"></span></div>
-      <div class="field full"><label for="susp-hechos">¿Qué pasó? (hechos, con fechas)</label><textarea id="susp-hechos" rows="3" placeholder="Ej. El 3 de noviembre no se presentó a trabajar y no avisó ni presentó excusa."></textarea></div>
-      <div class="field full"><label for="susp-falta">Obligación o norma incumplida</label><input id="susp-falta" autocomplete="off" placeholder="Ej. Art. 58 num. 1 del CST y el Reglamento Interno de Trabajo"></div>
-      <div class="field"><label for="susp-descargos">Fecha de la diligencia de descargos</label><input type="date" id="susp-descargos"><span class="hint">La ley exige escuchar al trabajador antes de suspender. Si aún no se hizo, genera primero la citación desde Documentos.</span></div>
+      <div class="field full" id="susp-campo-proyecto" hidden><label for="susp-proyecto">Obra o proyecto que se suspendió</label><input id="susp-proyecto" autocomplete="off" placeholder="Ej. AMA Magdalena"></div>
+      <div class="field full" id="susp-campo-hechos"><label for="susp-hechos">¿Qué pasó? (hechos, con fechas)</label><textarea id="susp-hechos" rows="3" placeholder="Ej. El 3 de noviembre no se presentó a trabajar y no avisó ni presentó excusa."></textarea></div>
+      <div class="field full" id="susp-campo-falta"><label for="susp-falta">Obligación o norma incumplida</label><input id="susp-falta" autocomplete="off" placeholder="Ej. Art. 58 num. 1 del CST y el Reglamento Interno de Trabajo"></div>
+      <div class="field" id="susp-campo-descargos"><label for="susp-descargos">Fecha de la diligencia de descargos</label><input type="date" id="susp-descargos"><span class="hint">La ley exige escuchar al trabajador antes de suspender. Si aún no se hizo, genera primero la citación desde Documentos.</span></div>
       <div class="err full" id="susp-err" hidden></div>
       <div class="form-actions full"><button class="btn" type="button" data-close>Ahora no</button><button class="btn primary" type="submit" id="susp-go">Guardar y generar memorando</button></div>
     </form>
@@ -1107,15 +1113,15 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="cripto.js?v=71"></script>
-<script src="github.js?v=71"></script>
-<script src="lector.js?v=71"></script>
-<script src="app.js?v=71"></script>
-<script src="rrhh-docs.js?v=71"></script>
-<script src="rrhh.js?v=71"></script>
-<script src="informe-pdf.js?v=71"></script>
-<script src="proyectos.js?v=71"></script>
-<script src="conciliacion.js?v=71"></script>
-<script src="compras.js?v=71"></script>
+<script src="cripto.js?v=72"></script>
+<script src="github.js?v=72"></script>
+<script src="lector.js?v=72"></script>
+<script src="app.js?v=72"></script>
+<script src="rrhh-docs.js?v=72"></script>
+<script src="rrhh.js?v=72"></script>
+<script src="informe-pdf.js?v=72"></script>
+<script src="proyectos.js?v=72"></script>
+<script src="conciliacion.js?v=72"></script>
+<script src="compras.js?v=72"></script>
 </body>
 </html>
