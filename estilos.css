@@ -579,6 +579,12 @@ label .rh-num { width: 22px; height: 22px; font-size: .78rem; margin-right: 4px;
 .proy-cuentas b { font-family: var(--font-num); }
 #dlg-proy-det, #dlg-proy-form { width: min(820px, calc(100vw - 32px)); }
 #dlg-proy-form.ancho { width: min(1200px, calc(100vw - 32px)); }
+.empresa-sel-wrap { margin-top: 8px; max-width: 260px; }
+.rh-acc { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; margin-bottom: 10px; }
+.rh-acc + .rh-acc { margin-top: -2px; }
+.rh-acc summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+.rh-acc .rh-acc { margin: 8px 0 0; }
+.rh-acc .rh-tabla-wrap { margin-top: 8px; }
 @media (max-width: 560px) { .proy-barra { grid-template-columns: 1fr auto; } .proy-barra-t { grid-column: 1 / -1; grid-row: 2; } }
 
 /* Gráfica de líneas (acumulado en el tiempo) */
