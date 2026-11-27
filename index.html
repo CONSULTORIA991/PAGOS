@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="estilos.css?v=78">
+<link rel="stylesheet" href="estilos.css?v=79">
 </head>
 <body>
 
@@ -73,6 +73,7 @@
     <div>
       <h1>Cuadra</h1>
       <div class="sub"><span id="hoy"></span><span class="role" id="role"></span><span class="user-chip" id="who"></span><span class="sync" id="sync"></span><button class="siigo-luz" id="siigo-luz" type="button" hidden data-nivel="rojo"><i aria-hidden="true"></i><span></span></button><button class="rh-campana" id="rh-campana" type="button" hidden title="Contratos por notificar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22a2.5 2.5 0 0 0 2.45-2h-4.9A2.5 2.5 0 0 0 12 22zm7-6V11a7 7 0 0 0-5.5-6.84V3.5a1.5 1.5 0 0 0-3 0v.66A7 7 0 0 0 5 11v5l-2 2v1h18v-1z" fill="currentColor"/></svg><span></span></button></div>
+      <div class="field empresa-sel-wrap"><label for="empresa-sel">Empresa</label><select id="empresa-sel"><option value="caribe">Odesa Caribe</option><option value="obs">Odesa Bienes y Servicios</option></select></div>
     </div>
     <div class="top-actions">
       <span id="admin-actions" class="top-actions" hidden>
@@ -115,7 +116,7 @@
     <section class="tareas" id="i-tareas" aria-label="Para hacer hoy" hidden></section>
     <section class="avisos" id="i-avisos" aria-label="Pendientes con Siigo" hidden></section>
     <div class="puertas">
-      <button class="puerta prov" type="button" data-view="aprob">
+      <button class="puerta prov" type="button" data-view="aprob" data-empresa="caribe">
         <span class="txt">
           <span><span class="ptit">Proveedores</span><span class="pdesc">Facturas y cuentas de cobro por pagar, aprobaciones y pagos realizados.</span></span>
           <span class="pdato" id="i-prov-dato"></span>
@@ -136,7 +137,7 @@
           </svg>
         </span>
       </button>
-      <button class="puerta cli" type="button" data-view="cart">
+      <button class="puerta cli" type="button" data-view="cart" data-empresa="caribe">
         <span class="txt">
           <span><span class="ptit">Clientes</span><span class="pdesc">Cartera: facturas de venta, anticipos y retegarantías por cobrar.</span></span>
           <span class="pdato" id="i-cli-dato"></span>
@@ -155,7 +156,7 @@
           </svg>
         </span>
       </button>
-      <button class="puerta caja" type="button" data-view="cajas">
+      <button class="puerta caja" type="button" data-view="cajas" data-empresa="caribe">
         <span class="txt">
           <span><span class="ptit">Cajas menores</span><span class="pdesc">Soportes que envían los responsables desde el celular: revisión, pago y reembolso.</span></span>
           <span class="pdato" id="i-cajas-dato"></span>
@@ -172,7 +173,7 @@
           </svg>
         </span>
       </button>
-      <button class="puerta conc" type="button" data-view="conc">
+      <button class="puerta conc" type="button" data-view="conc" data-empresa="caribe">
         <span class="txt">
           <span><span class="ptit">Conciliación bancaria</span><span class="pdesc">Movimientos del banco contra Siigo: qué ya está registrado y qué falta, cuenta por cuenta.</span></span>
           <span class="pdato" id="i-conc-dato"></span>
@@ -189,7 +190,7 @@
           </svg>
         </span>
       </button>
-      <button class="puerta fcomp" type="button" data-view="fcomp">
+      <button class="puerta fcomp" type="button" data-view="fcomp" data-empresa="caribe">
         <span class="txt">
           <span><span class="ptit">Facturas de compra</span><span class="pdesc">Lo que llegó a la DIAN contra Siigo: qué ya está contabilizado y qué falta, y registrarlo desde aquí.</span></span>
           <span class="pdato" id="i-fcomp-dato"></span>
@@ -203,7 +204,7 @@
           </svg>
         </span>
       </button>
-      <button class="puerta rh" type="button" data-view="rrhh">
+      <button class="puerta rh" type="button" data-view="rrhh" data-empresa="caribe">
         <span class="txt">
           <span><span class="ptit">Recursos humanos</span><span class="pdesc">Empleados activos, nómina quincenal, novedades y planilla de seguridad social.</span></span>
           <span class="pdato" id="i-rh-dato"></span>
@@ -218,7 +219,7 @@
           </svg>
         </span>
       </button>
-      <button class="puerta proy" type="button" data-view="proy">
+      <button class="puerta proy" type="button" data-view="proy" data-empresa="caribe">
         <span class="txt">
           <span><span class="ptit">Informes de proyectos</span><span class="pdesc">Estado de resultados por obra o centro de costo, con los datos de Siigo: costos por rubro, proveedores y costo por m².</span></span>
           <span class="pdato" id="i-proy-dato"></span>
@@ -236,6 +237,39 @@
           </svg>
         </span>
       </button>
+      <button class="puerta obsinv" type="button" data-view="obsinv" data-empresa="obs">
+        <span class="txt">
+          <span><span class="ptit">Inventario</span><span class="pdesc">Existencias de Odesa Bienes y Servicios, según las fotos que subes desde World Office.</span></span>
+          <span class="pdato" id="i-obsinv-dato"></span>
+          <span class="ir">Entrar →</span>
+        </span>
+        <span class="ilus" aria-hidden="true">
+          <svg viewBox="0 0 140 150">
+            <rect x="0" y="118" width="140" height="32" fill="#fbe8d3"/>
+            <rect x="20" y="40" width="100" height="70" rx="4" fill="#c9833a"/>
+            <rect x="20" y="40" width="100" height="18" fill="#a3671f"/>
+            <rect x="34" y="68" width="28" height="28" rx="2" fill="#fff" opacity=".85"/>
+            <rect x="78" y="68" width="28" height="28" rx="2" fill="#fff" opacity=".85"/>
+          </svg>
+        </span>
+      </button>
+      <button class="puerta obsbanco" type="button" data-view="obsbanco" data-empresa="obs">
+        <span class="txt">
+          <span><span class="ptit">Movimientos de banco</span><span class="pdesc">El libro auxiliar que subes de World Office: en qué se gastaron los recursos, por tercero y por mes.</span></span>
+          <span class="pdato" id="i-obsbanco-dato"></span>
+          <span class="ir">Entrar →</span>
+        </span>
+        <span class="ilus" aria-hidden="true">
+          <svg viewBox="0 0 140 150">
+            <rect x="0" y="118" width="140" height="32" fill="#dcecf7"/>
+            <rect x="26" y="30" width="88" height="70" rx="6" fill="#1f6fb2"/>
+            <rect x="26" y="30" width="88" height="16" rx="6" fill="#154f82"/>
+            <rect x="38" y="56" width="64" height="6" fill="#dcecf7"/>
+            <rect x="38" y="70" width="64" height="6" fill="#dcecf7"/>
+            <rect x="38" y="84" width="40" height="6" fill="#dcecf7"/>
+          </svg>
+        </span>
+      </button>
     </div>
   </div>
 
@@ -248,6 +282,36 @@
     </nav>
     <div id="proy-cuerpo"><div class="empty"><h3>Cargando…</h3></div></div>
   </div>
+
+  <!-- Odesa Bienes y Servicios: Inventario -->
+  <div class="view" id="view-obsinv" hidden>
+    <nav class="views" aria-label="Inventario">
+      <button class="vbtn volver" type="button" data-view="inicio">← Inicio</button>
+      <h2 class="rh-titulo">Inventario · Odesa Bienes y Servicios</h2>
+    </nav>
+    <div id="obsinv-cuerpo"><div class="empty"><h3>Cargando…</h3></div></div>
+  </div>
+
+  <!-- Odesa Bienes y Servicios: Movimientos de banco -->
+  <div class="view" id="view-obsbanco" hidden>
+    <nav class="views" aria-label="Movimientos de banco">
+      <button class="vbtn volver" type="button" data-view="inicio">← Inicio</button>
+      <h2 class="rh-titulo">Movimientos de banco · Odesa Bienes y Servicios</h2>
+    </nav>
+    <div id="obsbanco-cuerpo"><div class="empty"><h3>Cargando…</h3></div></div>
+  </div>
+
+  <!-- Formulario genérico de Odesa Bienes y Servicios (subir inventario / libro auxiliar) -->
+  <dialog id="dlg-obs-form">
+    <div class="dlg">
+      <div class="dlg-head"><h2 id="obs-titulo">Formulario</h2><button class="btn ghost x" type="button" data-close>Cerrar</button></div>
+      <form class="grid" id="obs-form">
+        <div class="full grid" id="obs-campos" style="display:contents"></div>
+        <div class="err full" id="obs-err" hidden></div>
+        <div class="form-actions full"><button class="btn" type="button" data-close>Cancelar</button><button class="btn primary" type="submit" id="obs-go">Guardar</button></div>
+      </form>
+    </div>
+  </dialog>
 
   <!-- Conciliación bancaria -->
   <div class="view" id="view-conc" hidden>
@@ -1121,15 +1185,18 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="cripto.js?v=78"></script>
-<script src="github.js?v=78"></script>
-<script src="lector.js?v=78"></script>
-<script src="app.js?v=78"></script>
-<script src="rrhh-docs.js?v=78"></script>
-<script src="rrhh.js?v=78"></script>
-<script src="informe-pdf.js?v=78"></script>
-<script src="proyectos.js?v=78"></script>
-<script src="conciliacion.js?v=78"></script>
-<script src="compras.js?v=78"></script>
+<script src="cripto.js?v=79"></script>
+<script src="github.js?v=79"></script>
+<script src="lector.js?v=79"></script>
+<script src="app.js?v=79"></script>
+<script src="rrhh-docs.js?v=79"></script>
+<script src="rrhh.js?v=79"></script>
+<script src="informe-pdf.js?v=79"></script>
+<script src="proyectos.js?v=79"></script>
+<script src="conciliacion.js?v=79"></script>
+<script src="compras.js?v=79"></script>
+<script src="obs-comun.js?v=79"></script>
+<script src="obs-inventario.js?v=79"></script>
+<script src="obs-banco.js?v=79"></script>
 </body>
 </html>
