@@ -25,7 +25,7 @@
   const TABS = [['revisar', 'Por revisar'], ['aprobado', 'Aprobados'], ['pendiente', 'Pendientes'], ['pagado', 'Pagados'], ['rechazado', 'Rechazados'], ['todos', 'Todos']];
   const TIPO_DOC = { cobro: 'Cuenta de cobro', anticipo: 'Anticipo', caja: 'Caja menor' };
 
-  const S = { pagos: [], banco: null, loaded: false, tab: 'revisar', q: '', siigoVer: '', sort: 'vence', openId: null, confirm: null, view: 'aprob', rDesde: '', rHasta: '', rRange: 'mes', payDate: '', payValor: null, sel: new Set() };
+  const S = { pagos: [], banco: null, loaded: false, tab: 'revisar', q: '', siigoVer: '', sort: 'vence', openId: null, confirm: null, view: 'aprob', rDesde: '', rHasta: '', rRange: 'mes', payDate: '', payValor: null, sel: new Set(), empresa: 'caribe' };
   // Sesión: llave maestra, identidad y configuración descifrada.
   let maestra = null, rawMaestra = null, uid = null, conf = null;
   let isAdmin = false;
@@ -1112,8 +1112,21 @@
   function onDateInput() { S.rDesde = $('#r-desde').value; S.rHasta = $('#r-hasta').value; S.rRange = ''; renderReport(); }
   $('#r-desde').addEventListener('change', onDateInput);
   $('#r-hasta').addEventListener('change', onDateInput);
+  // Odesa Caribe (Siigo) y Odesa Bienes y Servicios (World Office): cada una muestra solo sus propias
+  // puertas en el Inicio. La empresa escogida se recuerda en este navegador.
+  const EMPRESA_KEY = 'pagos.empresa';
+  function aplicarEmpresa() {
+    document.querySelectorAll('[data-empresa]').forEach((el) => { el.hidden = el.dataset.empresa !== S.empresa; });
+    if ($('#empresa-sel')) $('#empresa-sel').value = S.empresa;
+    try { localStorage.setItem(EMPRESA_KEY, S.empresa); } catch (e) {}
+  }
+  $('#empresa-sel').addEventListener('change', (ev) => {
+    S.empresa = ev.target.value === 'obs' ? 'obs' : 'caribe';
+    aplicarEmpresa();
+    setView('inicio');
+  });
   // Secciones: Inicio · Proveedores (aprob, rep, prov) · Clientes (cart, cli)
-  const VISTAS = ['inicio', 'aprob', 'cajas', 'rep', 'prov', 'anticipos', 'cart', 'cli', 'rrhh', 'proy', 'conc', 'fcomp'];
+  const VISTAS =['inicio', 'aprob', 'cajas', 'rep', 'prov', 'anticipos', 'cart', 'cli', 'rrhh', 'proy', 'conc', 'fcomp', 'obsinv', 'obsbanco'];
   function setView(v) {
     S.view = VISTAS.includes(v) ? v : 'inicio';
     const grupo = ['aprob', 'cajas', 'rep', 'prov', 'anticipos'].includes(S.view) ? 'prov' : ['cart', 'cli'].includes(S.view) ? 'cli' : S.view;
@@ -1121,6 +1134,8 @@
     if (S.view === 'proy' && window.PROY) window.PROY.abrir();
     if (S.view === 'conc' && window.CONC) window.CONC.abrir();
     if (S.view === 'fcomp' && window.FCOMP) window.FCOMP.abrir();
+    if (S.view === 'obsinv' && window.OBSINV) window.OBSINV.abrir();
+    if (S.view === 'obsbanco' && window.OBSBANCO) window.OBSBANCO.abrir();
     document.querySelectorAll('.vbtn[data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === S.view)));
     for (const x of VISTAS) $('#view-' + x).hidden = S.view !== x;
     $('#nav-prov').hidden = grupo !== 'prov';
@@ -4001,6 +4016,8 @@
     }
     [S.rDesde, S.rHasta] = rangeDates('mes');
     $('#r-desde').value = S.rDesde; $('#r-hasta').value = S.rHasta;
+    try { const e = localStorage.getItem(EMPRESA_KEY); if (e === 'obs' || e === 'caribe') S.empresa = e; } catch (e) {}
+    aplicarEmpresa();
     // Al entrar siempre se ve el inicio (o una sección pedida en el enlace: #reporte, #cartera, #proveedores, #clientes)
     const porHash = { '#reporte': 'rep', '#cartera': 'cart', '#proveedores': 'aprob', '#clientes': 'cart' };
     setView(porHash[location.hash] || 'inicio');
